@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>竹弘のマイプレイヤー</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; padding: 20px; background: #f0f0f0; }
+        .player-card { background: white; padding: 30px; border-radius: 20px; shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        input[type="file"] { margin: 20px 0; }
+        audio { width: 100%; margin-top: 20px; }
+    </style>
+</head>
+<body>
+
+<div class="player-card">
+    <h2>🎵 マイプレイヤー</h2>
+    <p>スマホ内のmp3を選んでね</p>
+    
+    <input type="file" id="fileInput" accept="audio/mp3">
+    
+    <br>
+    
+    <audio id="audioPlayer" controls></audio>
+    
+    <div id="songTitle" style="margin-top: 10px; font-weight: bold;"></div>
+</div>
+
+<script>
+    const fileInput = document.getElementById('fileInput');
+    const audioPlayer = document.getElementById('audioPlayer');
+    const songTitle = document.getElementById('songTitle');
+
+    fileInput.addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (file) {
+            // スマホ内のファイルの場所（URL）を一時的に作成
+            const fileURL = URL.createObjectURL(file);
+            audioPlayer.src = fileURL;
+            songTitle.innerText = "再生中: " + file.name;
+            audioPlayer.play();
+        }
+    });
+</script>
+
+</body>
+</html>
