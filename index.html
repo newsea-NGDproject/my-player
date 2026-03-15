@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>竹弘の特別プレイヤーPWA</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#007bff">
+    <style>
+        body { font-family: sans-serif; padding: 20px; background: #eef2f3; color: #333; }
+        .player-card { background: white; padding: 20px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); max-width: 600px; margin: auto; }
+        .controls { margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap; }
+        button { padding: 12px 20px; border-radius: 10px; border: none; background: #007bff; color: white; cursor: pointer; font-weight: bold; }
+        #playlist { list-style: none; padding: 0; margin-top: 20px; }
+        li { padding: 15px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
+        li:hover { background: #f9f9f9; }
+    </style>
+</head>
+<body>
+
+<div class="player-card">
+    <h2>🎵 竹弘の夢のプレイヤー</h2>
+    <div id="status">曲を選択してプレイリストを作ろう</div>
+    <div class="controls">
+        <button id="addFiles">📂 曲を追加</button>
+        <button id="savePlaylist">💾 名前を付けて保存</button>
+        <button id="loadPlaylist">📑 読込</button>
+    </div>
+    <ul id="playlist"></ul>
+</div>
+
+<script>
+    let playlist = { marathonMode: false, marathonBPM: 120, songs: [] };
+    const audioPlayer = new Audio();
+
+    // 1. 曲の追加と解析
+    document.getElementById('addFiles').addEventListener('click', () => {
+        const input = document.createElement('input');
+        input.type = 'file'; input.multiple = true; input.accept = 'audio/mp3';
+        input.onchange = async (e) => {
+            for (let file of e.target.files) {
+                let song = { name: file.name, detectedBPM: 0, userBPM: 0, file: file };
+                playlist.songs.push(song);
+                renderPlaylist();
+                song.detectedBPM = await analyzeBPM(file);
+                song.userBPM = song.detectedBPM;
+                renderPlaylist();
+            }
+        };
+        input.click();
+    });
+
+    // 2. BPM解析エンジン
+    async function analyzeBPM(file) {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const buffer = await audioCtx.decodeAudioData(await file.arrayBuffer());
+        const data = buffer.getChannelData(0);
+        let count = 0;
+        const interval = Math.floor(buffer.sampleRate / 2);
+        for (let i = 0; i < data.length; i += interval) {
+            if (Math.abs(data[i]) > 0.3) count++;
+        }
+        return Math.floor((count / (buffer.duration / 60)) * 2);
+    }
+
+    // 3. 再生・保存・読込ロジック
+    document.getElementById('savePlaylist').addEventListener('click', async () => {
+        const name = prompt("プレイリストに名前を付けてください", "私のマラソンリスト");
+        if (!name) return;
+        const handle = await window.showSaveFilePicker({suggestedName: `${name}.json`});
+        const writable = await handle.createWritable();
+        await writable.write(JSON.stringify(playlist, null, 2));
+        await writable.close();
+    });
+
+    document.getElementById('loadPlaylist').addEventListener('click', async () => {
+        const [handle] = await window.showOpenFilePicker();
+        const file = await handle.getFile();
+        playlist = JSON.parse(await file.text());
+        renderPlaylist();
+    });
+
+    function renderPlaylist() {
+        const list = document.getElementById('playlist');
+        list.innerHTML = '';
+        playlist.songs.forEach((song) => {
+            const li = document.createElement('li');
+            li.innerHTML = `<span>▶ ${song.name}</span><span>BPM: ${song.userBPM}</span>`;
+            li.onclick = () => {
+                audioPlayer.src = URL.createObjectURL(song.file);
+                audioPlayer.play();
+                document.getElementById('status').innerText = `再生中: ${song.name}`;
+            };
+            list.appendChild(li);
+        });
+    }
+</script>
+</body>
+</html>
