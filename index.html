@@ -1,0 +1,40 @@
+<script>
+    // ... (認証やスキャンの処理はそのまま) ...
+
+    // プレイリスト保存（ここを大幅に強化！）
+    document.getElementById('savePlaylist').addEventListener('click', async () => {
+        if (playlist.songs.length === 0) return alert("保存する曲がありません。");
+        if (!rootHandle) return alert("フォルダ認証が切れています。");
+
+        // 1. 書き込み権限があるかチェックし、なければ要求する
+        const options = { mode: 'readwrite' };
+        if ((await rootHandle.queryPermission(options)) !== 'granted') {
+            if ((await rootHandle.requestPermission(options)) !== 'granted') {
+                return alert("保存には書き込み許可が必要です。");
+            }
+        }
+
+        const name = prompt("プレイリストに名前を付けて保存します:", "マイ・プレイリスト");
+        if (!name) return;
+
+        try {
+            // 2. 認証済みフォルダの中にファイルを作成
+            const fileHandle = await rootHandle.getFileHandle(`${name}.json`, { create: true });
+            const writable = await fileHandle.createWritable();
+            
+            const exportData = {
+                songs: playlist.songs.map(s => ({ name: s.name, userBPM: s.userBPM }))
+            };
+            
+            await writable.write(JSON.stringify(exportData, null, 2));
+            await writable.close();
+            
+            alert(`「${name}.json」をMusicフォルダ内に保存しました！`);
+        } catch (err) { 
+            console.error("保存エラー詳細:", err);
+            alert("保存に失敗しました。スマホの設定でファイル保存が制限されている可能性があります。");
+        }
+    });
+
+    // ... (残りの処理) ...
+</script>
