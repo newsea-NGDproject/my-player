@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>夢のプレイヤー Ver 6.2</title>
+    <link rel="manifest" href="manifest.json">
+    <style>
+        :root {
+            --primary-blue: #007bff;
+            --danger-red: #dc3545;
+            --success-green: #28a745;
+            --info-cyan: #17a2b8;
+            --dark-gray: #343a40;
+            --bg-light: #f8f9fa;
+        }
+
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            background-color: #f0f2f5;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        .container {
+            background: white;
+            width: 100%;
+            max-width: 400px;
+            border-radius: 20px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            padding: 25px;
+            text-align: center;
+        }
+
+        h1 { font-size: 1.5rem; color: #333; margin-bottom: 5px; }
+        .version-info { font-size: 0.8rem; color: #666; margin-bottom: 20px; }
+
+        /* BPM Display Area */
+        .bpm-display-container {
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 15px;
+            padding: 20px 10px;
+            position: relative;
+            margin-bottom: 25px;
+        }
+
+        /* --- BPM数値タップ領域の改善 --- */
+        .bpm-value-wrapper {
+            display: inline-block;
+            cursor: pointer;
+            padding: 10px 20px; /* 当たり判定を広めに確保 */
+            transition: transform 0.1s;
+        }
+        .bpm-value-wrapper:active { transform: scale(0.95); opacity: 0.7; }
+
+        #bpm-value {
+            font-size: 3.5rem;
+            font-weight: bold;
+            color: var(--primary-blue);
+            line-height: 1;
+        }
+        .original-bpm { font-size: 0.9rem; color: #888; margin-top: 5px; }
+
+        /* Ruler / Scale Area */
+        .ruler-container {
+            width: 100%;
+            height: 80px;
+            overflow: hidden;
+            position: relative;
+            margin: 15px 0;
+            border-top: 1px solid #eee;
+            border-bottom: 1px solid #eee;
+        }
+
+        #ruler-canvas { cursor: grab; }
+        
+        /* Center Red Line */
+        .center-line {
+            position: absolute;
+            left: 50%;
+            top: 0;
+            width: 2px;
+            height: 100%;
+            background-color: var(--danger-red);
+            transform: translateX(-50%); /* 自身の幅の半分戻して真ん中に */
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        /* Controls */
+        .btn {
+            width: 100%;
+            padding: 12px;
+            margin: 5px 0;
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-size: 1rem;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            cursor: pointer;
+        }
+
+        .btn-blue { background-color: var(--primary-blue); }
+        .btn-red { background-color: var(--danger-red); }
+        .btn-green { background-color: var(--success-green); }
+        .btn-cyan { background-color: var(--info-cyan); }
+        .btn-dark { background-color: var(--dark-gray); }
+
+        /* Playlist Area */
+        .playlist {
+            margin-top: 30px;
+            text-align: left;
+        }
+        .track-item {
+            background: #fff;
+            border: 1px solid #eee;
+            border-radius: 10px;
+            padding: 10px;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .track-info { flex: 1; font-size: 0.9rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+        .track-controls { display: flex; gap: 5px; }
+        .icon-btn {
+            width: 32px;
+            height: 32px;
+            border-radius: 6px;
+            border: none;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8rem;
+            cursor: pointer;
+        }
+        .btn-move { background-color: #6c757d; }
+        .btn-delete { background-color: var(--danger-red); }
+
+        /* 矢印を消すためのクラス */
+        .hidden { display: none !important; }
+
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1><span style="color:var(--danger-red)">♪</span> 夢のプレイヤー</h1>
+    <div class="version-info">Ver 6.2 (竹弘 & つよぽん Special)</div>
+
+    <div class="bpm-display-container">
+        <div class="bpm-value-wrapper" onclick="editBpmDirectly()">
+            <div id="bpm-value">120</div>
+            <div class="original-bpm">元BPM: <span id="orig-bpm-val">---</span></div>
+        </div>
+
+        <div class="ruler-container">
+            <div class="center-line"></div>
+            <canvas id="ruler-canvas"></canvas>
+        </div>
+
+        <button class="btn-dark" style="width:auto; padding:5px 15px; font-size:0.8rem;" onclick="resetBpm()">元のBPMに戻す</button>
+    </div>
+
+    <button class="btn btn-blue" onclick="addTrack()">📁 曲を追加</button>
+    <button class="btn btn-red" onclick="stopMusic()">■ 停止</button>
+    <button class="btn btn-green" onclick="saveData()">💾 保存</button>
+    <button class="btn btn-cyan" onclick="loadData()">📁 読込</button>
+    <button class="btn btn-dark" onclick="exitApp()">🚪 終了</button>
+
+    <div class="playlist" id="playlist-container">
+        </div>
+</div>
+
+<script>
+    let currentBPM = 120;
+    let tracks = ["ロクデナシ 草...", "02-HANABI_1...", "秦 基博 Rain...", "絢香 Hello,Ag..."];
+    
+    // --- BPM描画・ズレ補正のロジック ---
+    const canvas = document.getElementById('ruler-canvas');
+    const ctx = canvas.getContext('2d');
+    const BPM_OFFSET = -0.4; // 【竹弘さんへ】つよぽん解析：0.4pxの右ズレを一律補正
+
+    function initRuler() {
+        canvas.width = canvas.parentElement.clientWidth;
+        canvas.height = 80;
+        drawRuler();
+    }
+
+    function drawRuler() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const centerX = canvas.width / 2;
+        const spacing = 10; // 1BPMあたりのピクセル幅
+
+        // 目盛りの描画
+        for (let i = currentBPM - 50; i <= currentBPM + 50; i++) {
+            // 計算の要所にMath.roundを入れ、最後にBPM_OFFSETを適用
+            let x = Math.round(centerX + (i - currentBPM) * spacing) + BPM_OFFSET;
+            
+            ctx.beginPath();
+            ctx.moveTo(x, 40);
+            if (i % 10 === 0) {
+                ctx.lineTo(x, 10);
+                ctx.fillText(i, x - 10, 60);
+            } else if (i % 5 === 0) {
+                ctx.lineTo(x, 20);
+            } else {
+                ctx.lineTo(x, 30);
+            }
+            ctx.stroke();
+        }
+    }
+
+    // --- BPM直接編集機能 ---
+    function editBpmDirectly() {
+        const newBpm = prompt("BPMを入力してください:", currentBPM);
+        if (newBpm !== null && !isNaN(newBpm)) {
+            updateBpm(parseInt(newBpm));
+        }
+    }
+
+    function updateBpm(val) {
+        currentBPM = val;
+        document.getElementById('bpm-value').innerText = currentBPM;
+        drawRuler();
+    }
+
+    // --- プレイリスト・矢印非表示ロジック ---
+    function renderPlaylist() {
+        const container = document.getElementById('playlist-container');
+        container.innerHTML = '';
+
+        tracks.forEach((track, index) => {
+            const isFirst = (index === 0);
+            const isLast = (index === tracks.length - 1);
+
+            const div = document.createElement('div');
+            div.className = 'track-item';
+            div.innerHTML = `
+                <div class="track-info">▶ ${track}</div>
+                <div class="track-controls">
+                    <button class="icon-btn btn-move ${isFirst ? 'hidden' : ''}" onclick="moveTrack(${index}, -1)">↑</button>
+                    <button class="icon-btn btn-move ${isLast ? 'hidden' : ''}" onclick="moveTrack(${index}, 1)">↓</button>
+                    <button class="icon-btn btn-delete" onclick="deleteTrack(${index})">×</button>
+                </div>
+            `;
+            container.appendChild(div);
+        });
+    }
+
+    function moveTrack(index, direction) {
+        const target = index + direction;
+        if (target < 0 || target >= tracks.length) return;
+        [tracks[index], tracks[target]] = [tracks[target], tracks[index]];
+        renderPlaylist();
+    }
+
+    // 起動時の初期化
+    window.onload = () => {
+        initRuler();
+        renderPlaylist();
+        
+        // 「紙芝居」的な初期演出（少しずらして戻すことで位置を安定させる）
+        setTimeout(() => {
+            updateBpm(currentBPM);
+        }, 300);
+    };
+
+    // ウィンドウサイズ変更時に再描画
+    window.onresize = initRuler;
+
+    // ダミー関数
+    function resetBpm() { updateBpm(120); }
+    function addTrack() { alert("曲追加機能を呼び出します"); }
+    function stopMusic() { console.log("Stop"); }
+    function saveData() { alert("設定を保存しました"); }
+    function loadData() { alert("設定を読み込みました"); }
+    function exitApp() { if(confirm("終了しますか？")) window.close(); }
+
+</script>
+
+</body>
+</html>
