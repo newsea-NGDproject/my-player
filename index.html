@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>竹弘の夢のプレイヤー Ver 7.2</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#007bff">
+    <style>
+        body { font-family: sans-serif; padding: 20px; background: #eef2f3; color: #333; margin: 0; }
+        .player-card { background: white; padding: 20px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); max-width: 600px; margin: 20px auto; }
+        .controls { margin-top: 15px; display: flex; gap: 8px; flex-wrap: wrap; }
+        button { padding: 12px 15px; border-radius: 10px; border: none; background: #007bff; color: white; cursor: pointer; font-weight: bold; font-size: 0.9em; flex-grow: 1; min-width: 140px; }
+        button:active { filter: brightness(0.8); }
+
+        .bpm-panel { background: #f8f9fa; border-radius: 10px; padding: 15px; margin: 15px 0; border: 1px solid #dee2e6; text-align: center; }
+        .bpm-display { font-size: 1.3em; font-weight: bold; color: #007bff; margin-bottom: 10px; display: flex; justify-content: center; align-items: center; gap: 10px; }
+        #bpmWrapper, #pitchBpmWrapper { cursor: pointer; padding: 5px 15px; border-radius: 8px; transition: background 0.2s; border-bottom: 2px dashed #007bff; }
+        #bpmWrapper:active, #pitchBpmWrapper:active { background: #e7f3ff; }
+        #currentBpmDisplay, #pitchBpmDisplay { font-size: 2em; line-height: 1; }
+
+        .ruler-container { position: relative; width: 100%; height: 60px; margin: 10px 0; overflow: hidden; background: white; border-radius: 5px; border: 1px solid #eee; }
+        canvas { cursor: grab; display: block; }
+        .red-line { position: absolute; left: 50%; top: 0; width: 2px; height: 100%; background: #dc3545; z-index: 10; pointer-events: none; transform: translateX(-50%); }
+        #resetBpmBtn { background: #fff; color: #888; border: 1px solid #ccc; font-size: 0.6em; padding: 4px 10px; border-radius: 20px; min-width: auto; flex-grow: 0; }
+
+        #playlist { list-style: none; padding: 0; margin-top: 20px; }
+        li { padding: 10px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; background: #fff; border-radius: 8px; margin-bottom: 5px; }
+        .playing { background: #e7f3ff; border: 2px solid #007bff; font-weight: bold; }
+        .song-info { flex-grow: 1; cursor: pointer; padding: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .song-bpm-tag { font-size: 0.7em; color: #666; background: #eee; padding: 2px 5px; border-radius: 4px; margin-left: 5px; font-weight: normal; }
+        
+        .item-controls { display: flex; gap: 4px; }
+        .btn-sm { padding: 6px 10px; font-size: 0.8em; background: #6c757d; min-width: 35px; flex-grow: 0; }
+        .btn-del { background: #dc3545; }
+
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 2000; justify-content: center; align-items: center; }
+        .modal-content { background: white; padding: 20px; border-radius: 15px; width: 90%; max-width: 450px; max-height: 85vh; overflow-y: auto; }
+        .list-item { padding: 15px; border-bottom: 1px solid #eee; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+        #saveNameInput { width: 100%; padding: 12px; border: 2px solid #007bff; border-radius: 8px; font-size: 1em; box-sizing: border-box; margin-bottom: 15px; }
+        
+        /* 設定モーダル */
+        .setting-section { background: #f0f4f8; padding: 15px; border-radius: 10px; margin-bottom: 15px; text-align: center; }
+
+        #overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); color: white; display: flex; justify-content: center; align-items: center; text-align: center; z-index: 1000; padding: 20px; cursor: pointer; }
+        #exit-screen { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: black; color: white; z-index: 9999; justify-content: center; align-items: center; text-align: center; font-size: 1.5em; }
+    </style>
+</head>
+<body>
+
+<div id="overlay" onclick="handleAuth()">
+    <div id="message">読み込み中...</div>
+</div>
+
+<div id="exit-screen">
+    <div>🏃‍♂️ プレイヤーを終了しました<br><span style="font-size: 0.6em; color: #aaa;">タブを閉じてください</span></div>
+</div>
+
+<div id="modal" class="modal">
+    <div class="modal-content">
+        <h3 id="modalTitle" style="margin-top:0;">📑 プレイリストを選択</h3>
+        <div id="saveArea" style="display:none;">
+            <input type="text" id="saveNameInput" placeholder="プレイリスト名を入力">
+            <button style="background: #28a745; width: 100%; margin-bottom: 10px;" onclick="executeSaveWorkflow()">💾 この名前で保存</button>
+        </div>
+        <div id="playlist-index"></div>
+        <hr>
+        <button onclick="closeModal()" style="width:100%; background:#666;">閉じる</button>
+    </div>
+</div>
+
+<div id="settingModal" class="modal">
+    <div class="modal-content">
+        <h3 style="margin-top:0;">🏃‍♂️ マイ・ピッチ設定</h3>
+        <p style="font-size: 0.8em; color: #666;">目標BPMの定規を合わせるか、数値をタップしてください。</p>
+        
+        <div class="setting-section">
+            <div id="pitchBpmWrapper" onclick="editPitchBpmDirectly()">
+                <span id="pitchBpmDisplay">120</span>
+                <span style="font-size: 0.5em; vertical-align: middle;">BPM</span>
+            </div>
+            <div class="ruler-container" style="background: #fff; margin-top: 15px;">
+                <div class="red-line"></div>
+                <canvas id="pitchCanvas"></canvas>
+            </div>
+            <div style="margin-top: 15px; display: flex; align-items: center; justify-content: center; gap: 10px;">
+                <span>🔈</span>
+                <input type="range" id="metronomeVolume" min="0" max="2" step="0.1" value="1.0" style="width: 150px;">
+                <span>🔊</span>
+            </div>
+            <div style="font-size: 0.7em; color: #888; margin-top: 5px;">ボリュームを最大にするとブーストされます</div>
+        </div>
+
+        <button style="background: #28a745; width: 100%; margin-bottom: 10px;" onclick="saveMyPitch()">💾 設定を保存して戻る</button>
+        <button onclick="closeSettingModal()" style="width:100%; background:#666;">キャンセル</button>
+    </div>
+</div>
+
+<div class="player-card">
+    <h2 id="appTitle">🎵 夢のプレイヤー Ver 7.2</h2>
+    <div id="status" style="margin-bottom:10px; color:#666; font-size: 0.85em;">フォルダを認証してください</div>
+
+    <div class="bpm-panel">
+        <div class="bpm-display">
+            <div id="bpmWrapper" onclick="editBpmDirectly()">
+                <span id="currentBpmDisplay">---</span>
+                <span style="font-size: 0.5em; vertical-align: middle;">BPM</span>
+            </div>
+            <button id="resetBpmBtn">元: <span id="originalBpmValue">---</span></button>
+        </div>
+        <div class="ruler-container">
+            <div class="red-line"></div>
+            <canvas id="rulerCanvas"></canvas>
+        </div>
+        <div style="font-size: 0.7em; color: #888;">左右ドラッグでテンポ変更</div>
+    </div>
+    
+    <div class="controls">
+        <button id="addSongs" style="background: #007bff;">📂 曲を追加</button>
+        <button id="stopBtn" style="background: #dc3545;">⏹ 停止</button>
+        <button id="savePlaylist" style="background: #28a745;" onclick="openSaveModal()">💾 保存</button>
+        <button id="loadPlaylist" style="background: #17a2b8;" onclick="openLoadModal()">📑 読込</button>
+        <button id="configBtn" style="background: #6f42c1;" onclick="openSettingModal()">⚙ 設定</button>
+        <button id="exitBtn" style="background: #343a40;">🚪 終了</button>
+    </div>
+    <ul id="playlist"></ul>
+    <audio id="hiddenAudio" style="display:none;"></audio>
+</div>
+
+<script>
+    const audioTag = document.getElementById('hiddenAudio');
+    let playlist = { songs: [] };
+    let currentPlaylistName = "マイリスト";
+    let rootHandle = null;
+    let currentPlayingIdx = -1;
+    let originalBpm = 0;
+    let userMyPitch = 120;
+    let wasPlayingBeforeSetting = false;
+
+    // 定規描画パラメータ
+    const BPM_OFFSET = -0.4;
+    const GAP = 12;
+
+    const mainCanvas = document.getElementById('rulerCanvas');
+    const mainCtx = mainCanvas.getContext('2d');
+    const pitchCanvas = document.getElementById('pitchCanvas');
+    const pitchCtx = pitchCanvas.getContext('2d');
+
+    // メトロノーム用 AudioContext
+    let audioCtx = null;
+    let nextNoteTime = 0.0;
+    let timerID = null;
+    let metronomeBpm = 120;
+    let masterGain = null;
+
+    const DB_NAME = "PlayerDB_V5";
+    const STORE_LISTS = "playlists";
+    const STORE_CONFIG = "config";
+
+    async function openDB() {
+        return new Promise((resolve) => {
+            const request = indexedDB.open(DB_NAME, 1);
+            request.onupgradeneeded = (e) => {
+                const db = e.target.result;
+                if (!db.objectStoreNames.contains(STORE_LISTS)) db.createObjectStore(STORE_LISTS);
+                if (!db.objectStoreNames.contains(STORE_CONFIG)) db.createObjectStore(STORE_CONFIG);
+            };
+            request.onsuccess = (e) => resolve(e.target.result);
+        });
+    }
+
+    async function dbPut(store, key, value) { const db = await openDB(); const tx = db.transaction(store, "readwrite"); tx.objectStore(store).put(value, key); }
+    async function dbGet(store, key) { const db = await openDB(); return new Promise(r => db.transaction(store).objectStore(store).get(key).onsuccess = e => r(e.target.result)); }
+
+    window.onload = async () => {
+        resizeCanvases();
+        const savedHandle = await dbGet(STORE_CONFIG, "rootFolder");
+        if (savedHandle) {
+            rootHandle = savedHandle;
+            document.getElementById('message').innerHTML = "おかえりなさい、竹弘！<br>[ タップして開始 ]";
+        } else {
+            document.getElementById('message').innerHTML = "Musicフォルダを選択してください<br>[ タップして選択 ]";
+        }
+        const savedPitch = await dbGet(STORE_CONFIG, "myPitchBpm");
+        if (savedPitch) userMyPitch = savedPitch;
+    };
+
+    function resizeCanvases() {
+        mainCanvas.width = mainCanvas.parentElement.clientWidth; mainCanvas.height = 60;
+        pitchCanvas.width = pitchCanvas.parentElement.clientWidth; pitchCanvas.height = 60;
+        drawRuler(mainCtx, mainCanvas, 120);
+    }
+    window.addEventListener('resize', resizeCanvases);
+
+    async function handleAuth() {
+        try {
+            if (!rootHandle) { rootHandle = await window.showDirectoryPicker(); await dbPut(STORE_CONFIG, "rootFolder", rootHandle); }
+            else { if (await rootHandle.requestPermission() !== 'granted') return; }
+            document.getElementById('overlay').style.display = 'none';
+            document.getElementById('status').innerText = `認証済み: ${rootHandle.name}`;
+        } catch (e) { alert("認証が必要です"); }
+    }
+
+    // --- 定規描画ロジック (0.4px補正・メモリ完全版) ---
+    function drawRuler(context, canvasObj, centerBpm) {
+        context.clearRect(0, 0, canvasObj.width, canvasObj.height);
+        const centerX = canvasObj.width / 2;
+        for (let b = Math.floor(centerBpm - 35); b <= Math.ceil(centerBpm + 35); b++) {
+            let x = Math.round(centerX + (b - centerBpm) * GAP) + BPM_OFFSET;
+            context.beginPath();
+            context.strokeStyle = '#999';
+            if (b % 10 === 0) {
+                context.moveTo(x, 0); context.lineTo(x, 25);
+                context.fillStyle = '#333'; context.font = '10px Arial';
+                context.fillText(b, x - 8, 40);
+            } else if (b % 5 === 0) {
+                context.moveTo(x, 0); context.lineTo(x, 15);
+            } else {
+                context.moveTo(x, 0); context.lineTo(x, 8);
+            }
+            context.stroke();
+        }
+    }
+
+    // --- 再生ロジック ---
+    async function estimateBPM(file) {
+        const tempCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const arrayBuffer = await file.arrayBuffer();
+        const buffer = await tempCtx.decodeAudioData(arrayBuffer);
+        const data = buffer.getChannelData(0);
+        let peaks = [];
+        for (let i = 0; i < data.length; i += 441) { if (Math.abs(data[i]) > 0.8) peaks.push(i); }
+        if (peaks.length < 10) return 120;
+        let intervals = [];
+        for (let i = 1; i < peaks.length; i++) intervals.push(peaks[i] - peaks[i-1]);
+        const avgInterval = intervals.reduce((a, b) => a + b) / intervals.length;
+        let bpm = Math.round(60 / (avgInterval / buffer.sampleRate));
+        while (bpm < 60) bpm *= 2; while (bpm > 180) bpm /= 2;
+        return Math.round(bpm);
+    }
+
+    async function playSong(idx) {
+        const song = playlist.songs[idx];
+        currentPlayingIdx = idx;
+        document.getElementById('status').innerText = "解析中...";
+        try {
+            let h = song.handle || await findFileRecursive(rootHandle, song.name);
+            const file = await h.getFile();
+            if (!song.baseBpm) song.baseBpm = await estimateBPM(file);
+            originalBpm = song.baseBpm;
+            const targetRate = (song.userBpm && song.userBpm !== 0) ? (song.userBpm / originalBpm) : 1.0;
+            audioTag.src = URL.createObjectURL(file);
+            audioTag.preservesPitch = true;
+            applyTempo(targetRate, false);
+            audioTag.play();
+            renderPlaylist();
+            document.getElementById('status').innerText = `再生中: ${song.name}`;
+        } catch (e) { alert("再生エラーが発生しました"); }
+    }
+
+    function applyTempo(rate, shouldRender = true) {
+        if (originalBpm === 0) return;
+        const safeRate = Math.min(Math.max(rate, 0.5), 2.0);
+        audioTag.playbackRate = safeRate;
+        const currentBpm = Math.round(originalBpm * safeRate);
+        document.getElementById('currentBpmDisplay').innerText = currentBpm;
+        document.getElementById('originalBpmValue').innerText = originalBpm;
+        if (currentPlayingIdx !== -1) {
+            playlist.songs[currentPlayingIdx].userBpm = currentBpm;
+            if (shouldRender) renderPlaylist();
+        }
+        drawRuler(mainCtx, mainCanvas, currentBpm);
+    }
+
+    // --- メトロノーム (爆音ブースト版) ---
+    function scheduler() {
+        while (nextNoteTime < audioCtx.currentTime + 0.1) {
+            playClick(nextNoteTime);
+            nextNoteTime += 60.0 / metronomeBpm;
+        }
+        timerID = setTimeout(scheduler, 25.0);
+    }
+
+    function playClick(time) {
+        const osc = audioCtx.createOscillator();
+        const envelope = audioCtx.createGain();
+        const vol = parseFloat(document.getElementById('metronomeVolume').value);
+        
+        osc.type = 'triangle'; // サイン波より聞き取りやすい三角波
+        osc.frequency.value = 880;
+        
+        // 二段階で音量をコントロール (masterGainで全体を底上げ)
+        envelope.gain.setValueAtTime(vol, time);
+        envelope.gain.exponentialRampToValueAtTime(0.001, time + 0.08);
+        
+        osc.connect(envelope);
+        envelope.connect(masterGain);
+        masterGain.connect(audioCtx.destination);
+        
+        osc.start(time);
+        osc.stop(time + 0.1);
+    }
+
+    // --- 設定モーダル制御 ---
+    function openSettingModal() {
+        wasPlayingBeforeSetting = !audioTag.paused;
+        stopPlayback();
+        metronomeBpm = userMyPitch;
+        document.getElementById('pitchBpmDisplay').innerText = metronomeBpm;
+        
+        document.getElementById('settingModal').style.display = 'flex';
+        
+        // モーダル表示後にCanvasサイズを確定させて描画
+        setTimeout(() => {
+            pitchCanvas.width = pitchCanvas.parentElement.clientWidth;
+            drawRuler(pitchCtx, pitchCanvas, metronomeBpm);
+        }, 50);
+        
+        if (!audioCtx) {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            masterGain = audioCtx.createGain();
+            masterGain.gain.value = 1.5; // マスターで1.5倍に底上げ
+        }
+        nextNoteTime = audioCtx.currentTime;
+        scheduler();
+    }
+
+    function closeSettingModal() {
+        clearTimeout(timerID);
+        document.getElementById('settingModal').style.display = 'none';
+        // 再生中だった場合は自動復帰
+        if (wasPlayingBeforeSetting && currentPlayingIdx !== -1) {
+            audioTag.play();
+            document.getElementById('status').innerText = `再生中: ${playlist.songs[currentPlayingIdx].name}`;
+        }
+    }
+
+    async function saveMyPitch() {
+        userMyPitch = metronomeBpm;
+        await dbPut(STORE_CONFIG, "myPitchBpm", userMyPitch);
+        closeSettingModal();
+        alert(`マイ・ピッチを ${userMyPitch} BPM に保存しました。`);
+    }
+
+    function editPitchBpmDirectly() {
+        const input = prompt("目標BPMを入力してください", metronomeBpm);
+        if (input && !isNaN(input)) {
+            metronomeBpm = Math.min(Math.max(parseInt(input), 40), 250);
+            document.getElementById('pitchBpmDisplay').innerText = metronomeBpm;
+            drawRuler(pitchCtx, pitchCanvas, metronomeBpm);
+        }
+    }
+
+    // --- ドラッグ操作統合 ---
+    function setupDraggable(canvasObj, onUpdate) {
+        let dragging = false; let lastX = 0;
+        const start = (x) => { dragging = true; lastX = x; };
+        const move = (x) => {
+            if (!dragging) return;
+            const dx = x - lastX;
+            if (Math.abs(dx) > 3) { onUpdate(dx > 0 ? -1 : 1); lastX = x; }
+        };
+        canvasObj.addEventListener('mousedown', e => start(e.clientX));
+        window.addEventListener('mousemove', e => move(e.clientX));
+        window.addEventListener('mouseup', () => dragging = false);
+        canvasObj.addEventListener('touchstart', e => { start(e.touches[0].clientX); e.preventDefault(); }, {passive: false});
+        canvasObj.addEventListener('touchmove', e => move(e.touches[0].clientX), {passive: false});
+        window.addEventListener('touchend', () => dragging = false);
+    }
+
+    setupDraggable(mainCanvas, (delta) => {
+        if (originalBpm === 0) return;
+        const cur = parseInt(document.getElementById('currentBpmDisplay').innerText);
+        applyTempo((cur + delta) / originalBpm, true);
+    });
+
+    setupDraggable(pitchCanvas, (delta) => {
+        metronomeBpm = Math.min(Math.max(metronomeBpm + delta, 40), 250);
+        document.getElementById('pitchBpmDisplay').innerText = metronomeBpm;
+        drawRuler(pitchCtx, pitchCanvas, metronomeBpm);
+    });
+
+    // --- UIロジック (Ver 6.3 継承) ---
+    function renderPlaylist() {
+        const list = document.getElementById('playlist'); list.innerHTML = '';
+        playlist.songs.forEach((song, i) => {
+            const li = document.createElement('li'); if (i === currentPlayingIdx) li.className = 'playing';
+            const info = document.createElement('div'); info.className = 'song-info';
+            const bpmTag = song.userBpm ? `<span class="song-bpm-tag">🏃 ${song.userBpm}</span>` : song.baseBpm ? `<span class="song-bpm-tag">${song.baseBpm}</span>` : '';
+            info.innerHTML = `▶ ${song.name} ${bpmTag}`;
+            info.onclick = () => playSong(i);
+            const ctrl = document.createElement('div'); ctrl.className = 'item-controls';
+            const upBtn = document.createElement('button'); upBtn.className = 'btn-sm'; upBtn.innerText = '↑';
+            upBtn.onclick = (e) => { e.stopPropagation(); moveSong(i, -1); };
+            if (i === 0) upBtn.style.visibility = 'hidden';
+            const downBtn = document.createElement('button'); downBtn.className = 'btn-sm'; downBtn.innerText = '↓';
+            downBtn.onclick = (e) => { e.stopPropagation(); moveSong(i, 1); };
+            if (i === playlist.songs.length - 1) downBtn.style.visibility = 'hidden';
+            const delBtn = document.createElement('button'); delBtn.className = 'btn-sm btn-del'; delBtn.innerText = '×';
+            delBtn.onclick = (e) => { e.stopPropagation(); removeSong(i); };
+            ctrl.appendChild(upBtn); ctrl.appendChild(downBtn); ctrl.appendChild(delBtn);
+            li.appendChild(info); li.appendChild(ctrl); list.appendChild(li);
+        });
+    }
+
+    function moveSong(idx, direction) {
+        const newIdx = idx + direction; if (newIdx < 0 || newIdx >= playlist.songs.length) return;
+        const temp = playlist.songs[idx]; playlist.songs[idx] = playlist.songs[newIdx]; playlist.songs[newIdx] = temp;
+        if (currentPlayingIdx === idx) currentPlayingIdx = newIdx; else if (currentPlayingIdx === newIdx) currentPlayingIdx = idx;
+        renderPlaylist();
+    }
+
+    function removeSong(idx) { if (confirm("リストから外しますか？")) { playlist.songs.splice(idx, 1); if (currentPlayingIdx === idx) { stopPlayback(); currentPlayingIdx = -1; } else if (currentPlayingIdx > idx) currentPlayingIdx--; renderPlaylist(); } }
+
+    async function openSaveModal() {
+        document.getElementById('modalTitle').innerText = "💾 保存";
+        document.getElementById('saveArea').style.display = 'block';
+        document.getElementById('saveNameInput').value = currentPlaylistName;
+        await refreshPlaylistIndex(true);
+        document.getElementById('modal').style.display = 'flex';
+    }
+
+    async function openLoadModal() {
+        document.getElementById('modalTitle').innerText = "📑 読込";
+        document.getElementById('saveArea').style.display = 'none';
+        await refreshPlaylistIndex(false);
+        document.getElementById('modal').style.display = 'flex';
+    }
+
+    async function refreshPlaylistIndex(isSaveMode) {
+        const db = await openDB();
+        const keys = await new Promise(r => db.transaction(STORE_LISTS).objectStore(STORE_LISTS).getAllKeys().onsuccess = e => r(e.target.result));
+        const indexDiv = document.getElementById('playlist-index'); indexDiv.innerHTML = '';
+        for (const key of keys) {
+            const data = await dbGet(STORE_LISTS, key);
+            const div = document.createElement('div'); div.className = 'list-item';
+            div.innerHTML = `<div>📑 ${key}</div><div style="font-size:0.7em; color:#888;">${data.updatedAt || ''}</div>`;
+            div.onclick = () => { if (isSaveMode) document.getElementById('saveNameInput').value = key; else { playlist.songs = data.songs; currentPlaylistName = key; document.getElementById('appTitle').innerText = `🎵 ${key}`; renderPlaylist(); closeModal(); } };
+            indexDiv.appendChild(div);
+        }
+    }
+
+    async function executeSaveWorkflow() {
+        const name = document.getElementById('saveNameInput').value.trim(); if (!name) return;
+        const existing = await dbGet(STORE_LISTS, name); if (existing && !confirm(`上書きしますか？`)) return;
+        currentPlaylistName = name;
+        const data = { songs: playlist.songs.map(s => ({name: s.name, baseBpm: s.baseBpm, userBpm: s.userBpm})), updatedAt: new Date().toLocaleString() };
+        await dbPut(STORE_LISTS, name, data);
+        document.getElementById('appTitle').innerText = `🎵 ${name}`; alert("保存しました！"); closeModal();
+    }
+
+    // --- 終了フロー (Ver 6.3準拠) ---
+    document.getElementById('exitBtn').onclick = async () => {
+        const choice = confirm("終了する前に保存しますか？");
+        if (choice) { openSaveModal(); } 
+        else { if (confirm("終了しますか？")) executeExit(); }
+    };
+
+    function executeExit() { stopPlayback(); document.getElementById('exit-screen').style.display = 'flex'; }
+    function stopPlayback() { audioTag.pause(); document.getElementById('status').innerText = "停止中"; }
+    async function findFileRecursive(h, name) { for await (const e of h.values()) { if (e.kind === 'file' && e.name === name) return e; if (e.kind === 'directory') { const r = await findFileRecursive(e, name); if (r) return r; } } return null; }
+    function closeModal() { document.getElementById('modal').style.display = 'none'; }
+    function editBpmDirectly() { if (originalBpm === 0) return; const input = prompt("目標BPMを入力", document.getElementById('currentBpmDisplay').innerText); if (input && !isNaN(input)) applyTempo(parseInt(input) / originalBpm, true); }
+    
+    document.getElementById('stopBtn').onclick = stopPlayback;
+    document.getElementById('resetBpmBtn').onclick = () => { if (originalBpm === 0) return; applyTempo(1.0, true); };
+    document.getElementById('addSongs').onclick = async () => { try { const fileHandles = await window.showOpenFilePicker({ multiple: true, types: [{ accept: {'audio/*': ['.mp3', '.m4a']} }] }); for (const h of fileHandles) { if (!playlist.songs.some(s => s.name === h.name)) { playlist.songs.push({ name: h.name, handle: h, baseBpm: 0, userBpm: 0 }); } } renderPlaylist(); } catch(e){} };
+</script>
+</body>
+</html>
