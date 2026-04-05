@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>竹弘の夢のプレイヤー Ver 8.5</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#007bff">
+    <style>
+        body { font-family: sans-serif; padding: 20px; background: #eef2f3; color: #333; margin: 0; }
+        .player-card { background: white; padding: 20px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); max-width: 600px; margin: 20px auto; }
+        .controls { margin-top: 15px; display: flex; gap: 8px; flex-wrap: wrap; }
+        button { padding: 12px 15px; border-radius: 10px; border: none; background: #007bff; color: white; cursor: pointer; font-weight: bold; font-size: 0.9em; flex-grow: 1; min-width: 140px; }
+        button:active { filter: brightness(0.8); }
+
+        /* M-Functionボタンの特殊スタイル */
+        #mFunctionBtn { background: #ffc107; color: #212529; }
+        #mFunctionBtn.active { background: #fd7e14; color: white; box-shadow: inset 0 2px 5px rgba(0,0,0,0.2); }
+
+        .seek-container { margin: 15px 0; padding: 0 5px; }
+        #seekBar { width: 100%; height: 8px; cursor: pointer; accent-color: #007bff; }
+        .time-display { display: flex; justify-content: space-between; font-size: 0.75em; color: #666; margin-top: 5px; font-family: monospace; }
+
+        .bpm-panel { background: #f8f9fa; border-radius: 10px; padding: 15px; margin: 15px 0; border: 1px solid #dee2e6; text-align: center; }
+        .bpm-display { font-size: 1.3em; font-weight: bold; color: #007bff; margin-bottom: 10px; display: flex; justify-content: center; align-items: center; gap: 10px; }
+        #bpmWrapper, #pitchBpmWrapper { cursor: pointer; padding: 5px 15px; border-radius: 8px; border-bottom: 2px dashed #007bff; }
+        #currentBpmDisplay, #pitchBpmDisplay { font-size: 2em; line-height: 1; }
+
+        .ruler-container { position: relative; width: 100%; height: 60px; margin: 10px 0; overflow: hidden; background: white; border-radius: 5px; border: 1px solid #eee; }
+        canvas { cursor: grab; display: block; }
+        .red-line { position: absolute; left: 50%; top: 0; width: 2px; height: 100%; background: #dc3545; z-index: 10; pointer-events: none; transform: translateX(-50%); }
+        
+        #playlist { list-style: none; padding: 0; margin-top: 20px; }
+        li { padding: 10px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; background: #fff; border-radius: 8px; margin-bottom: 5px; transition: background 0.2s; }
+        .playing { background: #e7f3ff; border: 2px solid #007bff; font-weight: bold; }
+        .song-info { flex-grow: 1; cursor: pointer; padding: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .song-bpm-tag { font-size: 0.7em; color: #666; background: #eee; padding: 2px 5px; border-radius: 4px; margin-left: 5px; }
+        .manual-flag { color: #dc3545; font-weight: bold; margin-right: 3px; }
+
+        .item-controls { display: flex; gap: 4px; }
+        .btn-sm { padding: 6px 10px; font-size: 0.8em; background: #6c757d; min-width: 35px; flex-grow: 0; }
+        .btn-fix { background: #6f42c1; color: white; width: 45px; }
+        .btn-del { background: #dc3545; }
+
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 2000; justify-content: center; align-items: center; }
+        .modal-content { background: white; padding: 20px; border-radius: 15px; width: 90%; max-width: 450px; text-align: center; }
+        
+        /* タップ補正UI */
+        #tapArea { width: 100%; height: 150px; background: #f0f0f0; border: 3px dashed #6f42c1; border-radius: 15px; display: flex; justify-content: center; align-items: center; font-size: 1.5em; font-weight: bold; color: #6f42c1; margin: 15px 0; cursor: pointer; user-select: none; }
+        #tapArea:active { background: #e0d4f7; transform: scale(0.98); }
+
+        #overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); color: white; display: flex; justify-content: center; align-items: center; text-align: center; z-index: 1000; padding: 20px; cursor: pointer; }
+        #exit-screen { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: black; color: white; z-index: 9999; justify-content: center; align-items: center; text-align: center; font-size: 1.5em; }
+    </style>
+</head>
+<body>
+
+<div id="overlay" onclick="handleAuth()">
+    <div id="message">読み込み中...</div>
+</div>
+
+<div id="exit-screen">
+    <div>🏃‍♂️ プレイヤーを終了しました</div>
+</div>
+
+<div id="modal" class="modal">
+    <div class="modal-content">
+        <h3 id="modalTitle"></h3>
+        <div id="saveArea" style="display:none;">
+            <input type="text" id="saveNameInput" placeholder="プレイリスト名を入力" style="width:100%; padding:10px; margin-bottom:10px; box-sizing:border-box;">
+            <button style="background: #28a745; width: 100%; margin-bottom: 10px;" onclick="executeSaveWorkflow()">💾 保存</button>
+        </div>
+        <div id="playlist-index" style="max-height:300px; overflow-y:auto;"></div>
+        <hr>
+        <button onclick="closeModal()" style="width:100%; background:#666;">閉じる</button>
+    </div>
+</div>
+
+<div id="tapModal" class="modal">
+    <div class="modal-content">
+        <h3>🔧 BPM補正: <span id="targetSongName" style="font-size:0.8em; color:#666;"></span></h3>
+        <p style="font-size:0.8em;">リズムに合わせてタップしてください（12回）</p>
+        <div id="tapArea">TAP HERE</div>
+        <div id="tapCountDisplay" style="font-size:1.2em; font-weight:bold; color:#007bff;">READY</div>
+        <div id="tapResultDisplay" style="margin-top:10px; min-height:1.5em;"></div>
+        <hr>
+        <button id="saveManualBpmBtn" style="background:#28a745; width:100%; margin-bottom:10px; display:none;" onclick="confirmManualBpm()">💾 このBPMで確定</button>
+        <button onclick="closeTapModal()" style="width:100%; background:#666;">キャンセル</button>
+    </div>
+</div>
+
+<div id="settingModal" class="modal">
+    <div class="modal-content">
+        <h3>🏃‍♂️ マイ・ピッチ設定</h3>
+        <div id="pitchBpmWrapper" onclick="editPitchBpmDirectly()">
+            <span id="pitchBpmDisplay">120</span> BPM
+        </div>
+        <div class="ruler-container" id="pitchRulerParent">
+            <div class="red-line"></div>
+            <canvas id="pitchCanvas"></canvas>
+        </div>
+        <div style="margin-top:15px;">
+            🔈 <input type="range" id="metronomeVolume" min="0" max="2" step="0.1" value="1.0" style="width:150px;"> 🔊
+        </div>
+        <button style="background:#28a745; width:100%; margin-top:15px;" onclick="saveMyPitch()">💾 保存して戻る</button>
+        <button onclick="closeSettingModal()" style="width:100%; background:#666; margin-top:10px;">閉じる</button>
+    </div>
+</div>
+
+<div class="player-card">
+    <h2 id="appTitle">🎵 夢のプレイヤー Ver 8.5</h2>
+    <div id="status" style="margin-bottom:10px; color:#666; font-size: 0.85em;">フォルダを認証してください</div>
+
+    <div class="seek-container">
+        <input type="range" id="seekBar" value="0" min="0" step="0.1">
+        <div class="time-display">
+            <span id="currentTime">00:00</span>
+            <span id="durationTime">00:00</span>
+        </div>
+    </div>
+
+    <div class="bpm-panel">
+        <div class="bpm-display">
+            <div id="bpmWrapper" onclick="editBpmDirectly()">
+                <span id="currentBpmDisplay">---</span> BPM
+            </div>
+            <button id="resetBpmBtn" style="font-size:0.6em; padding:4px 10px; border-radius:20px; border:1px solid #ccc; background:#fff;">元に戻す</button>
+        </div>
+        <div class="ruler-container" id="mainRulerParent">
+            <div class="red-line"></div>
+            <canvas id="rulerCanvas"></canvas>
+        </div>
+    </div>
+    
+    <div class="controls">
+        <button id="mFunctionBtn" onclick="toggleMFunction()">M-Function OFF</button>
+        <button id="addSongs" style="background: #007bff;">📂 追加</button>
+        <button id="stopBtn" style="background: #dc3545;">⏹ 停止</button>
+        <button id="savePlaylist" style="background: #28a745;" onclick="openSaveModal()">💾 保存</button>
+        <button id="loadPlaylist" style="background: #17a2b8;" onclick="openLoadModal()">📑 読込</button>
+        <button id="configBtn" style="background: #6f42c1;" onclick="openSettingModal()">⚙ 設定</button>
+        <button id="exitBtn" style="background: #343a40;">🚪 終了</button>
+    </div>
+    <ul id="playlist"></ul>
+    <audio id="hiddenAudio" style="display:none;"></audio>
+</div>
+
+<script>
+    const audioTag = document.getElementById('hiddenAudio');
+    const seekBar = document.getElementById('seekBar');
+    let playlist = { songs: [] };
+    let currentPlaylistName = "マイリスト";
+    let rootHandle = null;
+    let currentPlayingIdx = -1;
+    let originalBpm = 0;
+    let userMyPitch = 120;
+    let isMFunctionMode = false;
+    let isDraggingSeek = false;
+
+    // 定規用
+    const GAP = 12;
+    const mainCanvas = document.getElementById('rulerCanvas');
+    const mainCtx = mainCanvas.getContext('2d');
+    const pitchCanvas = document.getElementById('pitchCanvas');
+    const pitchCtx = pitchCanvas.getContext('2d');
+
+    // メトロノーム/音声
+    let audioCtx = null;
+    let timerID = null;
+    let metronomeBpm = 120;
+    let masterGain = null;
+
+    // DB設定
+    const DB_NAME = "PlayerDB_V85";
+    const STORE_LISTS = "playlists";
+    const STORE_CONFIG = "config";
+
+    async function openDB() {
+        return new Promise((resolve) => {
+            const request = indexedDB.open(DB_NAME, 1);
+            request.onupgradeneeded = (e) => {
+                const db = e.target.result;
+                if (!db.objectStoreNames.contains(STORE_LISTS)) db.createObjectStore(STORE_LISTS);
+                if (!db.objectStoreNames.contains(STORE_CONFIG)) db.createObjectStore(STORE_CONFIG);
+            };
+            request.onsuccess = (e) => resolve(e.target.result);
+        });
+    }
+    async function dbPut(store, key, value) { const db = await openDB(); const tx = db.transaction(store, "readwrite"); tx.objectStore(store).put(value, key); }
+    async function dbGet(store, key) { const db = await openDB(); return new Promise(r => db.transaction(store).objectStore(store).get(key).onsuccess = e => r(e.target.result)); }
+
+    window.onload = async () => {
+        const savedHandle = await dbGet(STORE_CONFIG, "rootFolder");
+        if (savedHandle) {
+            rootHandle = savedHandle;
+            document.getElementById('message').innerHTML = "おかえりなさい、竹弘！<br>[ タップして開始 ]";
+        } else {
+            document.getElementById('message').innerHTML = "Musicフォルダを選択してください<br>[ タップして選択 ]";
+        }
+        const savedPitch = await dbGet(STORE_CONFIG, "myPitchBpm");
+        if (savedPitch) userMyPitch = savedPitch;
+        syncCanvasSize(mainCanvas);
+        drawRuler(mainCtx, mainCanvas, 120);
+    };
+
+    // --- M-Function / 再生ロジック (Ver 8.5 核心) ---
+    function toggleMFunction() {
+        isMFunctionMode = !isMFunctionMode;
+        const btn = document.getElementById('mFunctionBtn');
+        if (isMFunctionMode) {
+            btn.innerText = "M-Function ON";
+            btn.classList.add('active');
+        } else {
+            btn.innerText = "M-Function OFF";
+            btn.classList.remove('active');
+        }
+        
+        // 再生中なら速度を即座に同期
+        if (currentPlayingIdx !== -1) {
+            const rate = calculateRate(playlist.songs[currentPlayingIdx]);
+            applyTempo(rate, false);
+        }
+        renderPlaylist();
+    }
+
+    // 真のオリジナルBPMを取得する独立関数
+    function getTrueBaseBpm(song) {
+        return song.manualBpm || song.baseBpm || 120;
+    }
+
+    function calculateRate(song) {
+        const base = getTrueBaseBpm(song);
+        if (isMFunctionMode) {
+            return userMyPitch / base;
+        } else {
+            return (song.userBpm && song.userBpm !== 0) ? (song.userBpm / base) : 1.0;
+        }
+    }
+
+    // --- タップ補正エンジン (独立モジュール) ---
+    let tapTimes = [];
+    let tempManualBpm = 0;
+    let correctingIdx = -1;
+
+    function openTapModal(idx) {
+        correctingIdx = idx;
+        tapTimes = [];
+        tempManualBpm = 0;
+        document.getElementById('targetSongName').innerText = playlist.songs[idx].name;
+        document.getElementById('tapCountDisplay').innerText = "READY";
+        document.getElementById('tapResultDisplay').innerText = "";
+        document.getElementById('saveManualBpmBtn').style.display = 'none';
+        document.getElementById('tapModal').style.display = 'flex';
+        
+        // 補正中はループ再生を強制
+        audioTag.loop = true;
+    }
+
+    document.getElementById('tapArea').addEventListener('touchstart', (e) => { e.preventDefault(); handleTap(); });
+    document.getElementById('tapArea').addEventListener('mousedown', (e) => { handleTap(); });
+
+    function handleTap() {
+        const now = performance.now();
+        tapTimes.push(now);
+        const count = tapTimes.length;
+
+        if (count <= 12) {
+            document.getElementById('tapCountDisplay').innerText = `TAP: ${count} / 12`;
+        }
+
+        if (count >= 12) {
+            // 後半8回の間隔を計算
+            const intervals = [];
+            for (let i = tapTimes.length - 8; i < tapTimes.length; i++) {
+                intervals.push(tapTimes[i] - tapTimes[i-1]);
+            }
+            const avgInterval = intervals.reduce((a, b) => a + b) / intervals.length;
+            tempManualBpm = Math.round(60000 / avgInterval);
+            
+            document.getElementById('tapResultDisplay').innerHTML = `判定結果: <span style="font-size:1.5em; color:#dc3545;">${tempManualBpm}</span> BPM`;
+            document.getElementById('saveManualBpmBtn').style.display = 'block';
+        }
+    }
+
+    async function confirmManualBpm() {
+        if (correctingIdx === -1) return;
+        const song = playlist.songs[correctingIdx];
+        song.manualBpm = tempManualBpm;
+        
+        // IndexedDBに即時保存 (デグレード防止)
+        await dbPut(STORE_LISTS, currentPlaylistName, { 
+            songs: playlist.songs.map(s => ({name: s.name, baseBpm: s.baseBpm, userBpm: s.userBpm, manualBpm: s.manualBpm})),
+            updatedAt: new Date().toLocaleString()
+        });
+
+        // 再生中なら速度を即反映
+        if (correctingIdx === currentPlayingIdx) {
+            applyTempo(calculateRate(song), false);
+        }
+        
+        closeTapModal();
+        renderPlaylist();
+    }
+
+    function closeTapModal() {
+        document.getElementById('tapModal').style.display = 'none';
+        audioTag.loop = false; // ループ解除
+        correctingIdx = -1;
+    }
+
+    // --- シークバー・自動再生 ---
+    function formatTime(seconds) {
+        if (isNaN(seconds)) return "00:00";
+        const m = Math.floor(seconds / 60);
+        const s = Math.floor(seconds % 60);
+        return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    }
+
+    audioTag.addEventListener('timeupdate', () => {
+        if (!isDraggingSeek) {
+            seekBar.value = audioTag.currentTime;
+            document.getElementById('currentTime').innerText = formatTime(audioTag.currentTime);
+        }
+    });
+
+    audioTag.addEventListener('loadedmetadata', () => {
+        seekBar.max = audioTag.duration;
+        document.getElementById('durationTime').innerText = formatTime(audioTag.duration);
+    });
+
+    seekBar.addEventListener('input', () => { isDraggingSeek = true; document.getElementById('currentTime').innerText = formatTime(seekBar.value); });
+    seekBar.addEventListener('change', () => { audioTag.currentTime = seekBar.value; isDraggingSeek = false; });
+
+    audioTag.addEventListener('ended', () => {
+        if (!audioTag.loop) playNext();
+    });
+
+    function playNext() {
+        if (playlist.songs.length === 0) return;
+        let nextIdx = currentPlayingIdx + 1;
+        if (nextIdx >= playlist.songs.length) nextIdx = 0;
+        playSong(nextIdx);
+    }
+
+    // --- UI/定規制御 ---
+    function syncCanvasSize(canvasObj) {
+        canvasObj.width = canvasObj.parentElement.clientWidth;
+        canvasObj.height = 60;
+    }
+
+    function drawRuler(context, canvasObj, centerBpm) {
+        context.clearRect(0, 0, canvasObj.width, canvasObj.height);
+        const centerX = canvasObj.width / 2;
+        if (centerX <= 0) return;
+        for (let b = Math.floor(centerBpm - 35); b <= Math.ceil(centerBpm + 35); b++) {
+            let x = Math.round(centerX + (b - centerBpm) * GAP);
+            context.beginPath();
+            context.strokeStyle = '#999';
+            if (b % 10 === 0) {
+                context.moveTo(x, 0); context.lineTo(x, 25);
+                context.fillStyle = '#333'; context.font = '10px Arial';
+                context.fillText(b, x - 8, 40);
+            } else if (b % 5 === 0) {
+                context.moveTo(x, 0); context.lineTo(x, 15);
+            } else {
+                context.moveTo(x, 0); context.lineTo(x, 8);
+            }
+            context.stroke();
+        }
+    }
+
+    async function handleAuth() {
+        try {
+            if (!rootHandle) { rootHandle = await window.showDirectoryPicker(); await dbPut(STORE_CONFIG, "rootFolder", rootHandle); }
+            else { if (await rootHandle.requestPermission() !== 'granted') return; }
+            document.getElementById('overlay').style.display = 'none';
+            document.getElementById('status').innerText = `認証済み: ${rootHandle.name}`;
+            syncCanvasSize(mainCanvas);
+            drawRuler(mainCtx, mainCanvas, 120);
+        } catch (e) { alert("認証が必要です"); }
+    }
+
+    function applyTempo(rate, shouldRender = true) {
+        const song = playlist.songs[currentPlayingIdx];
+        if (!song) return;
+        
+        const base = getTrueBaseBpm(song);
+        const safeRate = Math.min(Math.max(rate, 0.5), 2.0);
+        audioTag.playbackRate = safeRate;
+        
+        const currentBpm = Math.round(base * safeRate);
+        document.getElementById('currentBpmDisplay').innerText = currentBpm;
+        
+        if (!isMFunctionMode) {
+            song.userBpm = currentBpm;
+            if (shouldRender) renderPlaylist();
+        }
+        
+        syncCanvasSize(mainCanvas);
+        drawRuler(mainCtx, mainCanvas, currentBpm);
+    }
+
+    async function playSong(idx) {
+        if (idx < 0 || idx >= playlist.songs.length) return;
+        const song = playlist.songs[idx];
+        currentPlayingIdx = idx;
+        document.getElementById('status').innerText = "解析中...";
+        try {
+            let h = song.handle || await findFileRecursive(rootHandle, song.name);
+            const file = await h.getFile();
+            if (!song.baseBpm) {
+                const tempCtx = new AudioContext();
+                const ab = await file.arrayBuffer();
+                const buffer = await tempCtx.decodeAudioData(ab);
+                // 簡易解析
+                const data = buffer.getChannelData(0);
+                let peaks = [];
+                for (let i = 0; i < data.length; i += 441) { if (Math.abs(data[i]) > 0.8) peaks.push(i); }
+                let bpm = 120;
+                if (peaks.length > 10) {
+                    let intervals = [];
+                    for (let i = 1; i < peaks.length; i++) intervals.push(peaks[i] - peaks[i-1]);
+                    const avg = intervals.reduce((a, b) => a + b) / intervals.length;
+                    bpm = Math.round(60 / (avg / buffer.sampleRate));
+                    while (bpm < 60) bpm *= 2; while (bpm > 180) bpm /= 2;
+                }
+                song.baseBpm = bpm;
+            }
+            
+            audioTag.src = URL.createObjectURL(file);
+            audioTag.preservesPitch = true;
+            applyTempo(calculateRate(song), false);
+            audioTag.play();
+            renderPlaylist();
+            document.getElementById('status').innerText = `再生中: ${song.name}`;
+        } catch (e) { console.error(e); alert("再生エラー"); }
+    }
+
+    function renderPlaylist() {
+        const list = document.getElementById('playlist'); list.innerHTML = '';
+        playlist.songs.forEach((song, i) => {
+            const li = document.createElement('li'); if (i === currentPlayingIdx) li.className = 'playing';
+            
+            const info = document.createElement('div'); info.className = 'song-info';
+            const manualMark = song.manualBpm ? `<span class="manual-flag">★</span>` : '';
+            const base = getTrueBaseBpm(song);
+            const bpmTag = `<span class="song-bpm-tag">${base}</span>`;
+            info.innerHTML = `▶ ${manualMark}${song.name} ${bpmTag}`;
+            info.onclick = () => playSong(i);
+            
+            const ctrl = document.createElement('div'); ctrl.className = 'item-controls';
+            
+            if (isMFunctionMode) {
+                // M-Functionモード時は補正ボタンのみ
+                const fixBtn = document.createElement('button'); fixBtn.className = 'btn-sm btn-fix'; fixBtn.innerText = '🔧';
+                fixBtn.onclick = (e) => { e.stopPropagation(); openTapModal(i); };
+                ctrl.appendChild(fixBtn);
+            } else {
+                // 通常モード時は編集ボタン
+                const upBtn = document.createElement('button'); upBtn.className = 'btn-sm'; upBtn.innerText = '↑';
+                upBtn.onclick = (e) => { e.stopPropagation(); moveSong(i, -1); };
+                if (i === 0) upBtn.style.visibility = 'hidden';
+                
+                const downBtn = document.createElement('button'); downBtn.className = 'btn-sm'; downBtn.innerText = '↓';
+                downBtn.onclick = (e) => { e.stopPropagation(); moveSong(i, 1); };
+                if (i === playlist.songs.length - 1) downBtn.style.visibility = 'hidden';
+                
+                const delBtn = document.createElement('button'); delBtn.className = 'btn-sm btn-del'; delBtn.innerText = '×';
+                delBtn.onclick = (e) => { e.stopPropagation(); removeSong(i); };
+                
+                ctrl.appendChild(upBtn); ctrl.appendChild(downBtn); ctrl.appendChild(delBtn);
+            }
+            
+            li.appendChild(info); li.appendChild(ctrl); list.appendChild(li);
+        });
+    }
+
+    function moveSong(idx, dir) {
+        const newIdx = idx + dir; if (newIdx < 0 || newIdx >= playlist.songs.length) return;
+        const temp = playlist.songs[idx]; playlist.songs[idx] = playlist.songs[newIdx]; playlist.songs[newIdx] = temp;
+        if (currentPlayingIdx === idx) currentPlayingIdx = newIdx; else if (currentPlayingIdx === newIdx) currentPlayingIdx = idx;
+        renderPlaylist();
+    }
+
+    function removeSong(idx) { if (confirm("削除しますか？")) { playlist.songs.splice(idx, 1); if (currentPlayingIdx === idx) { stopPlayback(); currentPlayingIdx = -1; } else if (currentPlayingIdx > idx) currentPlayingIdx--; renderPlaylist(); } }
+
+    // --- 設定・メトロノーム ---
+    function openSettingModal() {
+        metronomeBpm = userMyPitch;
+        document.getElementById('settingModal').style.display = 'flex';
+        setTimeout(() => { refreshPitchUI(); }, 100);
+        if (!audioCtx) { audioCtx = new AudioContext(); masterGain = audioCtx.createGain(); masterGain.gain.value = 1.0; }
+        nextNoteTime = audioCtx.currentTime;
+        scheduler();
+    }
+    function scheduler() {
+        while (nextNoteTime < audioCtx.currentTime + 0.1) {
+            const osc = audioCtx.createOscillator();
+            const env = audioCtx.createGain();
+            osc.type = 'triangle'; osc.frequency.value = 880;
+            env.gain.setValueAtTime(parseFloat(document.getElementById('metronomeVolume').value), nextNoteTime);
+            env.gain.exponentialRampToValueAtTime(0.001, nextNoteTime + 0.08);
+            osc.connect(env); env.connect(masterGain); masterGain.connect(audioCtx.destination);
+            osc.start(nextNoteTime); osc.stop(nextNoteTime + 0.1);
+            nextNoteTime += 60.0 / metronomeBpm;
+        }
+        timerID = setTimeout(scheduler, 25.0);
+    }
+    function refreshPitchUI() {
+        document.getElementById('pitchBpmDisplay').innerText = metronomeBpm;
+        syncCanvasSize(pitchCanvas);
+        drawRuler(pitchCtx, pitchCanvas, metronomeBpm);
+    }
+    async function saveMyPitch() {
+        userMyPitch = metronomeBpm;
+        await dbPut(STORE_CONFIG, "myPitchBpm", userMyPitch);
+        if (isMFunctionMode && currentPlayingIdx !== -1) {
+            applyTempo(calculateRate(playlist.songs[currentPlayingIdx]), false);
+        }
+        closeSettingModal();
+    }
+    function closeSettingModal() { clearTimeout(timerID); document.getElementById('settingModal').style.display = 'none'; }
+
+    // --- ドラッグ ---
+    function setupDraggable(canvasObj, onUpdate) {
+        let dragging = false; let lastX = 0;
+        const start = (x) => { dragging = true; lastX = x; };
+        const move = (x) => { if (!dragging) return; const dx = x - lastX; if (Math.abs(dx) > 3) { onUpdate(dx > 0 ? -1 : 1); lastX = x; } };
+        canvasObj.addEventListener('mousedown', e => start(e.clientX));
+        window.addEventListener('mousemove', e => move(e.clientX));
+        window.addEventListener('mouseup', () => dragging = false);
+        canvasObj.addEventListener('touchstart', e => { start(e.touches[0].clientX); e.preventDefault(); }, {passive: false});
+        canvasObj.addEventListener('touchmove', e => move(e.touches[0].clientX), {passive: false});
+        window.addEventListener('touchend', () => dragging = false);
+    }
+    setupDraggable(mainCanvas, (delta) => {
+        if (currentPlayingIdx === -1 || isMFunctionMode) return;
+        const base = getTrueBaseBpm(playlist.songs[currentPlayingIdx]);
+        const cur = parseInt(document.getElementById('currentBpmDisplay').innerText);
+        applyTempo((cur + delta) / base, true);
+    });
+    setupDraggable(pitchCanvas, (delta) => { metronomeBpm = Math.min(Math.max(metronomeBpm + delta, 40), 250); refreshPitchUI(); });
+
+    // --- 保存・読込 ---
+    async function openSaveModal() {
+        document.getElementById('modalTitle').innerText = "💾 プレイリスト保存";
+        document.getElementById('saveArea').style.display = 'block';
+        await refreshPlaylistIndex(true);
+        document.getElementById('modal').style.display = 'flex';
+    }
+    async function openLoadModal() {
+        document.getElementById('modalTitle').innerText = "📑 プレイリスト読込";
+        document.getElementById('saveArea').style.display = 'none';
+        await refreshPlaylistIndex(false);
+        document.getElementById('modal').style.display = 'flex';
+    }
+    async function refreshPlaylistIndex(isSave) {
+        const db = await openDB();
+        const keys = await new Promise(r => db.transaction(STORE_LISTS).objectStore(STORE_LISTS).getAllKeys().onsuccess = e => r(e.target.result));
+        const indexDiv = document.getElementById('playlist-index'); indexDiv.innerHTML = '';
+        for (const key of keys) {
+            const div = document.createElement('div'); div.style = "padding:10px; border-bottom:1px solid #eee; cursor:pointer;";
+            div.innerText = `📑 ${key}`;
+            div.onclick = () => { if (isSave) document.getElementById('saveNameInput').value = key; else loadList(key); };
+            indexDiv.appendChild(div);
+        }
+    }
+    async function executeSaveWorkflow() {
+        const name = document.getElementById('saveNameInput').value.trim(); if (!name) return;
+        const data = { songs: playlist.songs.map(s => ({name: s.name, baseBpm: s.baseBpm, userBpm: s.userBpm, manualBpm: s.manualBpm})), updatedAt: new Date().toLocaleString() };
+        await dbPut(STORE_LISTS, name, data);
+        currentPlaylistName = name; document.getElementById('appTitle').innerText = `🎵 ${name}`; alert("保存しました"); closeModal();
+    }
+    async function loadList(key) {
+        const data = await dbGet(STORE_LISTS, key);
+        playlist.songs = data.songs; currentPlaylistName = key;
+        document.getElementById('appTitle').innerText = `🎵 ${key}`;
+        renderPlaylist(); closeModal();
+    }
+    function closeModal() { document.getElementById('modal').style.display = 'none'; }
+    function stopPlayback() { audioTag.pause(); document.getElementById('status').innerText = "停止中"; }
+    function executeExit() { stopPlayback(); document.getElementById('exit-screen').style.display = 'flex'; }
+    document.getElementById('stopBtn').onclick = stopPlayback;
+    document.getElementById('exitBtn').onclick = () => { if (confirm("終了しますか？")) executeExit(); };
+    document.getElementById('addSongs').onclick = async () => { try { const fileHandles = await window.showOpenFilePicker({ multiple: true, types: [{ accept: {'audio/*': ['.mp3', '.m4a']} }] }); for (const h of fileHandles) { if (!playlist.songs.some(s => s.name === h.name)) { playlist.songs.push({ name: h.name, handle: h, baseBpm: 0, userBpm: 0, manualBpm: null }); } } renderPlaylist(); } catch(e){} };
+    async function findFileRecursive(h, name) { for await (const e of h.values()) { if (e.kind === 'file' && e.name === name) return e; if (e.kind === 'directory') { const r = await findFileRecursive(e, name); if (r) return r; } } return null; }
+</script>
+</body>
+</html>
