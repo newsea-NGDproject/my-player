@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BEAT-LINK 実験室 Ver 0.1</title>
+    <style>
+        body { font-family: sans-serif; background: #121212; color: #e0e0e0; padding: 20px; margin: 0; }
+        .container { max-width: 800px; margin: 0 auto; background: #1e1e1e; padding: 20px; border-radius: 15px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+        h1 { font-size: 1.5em; color: #007bff; text-align: center; }
+        .status-panel { background: #252525; padding: 15px; border-radius: 10px; margin-bottom: 20px; border-left: 5px solid #007bff; }
+        .wave-container { position: relative; width: 100%; height: 120px; background: #000; margin: 10px 0; border-radius: 5px; overflow: hidden; }
+        canvas { width: 100%; height: 100%; }
+        .label { position: absolute; top: 5px; left: 5px; background: rgba(0,0,0,0.7); padding: 2px 8px; font-size: 0.8em; color: #fff; border-radius: 3px; }
+        .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
+        button { padding: 15px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 1em; }
+        .btn-folder { background: #6f42c1; color: white; grid-column: span 2; }
+        .btn-play { background: #28a745; color: white; }
+        .btn-stop { background: #dc3545; color: white; }
+        #log { margin-top: 20px; font-family: monospace; font-size: 0.8em; color: #aaa; max-height: 150px; overflow-y: auto; background: #000; padding: 10px; border-radius: 5px; }
+        .sync-indicator { text-align: center; margin: 10px 0; font-weight: bold; color: #ffc107; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>🔬 BEAT-LINK 実験室 Ver 0.1</h1>
+    
+    <div class="status-panel">
+        <div>検証曲1: 02-HANABI_1.m4a <span id="bpm1">-</span></div>
+        <div>検証曲2: 14.足音 ～Be Strong_1.m4a <span id="bpm2">-</span></div>
+        <div id="main-status" style="margin-top:10px; color:#007bff;">フォルダを選択してください</div>
+    </div>
+
+    <div class="wave-container">
+        <div class="label">曲A: HANABI (末尾解析)</div>
+        <canvas id="canvasA"></canvas>
+    </div>
+    <div class="sync-indicator">↓↓ BEAT SYNC POINT ↓↓</div>
+    <div class="wave-container">
+        <div class="label">曲B: 足音 (冒頭解析)</div>
+        <canvas id="canvasB"></canvas>
+    </div>
+
+    <div class="controls">
+        <button class="btn-folder" id="folderBtn">📁 Musicフォルダを選択</button>
+        <button class="btn-play" id="startBtn" disabled>▶ 実験開始 (解析＆再生)</button>
+        <button class="btn-stop" id="stopBtn">⏹ 停止</button>
+    </div>
+
+    <div id="log">ログを表示中...</div>
+</div>
+
+<script>
+    let audioCtx;
+    let fileA, fileB;
+    let bpmA = 0, bpmB = 0;
+    let peaksA = [], peaksB = [];
+    let audioSourceA, audioSourceB;
+
+    const log = (msg) => {
+        const div = document.getElementById('log');
+        div.innerHTML = `> ${msg}<br>${div.innerHTML}`;
+    };
+
+    document.getElementById('folderBtn').onclick = async () => {
+        try {
+            const root = await window.showDirectoryPicker();
+            log("フォルダ探索中...");
+            fileA = await findFile(root, "02-HANABI_1.m4a");
+            fileB = await findFile(root, "14.足音 ～Be Strong_1.m4a");
+
+            if (fileA && fileB) {
+                document.getElementById('main-status').innerText = "曲が見つかりました！解析可能です。";
+                document.getElementById('startBtn').disabled = false;
+                log("準備完了: 曲Aと曲Bを捕捉しました。");
+            } else {
+                alert("指定の2曲が見つかりませんでした。ファイル名を確認してください。");
+            }
+        } catch (e) { log("エラー: " + e.message); }
+    };
+
+    async function findFile(h, name) {
+        for await (const e of h.values()) {
+            if (e.kind === 'file' && e.name === name) return e;
+            if (e.kind === 'directory') {
+                const r = await findFile(e, name);
+                if (r) return r;
+            }
+        }
+        return null;
+    }
+
+    document.getElementById('startBtn').onclick = async () => {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        document.getElementById('startBtn').disabled = true;
+        log("解析エンジン起動...");
+
+        const bufA = await decodeFile(fileA);
+        const bufB = await decodeFile(fileB);
+
+        // --- 解析フェーズ ---
+        // 曲Aは最後15秒を解析、曲Bは最初15秒を解析
+        peaksA = analyzeBeats(bufA, true); 
+        peaksB = analyzeBeats(bufB, false);
+
+        drawWave(document.getElementById('canvasA'), peaksA, "A");
+        drawWave(document.getElementById('canvasB'), peaksB, "B");
+
+        bpmA = calculateBPM(peaksA);
+        bpmB = calculateBPM(peaksB);
+        document.getElementById('bpm1').innerText = `(推定BPM: ${bpmA})`;
+        document.getElementById('bpm2').innerText = `(推定BPM: ${bpmB})`;
+
+        log(`曲A BPM: ${bpmA} / 曲B BPM: ${bpmB}`);
+        
+        // --- 再生フェーズ ---
+        startExperiment(bufA, bufB);
+    };
+
+    async function decodeFile(handle) {
+        const file = await handle.getFile();
+        const arrayBuffer = await file.arrayBuffer();
+        return await audioCtx.decodeAudioData(arrayBuffer);
+    }
+
+    function analyzeBeats(buffer, isEnd) {
+        const sampleRate = buffer.sampleRate;
+        const duration = buffer.duration;
+        const data = buffer.getChannelData(0);
+        
+        // 解析範囲（15秒分）
+        const offset = isEnd ? Math.max(0, (duration - 15) * sampleRate) : 0;
+        const length = 15 * sampleRate;
+        
+        let peaks = [];
+        const threshold = 0.7; // ピーク検出のしきい値
+        
+        for (let i = 0; i < length; i += 441) { // 10msごとにスキャン
+            const idx = Math.floor(offset + i);
+            if (idx >= data.length) break;
+            if (Math.abs(data[idx]) > threshold) {
+                // 連続する山を避けるため、200ms間隔を空ける
+                if (peaks.length === 0 || (i / sampleRate) - peaks[peaks.length - 1].time > 0.2) {
+                    peaks.push({ time: i / sampleRate, absTime: idx / sampleRate });
+                }
+            }
+        }
+        return peaks;
+    }
+
+    function calculateBPM(peaks) {
+        if (peaks.length < 2) return 120;
+        let intervals = [];
+        for (let i = 1; i < peaks.length; i++) {
+            intervals.push(peaks[i].time - peaks[i-1].time);
+        }
+        const avgInterval = intervals.reduce((a, b) => a + b) / intervals.length;
+        let bpm = Math.round(60 / avgInterval);
+        while (bpm < 100) bpm *= 2;
+        while (bpm > 200) bpm /= 2;
+        return bpm;
+    }
+
+    function drawWave(canvas, peaks, label) {
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.strokeStyle = label === "A" ? "#007bff" : "#28a745";
+        ctx.beginPath();
+        peaks.forEach(p => {
+            const x = (p.time / 15) * canvas.width;
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, canvas.height);
+        });
+        ctx.stroke();
+    }
+
+    function startExperiment(bufA, bufB) {
+        log("実験再生開始...");
+        
+        audioSourceA = audioCtx.createBufferSource();
+        audioSourceA.buffer = bufA;
+        
+        audioSourceB = audioCtx.createBufferSource();
+        audioSourceB.buffer = bufB;
+        
+        // 曲Bの速度を曲Aに合わせる（ビートマッチング）
+        const rate = bpmA / bpmB;
+        audioSourceB.playbackRate.value = rate;
+        log(`曲Bの速度を ${rate.toFixed(2)}倍 に調整しました。`);
+
+        // ゲイン（フェード用）
+        const gainA = audioCtx.createGain();
+        const gainB = audioCtx.createGain();
+        audioSourceA.connect(gainA).connect(audioCtx.destination);
+        audioSourceB.connect(gainB).connect(audioCtx.destination);
+
+        const now = audioCtx.currentTime;
+        const crossfadeTime = 5; // 5秒間でクロスフェード
+        
+        // 曲Aを残り10秒地点から再生（実験を早く終わらせるため）
+        const startTimeA = Math.max(0, bufA.duration - 10);
+        audioSourceA.start(now, startTimeA);
+        log(`曲Aを終了 ${Math.round(bufA.duration - startTimeA)}秒前 から再生中...`);
+
+        // 接続計算
+        // 曲Aが終わるタイミングで曲Bをぶつける
+        const timeUntilEndA = bufA.duration - startTimeA;
+        const syncTime = now + timeUntilEndA - crossfadeTime;
+
+        // フェードオートメーション
+        gainA.gain.setValueAtTime(1, syncTime);
+        gainA.gain.linearRampToValueAtTime(0, syncTime + crossfadeTime);
+        
+        gainB.gain.setValueAtTime(0, syncTime);
+        gainB.gain.linearRampToValueAtTime(1, syncTime + crossfadeTime);
+
+        audioSourceB.start(syncTime);
+        
+        log(`${Math.round(timeUntilEndA - crossfadeTime)}秒後に接続が開始されます...`);
+    }
+
+    document.getElementById('stopBtn').onclick = () => {
+        if (audioSourceA) audioSourceA.stop();
+        if (audioSourceB) audioSourceB.stop();
+        log("停止しました。");
+        document.getElementById('startBtn').disabled = false;
+    };
+</script>
+</body>
+</html>
