@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BEAT-LINK 実験室 Ver 0.5 (1曲精密解析)</title>
+    <style>
+        body { font-family: sans-serif; background: #121212; color: #e0e0e0; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; background: #1e1e1e; padding: 20px; border-radius: 15px; }
+        .wave-wrapper { width: 100%; overflow-x: auto; background: #000; margin: 20px 0; border: 1px solid #444; }
+        .canvas-container { width: 5000px; height: 200px; position: relative; }
+        canvas { width: 100%; height: 100%; }
+        .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        button { padding: 15px; border-radius: 8px; border: none; font-weight: bold; cursor: pointer; }
+        .btn-folder { background: #6f42c1; color: white; grid-column: span 2; }
+        .btn-play { background: #28a745; color: white; }
+        #log { margin-top: 20px; background: #000; padding: 10px; font-size: 0.8em; color: #00ff00; height: 120px; overflow-y: auto; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>🔬 精密解析 Ver 0.5 (1曲集中)</h1>
+    <p style="font-size: 0.8em; color: #aaa;">ターゲット: 02-HANABI_1.m4a</p>
+
+    <div class="wave-wrapper">
+        <div class="canvas-container">
+            <canvas id="mainCanvas"></canvas>
+        </div>
+    </div>
+
+    <div class="controls">
+        <button class="btn-folder" id="folderBtn">📁 フォルダを選択して解析</button>
+        <button class="btn-play" id="playBtn" disabled>▶ メトロノーム再生テスト</button>
+        <button style="background:#dc3545; color:white;" onclick="location.reload()">⏹ 停止・リセット</button>
+    </div>
+
+    <div id="log">ログ：フォルダを選択してください...</div>
+</div>
+
+<script>
+    let audioCtx, bufA, peaks = [], bpm = 0;
+    let sourceA;
+
+    const log = (msg) => {
+        const d = document.getElementById('log');
+        d.innerHTML = `> ${msg}<br>${d.innerHTML}`;
+    };
+
+    document.getElementById('folderBtn').onclick = async () => {
+        try {
+            const root = await window.showDirectoryPicker();
+            for await (const e of root.values()) {
+                if (e.name === "02-HANABI_1.m4a") {
+                    log("ターゲット発見。解析を開始します...");
+                    await processFile(e);
+                    return;
+                }
+            }
+            alert("02-HANABI_1.m4a が見つかりませんでした。");
+        } catch (e) { log("Error: " + e.message); }
+    };
+
+    async function processFile(handle) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const file = await handle.getFile();
+        bufA = await audioCtx.decodeAudioData(await file.arrayBuffer());
+        
+        // --- 1. 低域フィルターを模した解析 ---
+        log("低域(BASS)成分を抽出中...");
+        peaks = analyzeLowPeaks(bufA);
+        
+        // --- 2. BPMの統計的算出 ---
+        bpm = estimateBPM(peaks);
+        log(`推定BPM: ${bpm}`);
+
+        // --- 3. 可視化 ---
+        drawWave();
+        document.getElementById('playBtn').disabled = false;
+        log("準備完了。メトロノームが一定か聴いてください。");
+    }
+
+    function analyzeLowPeaks(buffer) {
+        const data = buffer.getChannelData(0);
+        const sr = buffer.sampleRate;
+        const scanStart = Math.max(0, buffer.duration - 30); // 最後30秒
+        const startIdx = Math.floor(scanStart * sr);
+        const found = [];
+        
+        // 簡易的な移動平均で低域のエネルギーを追跡
+        let lastPeakTime = 0;
+        for (let i = 0; i < 30 * sr; i += 400) {
+            const val = Math.abs(data[startIdx + i]);
+            if (val > 0.3) {
+                const time = i / sr;
+                if (time - lastPeakTime > 0.28) { // 最小間隔
+                    found.push({ relTime: time, absTime: scanStart + time });
+                    lastPeakTime = time;
+                }
+            }
+        }
+        return found;
+    }
+
+    function estimateBPM(pList) {
+        if (pList.length < 5) return 120;
+        let intervals = [];
+        for (let i = 1; i < pList.length; i++) intervals.push(pList[i].relTime - pList[i-1].relTime);
+        intervals.sort();
+        const median = intervals[Math.floor(intervals.length / 2)];
+        let b = Math.round(60 / median);
+        while (b < 150) b *= 1; // 適切な範囲に調整
+        return b;
+    }
+
+    function drawWave() {
+        const canvas = document.getElementById('mainCanvas');
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0,0, canvas.width, canvas.height);
+        ctx.strokeStyle = "#007bff";
+        ctx.lineWidth = 2;
+        peaks.forEach(p => {
+            const x = (p.relTime / 30) * canvas.width;
+            ctx.beginPath(); ctx.moveTo(x, 40); ctx.lineTo(x, 160); ctx.stroke();
+        });
+    }
+
+    document.getElementById('playBtn').onclick = () => {
+        const now = audioCtx.currentTime;
+        sourceA = audioCtx.createBufferSource();
+        sourceA.buffer = bufA;
+        sourceA.connect(audioCtx.destination);
+        
+        const scanStart = Math.max(0, bufA.duration - 30);
+        sourceA.start(now, scanStart);
+
+        // --- メトロノームを等間隔(BPM)で強制生成 ---
+        const interval = 60 / bpm;
+        // 最初のピーク位置を基準にする
+        const firstBeat = peaks[0].absTime;
+        
+        for (let i = 0; i < 60; i++) {
+            const beatTime = firstBeat + (i * interval);
+            if (beatTime < scanStart) continue;
+            
+            const click = audioCtx.createBufferSource();
+            click.buffer = createClick(1000);
+            click.connect(audioCtx.destination);
+            click.start(now + (beatTime - scanStart));
+        }
+        log("メトロノーム再生中。青い線と音が合っているか確認！");
+    };
+
+    function createClick(freq) {
+        const b = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.1, audioCtx.sampleRate);
+        const d = b.getChannelData(0);
+        for (let i = 0; i < d.length; i++) {
+            d[i] = Math.sin(2 * Math.PI * freq * i / audioCtx.sampleRate) * Math.exp(-20 * i / (audioCtx.sampleRate * 0.1));
+        }
+        return b;
+    }
+</script>
+</body>
+</html>
