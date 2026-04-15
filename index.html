@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BEAT-LINK Ver 0.95</title>
+    <style>
+        body { font-family: sans-serif; background: #121212; color: #e0e0e0; text-align: center; margin: 0; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; background: #1e1e1e; padding: 30px; border-radius: 25px; border: 1px solid #333; }
+        .phase-container { display: flex; justify-content: space-between; margin-bottom: 20px; gap: 8px; }
+        .phase-card { flex: 1; padding: 10px; background: #2a2a2a; border-radius: 10px; font-size: 0.7em; opacity: 0.4; }
+        .phase-card.active { opacity: 1; background: #007bff; box-shadow: 0 0 15px rgba(0,123,255,0.4); }
+        .bpm-main { font-size: 3.5em; font-weight: bold; color: #00ff88; margin: 15px 0; }
+        .tap-area { 
+            width: 100%; height: 250px; background: #252525; border: 4px dashed #444; border-radius: 20px;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            cursor: pointer; user-select: none; touch-action: manipulation;
+        }
+        .tap-area.counting { border-color: #ffc107; color: #ffc107; background: #2a2310; }
+        .tap-area.active { border-style: solid; border-color: #007bff; color: #007bff; }
+        .log-box { margin-top: 20px; background: #000; padding: 15px; border-radius: 12px; font-family: monospace; font-size: 0.8em; text-align: left; color: #00ff00; height: 100px; overflow-y: auto; }
+        button { padding: 15px 30px; border-radius: 12px; border: none; font-weight: bold; cursor: pointer; background: #6f42c1; color: white; font-size: 1em; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>🔬 精密解析 Ver 0.95</h2>
+    
+    <div class="phase-container">
+        <div id="ph1" class="phase-card">序盤</div>
+        <div id="ph2" class="phase-card">中盤</div>
+        <div id="ph3" class="phase-card">終盤</div>
+        <div id="ph4" class="phase-card">検証</div>
+    </div>
+
+    <div class="bpm-main" id="bpmDisplay">READY</div>
+
+    <div class="tap-area" id="tapArea">
+        <div id="tapLabel" style="font-size: 1.5em; font-weight: bold;">フォルダを選択</div>
+        <div id="tapSub" style="font-size: 0.9em; margin-top: 10px; color: #888;">02-HANABI_1.m4a を解析</div>
+    </div>
+
+    <div style="margin-top: 25px;">
+        <button id="folderBtn">📁 フォルダ選択</button>
+        <button onclick="location.reload()" style="background:#444; margin-left:10px;">⏹ リセット</button>
+    </div>
+
+    <div class="log-box" id="log"></div>
+</div>
+
+<script>
+    let audioCtx, audioBuf, currentSource;
+    let currentPhase = 0;
+    let scanOffsets = [];
+    let tapResults = [];
+    let tempTaps = [];
+
+    const log = (msg) => {
+        const d = document.getElementById('log');
+        d.innerHTML = `> ${msg}<br>${d.innerHTML}`;
+    };
+
+    document.getElementById('folderBtn').onclick = async () => {
+        try {
+            const root = await window.showDirectoryPicker();
+            for await (const entry of root.values()) {
+                if (entry.name === "02-HANABI_1.m4a") {
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                    audioBuf = await audioCtx.decodeAudioData(await (await entry.getFile()).arrayBuffer());
+                    scanOffsets = [5, audioBuf.duration * 0.5, audioBuf.duration * 0.9];
+                    document.getElementById('folderBtn').style.display = 'none';
+                    startSequence();
+                    return;
+                }
+            }
+            alert("ファイルが見逃されています！");
+        } catch (e) { log(e.message); }
+    };
+
+    async function startSequence() {
+        currentPhase++;
+        if (currentPhase > 3) {
+            calculateFinal();
+            return;
+        }
+
+        // --- 5秒の準備期間 ---
+        document.querySelectorAll('.phase-card').forEach((el, i) => el.classList.toggle('active', i === currentPhase - 1));
+        document.getElementById('tapArea').className = 'tap-area counting';
+        
+        for (let i = 5; i > 0; i--) {
+            document.getElementById('tapLabel').innerText = `準備: ${i}`;
+            document.getElementById('tapSub').innerText = `次は ${Math.floor(scanOffsets[currentPhase-1])}秒付近です`;
+            await new Promise(r => setTimeout(r, 1000));
+        }
+
+        // --- 再生開始 ---
+        document.getElementById('tapArea').className = 'tap-area active';
+        document.getElementById('tapLabel').innerText = "TAP! (12回)";
+        log(`Stage ${currentPhase} 開始`);
+        
+        currentSource = audioCtx.createBufferSource();
+        currentSource.buffer = audioBuf;
+        currentSource.connect(audioCtx.destination);
+        currentSource.start(0, scanOffsets[currentPhase - 1], 30);
+        
+        tempTaps = [];
+    }
+
+    document.getElementById('tapArea').onpointerdown = () => {
+        if (currentPhase < 1 || currentPhase > 3 || document.getElementById('tapArea').classList.contains('counting')) return;
+        
+        const now = audioCtx.currentTime;
+        tempTaps.push(now);
+        document.getElementById('tapSub').innerText = `タップ数: ${tempTaps.length} / 12`;
+
+        if (tempTaps.length >= 12) {
+            // 後半8回（index 4〜11）を抽出
+            const stable8 = tempTaps.slice(4);
+            const intervals = [];
+            for (let i = 1; i < stable8.length; i++) intervals.push(stable8[i] - stable8[i-1]);
+            
+            const avg = intervals.reduce((a, b) => a + b) / intervals.length;
+            const bpm = 60 / avg;
+            
+            // 後半8回の最後のタップ位置を基準点とする
+            const absPos = scanOffsets[currentPhase-1] + (stable8[7] - tempTaps[0]);
+            tapResults.push({ absPos, bpm });
+            
+            log(`Stage ${currentPhase} 完了: BPM ${bpm.toFixed(2)}`);
+            if (currentSource) currentSource.stop();
+            startSequence();
+        }
+    };
+
+    function calculateFinal() {
+        const p1 = tapResults[0];
+        const p3 = tapResults[2];
+        const duration = p3.absPos - p1.absPos;
+        const estimatedBeats = Math.round(duration * (p1.bpm / 60));
+        const finalBpm = (estimatedBeats * 60) / duration;
+
+        document.getElementById('bpmDisplay').innerText = finalBpm.toFixed(3);
+        document.getElementById('tapLabel').innerText = "検証開始！";
+        document.getElementById('tapSub').innerText = "全編同期メトロノーム";
+        document.getElementById('ph4').className = 'phase-card active';
+        log(`最終確定BPM: ${finalBpm.toFixed(4)}`);
+
+        // フル再生
+        const fullSource = audioCtx.createBufferSource();
+        fullSource.buffer = audioBuf;
+        fullSource.connect(audioCtx.destination);
+        const startTime = audioCtx.currentTime;
+        fullSource.start(startTime);
+
+        const interval = 60 / finalBpm;
+        const firstBeatOffset = p1.absPos % interval;
+
+        for (let i = 0; i < (audioBuf.duration / interval) + 1; i++) {
+            const beatTime = startTime - firstBeatOffset + (i * interval);
+            if (beatTime >= startTime) scheduleTick(beatTime);
+        }
+    }
+
+    function scheduleTick(t) {
+        const osc = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        osc.connect(g); g.connect(audioCtx.destination);
+        osc.frequency.setValueAtTime(1200, t);
+        g.gain.setValueAtTime(0.4, t);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.1);
+        osc.start(t); osc.stop(t + 0.1);
+    }
+</script>
+</body>
+</html>
