@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>BEAT-LINK Ver 0.97</title>
+    <style>
+        body { font-family: sans-serif; background: #121212; color: #e0e0e0; text-align: center; margin: 0; padding: 15px; }
+        .container { max-width: 550px; margin: 0 auto; background: #1e1e1e; padding: 25px; border-radius: 25px; border: 1px solid #333; }
+        .phase-container { display: flex; justify-content: space-between; margin-bottom: 20px; gap: 8px; }
+        .phase-card { flex: 1; padding: 10px; background: #2a2a2a; border-radius: 10px; font-size: 0.7em; opacity: 0.3; }
+        .phase-card.active { opacity: 1; background: #007bff; }
+        .bpm-main { font-size: 3.5em; font-weight: bold; color: #00ff88; margin: 15px 0; min-height: 1.2em; }
+        .tap-area { 
+            width: 100%; height: 250px; background: #252525; border: 4px dashed #444; border-radius: 20px;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            cursor: pointer; user-select: none; touch-action: none;
+        }
+        .tap-area.counting { border-color: #ffc107; color: #ffc107; }
+        .tap-area.active { border-style: solid; border-color: #007bff; color: #007bff; background: #1a1a2e; }
+        .log-box { margin-top: 15px; background: #000; padding: 12px; border-radius: 10px; font-family: monospace; font-size: 0.75em; text-align: left; color: #00ff00; height: 100px; overflow-y: auto; }
+        .btn-start { padding: 18px 35px; border-radius: 15px; border: none; font-weight: bold; background: #6f42c1; color: white; font-size: 1.1em; cursor: pointer; width: 100%; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>🔬 解析 Ver 0.97 (位相同期)</h2>
+    <div class="phase-container">
+        <div id="ph1" class="phase-card">序盤</div>
+        <div id="ph2" class="phase-card">中盤</div>
+        <div id="ph3" class="phase-card">終盤</div>
+        <div id="ph4" class="phase-card">検証</div>
+    </div>
+    <div class="bpm-main" id="bpmDisplay">READY</div>
+    <div class="tap-area" id="tapArea">
+        <div id="tapLabel" style="font-size: 1.5em; font-weight: bold;">02-HANABI_1.m4a</div>
+        <div id="tapSub" style="font-size: 0.9em; margin-top: 10px; color: #888;">フォルダを選択して開始</div>
+    </div>
+    <div id="controlBtnArea" style="margin-top: 25px;">
+        <button id="folderBtn" class="btn-start">📁 フォルダ選択 & 解析開始</button>
+    </div>
+    <div class="log-box" id="log"></div>
+</div>
+
+<script>
+    let audioCtx, audioBuf, currentSource, currentPhase = 0, scanOffsets = [], tapResults = [], tempTaps = [];
+    const log = (msg) => { const d = document.getElementById('log'); d.innerHTML = `> ${msg}<br>${d.innerHTML}`; };
+
+    document.getElementById('folderBtn').onclick = async () => {
+        try {
+            const root = await window.showDirectoryPicker();
+            let fileHandle = null;
+            for await (const entry of root.values()) { if (entry.name === "02-HANABI_1.m4a") { fileHandle = entry; break; } }
+            if (!fileHandle) { alert("ファイルが見つかりません"); return; }
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            audioBuf = await audioCtx.decodeAudioData(await (await fileHandle.getFile()).arrayBuffer());
+            scanOffsets = [5, audioBuf.duration * 0.5, audioBuf.duration * 0.9];
+            document.getElementById('controlBtnArea').style.display = 'none';
+            startPhaseSequence();
+        } catch (e) { log("Error: " + e.message); }
+    };
+
+    async function startPhaseSequence() {
+        currentPhase++;
+        if (currentPhase > 3) { calculateFinalResult(); return; }
+        document.querySelectorAll('.phase-card').forEach((el, i) => el.classList.toggle('active', i === currentPhase - 1));
+        const tapArea = document.getElementById('tapArea');
+        tapArea
