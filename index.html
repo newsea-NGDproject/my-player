@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BEAT-LINK: Wave-Module 2</title>
+    <style>
+        body { font-family: sans-serif; background: #121212; color: #e0e0e0; text-align: center; padding: 20px; }
+        .container { max-width: 500px; margin: 0 auto; background: #1e1e1e; padding: 20px; border-radius: 20px; border: 1px solid #444; }
+        .monitor { background: #000; padding: 20px; border-radius: 15px; margin: 20px 0; }
+        .bpm-display { font-size: 3em; color: #00ff88; font-weight: bold; }
+        .btn-main { padding: 15px 30px; font-size: 1.1em; background: #007bff; color: white; border: none; border-radius: 10px; cursor: pointer; width: 100%; }
+        .log { text-align: left; font-family: monospace; font-size: 0.8em; background: #000; padding: 10px; height: 150px; overflow-y: auto; color: #00ff00; margin-top: 10px; }
+        .progress-bar { width: 0%; height: 5px; background: #00ff88; transition: width 0.1s; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>波形解析モジュール 2</h2>
+    <p style="font-size: 0.8em; color: #888;">網掛けスライド・マッチング試験</p>
+    
+    <div class="monitor">
+        <div id="bpmView" class="bpm-display">120.00</div>
+        <div id="status">READY</div>
+        <div style="width: 100%; background: #333; margin-top: 10px;"><div id="prog" class="progress-bar"></div></div>
+    </div>
+
+    <button id="startBtn" class="btn-main">📁 曲を選択して解析</button>
+    
+    <div class="log" id="logBox"></div>
+</div>
+
+<script>
+    let audioCtx, audioBuf, currentSource;
+    let bpm = 120; // マイピッチ基準
+    const log = (m) => { const b = document.getElementById('logBox'); b.innerHTML = `> ${m}<br>${b.innerHTML}`; };
+
+    document.getElementById('startBtn').onclick = async () => {
+        try {
+            const [fileHandle] = await window.showOpenFilePicker();
+            const file = await fileHandle.getFile();
+            log(`読み込み中: ${file.name}`);
+            
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            audioBuf = await audioCtx.decodeAudioData(await file.arrayBuffer());
+            
+            analyzeWaveform();
+        } catch (e) { log("エラー: " + e.message); }
+    };
+
+    async function analyzeWaveform() {
+        document.getElementById('status').innerText = "波形スキャン中...";
+        const rawData = audioBuf.getChannelData(0); // モノラルとして解析
+        const sampleRate = audioBuf.sampleRate;
+        const step = Math.floor(sampleRate * 0.01); // 10ms単位で解析
+        const peaks = [];
+
+        // 1. 波形のエネルギー（頂点）を抽出
+        for (let i = 0; i < rawData.length; i += step) {
+            let max = 0;
+            for (let j = 0; j < step && (i + j) < rawData.length; j++) {
+                const val = Math.abs(rawData[i + j]);
+                if (val > max) max = val;
+            }
+            peaks.push(max);
+        }
+
+        log(`ピーク抽出完了: ${peaks.length} ポイント`);
+
+        // 2. スライド・マッチング開始
+        document.getElementById('status').innerText = "網掛けスライド中...";
+        const beatIvl = 60 / bpm; // 120BPMなら0.5秒
+        const stepSec = 0.005; // 5msずつズラしてチェック
+        let bestOffset = 0;
+        let maxScore = -1;
+
+        // 1拍の長さ分、網をスライドさせて一番重なる場所を探す
+        for (let offset = 0; offset < beatIvl; offset += stepSec) {
+            let score = 0;
+            for (let t = offset; t < audioBuf.duration; t += beatIvl) {
+                const idx = Math.floor(t / 0.01);
+                if (idx < peaks.length) {
+                    score += peaks[idx]; // メトロノームが鳴る瞬間の音圧を足していく
+                }
+            }
+            if (score > maxScore) {
+                maxScore = score;
+                bestOffset = offset;
+            }
+            document.getElementById('prog').style.width = (offset / beatIvl * 100) + "%";
+        }
+
+        log(`最適オフセット確定: ${bestOffset.toFixed(3)}s`);
+        startPlayback(bestOffset);
+    }
+
+    function startPlayback(offset) {
+        if (currentSource) currentSource.stop();
+        currentSource = audioCtx.createBufferSource();
+        currentSource.buffer = audioBuf;
+        currentSource.connect(audioCtx.destination);
+        
+        const startTime = audioCtx.currentTime;
+        currentSource.start(0);
+        document.getElementById('status').innerText = "再生・同期中";
+        
+        // メトロノーム予約 (120BPM)
+        const ivl = 60 / bpm;
+        for (let t = offset; t < audioBuf.duration; t += ivl) {
+            if (t >= 0) scheduleTick(startTime + t);
+        }
+    }
+
+    function scheduleTick(t) {
+        const osc = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        osc.connect(g); g.connect(audioCtx.destination);
+        osc.frequency.setValueAtTime(1500, t);
+        osc.type = 'square'; // 抜ける音
+        g.gain.setValueAtTime(0.5, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+        osc.start(t); osc.stop(t + 0.15);
+    }
+</script>
+
+</body>
+</html>
