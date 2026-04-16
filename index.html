@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BPM Analyzer Test</title>
+    <style>
+        body { font-family: sans-serif; background: #121212; color: #e0e0e0; text-align: center; padding: 20px; }
+        .container { max-width: 500px; margin: 0 auto; background: #1e1e1e; padding: 30px; border-radius: 30px; border: 1px solid #444; }
+        .monitor { background: #000; padding: 30px; border-radius: 20px; margin: 20px 0; border: 2px solid #00ff88; }
+        .bpm-val { font-size: 4em; color: #00ff88; font-weight: bold; font-family: 'Courier New', monospace; }
+        .btn-main { padding: 20px; font-size: 1.2em; background: #007bff; color: white; border: none; border-radius: 15px; cursor: pointer; width: 100%; font-weight: bold; box-shadow: 0 4px #0056b3; }
+        .btn-main:active { box-shadow: none; transform: translateY(4px); }
+        .log { text-align: left; font-size: 0.75em; background: #000; padding: 15px; height: 120px; overflow-y: auto; color: #00ff00; margin-top: 15px; border-radius: 10px; border: 1px solid #333; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>BPM自動解析 精度テスト</h2>
+    
+    <div class="monitor">
+        <div id="status" style="font-size: 0.9em; margin-bottom: 10px; color: #888;">READY</div>
+        <div id="bpmDisplay" class="bpm-val">---.--</div>
+        <div style="font-size: 0.8em; color: #aaa; margin-top: 10px;">Detected BPM</div>
+    </div>
+
+    <button id="fileBtn" class="btn-main">📁 曲を選択してテスト開始</button>
+    
+    <div class="log" id="logBox"></div>
+</div>
+
+<script>
+    let audioCtx, audioBuf, currentSource;
+    const log = (m) => { const b = document.getElementById('logBox'); b.innerHTML = `> ${m}<br>${b.innerHTML}`; };
+
+    document.getElementById('fileBtn').onclick = async () => {
+        try {
+            const [fileHandle] = await window.showOpenFilePicker();
+            const file = await fileHandle.getFile();
+            log(`読み込み中: ${file.name}`);
+            
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            audioBuf = await audioCtx.decodeAudioData(await file.arrayBuffer());
+            
+            analyzeBPM();
+        } catch (e) { log("エラー: " + e.message); }
+    };
+
+    async function analyzeBPM() {
+        document.getElementById('status').innerText = "ANALYZING WAVEFORM...";
+        
+        // 低域フィルタをかけてキックドラムを強調する疑似解析
+        const rawData = audioBuf.getChannelData(0);
+        const sampleRate = audioBuf.sampleRate;
+        const peaks = [];
+        const threshold = 0.2; // 検出感度
+
+        // ピーク検出（簡易アタック検出）
+        for (let i = 0; i < rawData.length; i++) {
+            if (Math.abs(rawData[i]) > threshold) {
+                peaks.push(i / sampleRate);
+                i += Math.floor(sampleRate * 0.25); // 次の250ms（240BPM相当）はスキップ
+            }
+        }
+
+        // 間隔（Interval）からBPM候補を算出
+        const intervals = [];
+        for (let i = 1; i < peaks.length; i++) {
+            const diff = peaks[i] - peaks[i-1];
+            if (diff > 0.3 && diff < 1.0) { // 60BPM〜200BPMの範囲
+                intervals.push(diff);
+            }
+        }
+
+        // 最も頻度の高い間隔を採用
+        const counts = {};
+        intervals.forEach(ivl => { 
+            const rounded = Math.round(ivl * 100) / 100; // 10ms単位で丸める
+            counts[rounded] = (counts[rounded] || 0) + 1; 
+        });
+        const sorted = Object.entries(counts).sort((a,b) => b[1] - a[1]);
+        
+        if (sorted.length === 0) {
+            log("BPMが検出できませんでした。");
+            return;
+        }
+
+        const bestInterval = parseFloat(sorted[0][0]);
+        const detectedBpm = 60 / bestInterval;
+
+        document.getElementById('bpmDisplay').innerText = detectedBpm.toFixed(2);
+        document.getElementById('status').innerText = "PLAYING WITH METRONOME";
+        log(`解析BPM: ${detectedBpm.toFixed(4)}`);
+
+        startVerification(detectedBpm);
+    }
+
+    function startVerification(bpm) {
+        if (currentSource) currentSource.stop();
+        currentSource = audioCtx.createBufferSource();
+        currentSource.buffer = audioBuf;
+        currentSource.connect(audioCtx.destination);
+        
+        const startTime = audioCtx.currentTime;
+        currentSource.start(0);
+        
+        const interval = 60 / bpm;
+        // 曲の0秒からメトロノームを開始
+        for (let t = 0; t < audioBuf.duration; t += interval) {
+            const tickTime = startTime + t;
+            if (tickTime >= audioCtx.currentTime) scheduleTick(tickTime);
+        }
+    }
+
+    function scheduleTick(t) {
+        const osc = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        osc.connect(g); g.connect(audioCtx.destination);
+        osc.frequency.setValueAtTime(1500, t); // 高い音
+        osc.type = 'square'; // 鋭い音
+        g.gain.setValueAtTime(0.5, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+        osc.start(t); osc.stop(t + 0.15);
+    }
+</script>
+</body>
+</html>
