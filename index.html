@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link rel="manifest" href="manifest.json">
+    <title>Beat-Link Mod Ver 1.5</title>
+    <style>
+        body { font-family: sans-serif; background: #121212; color: #e0e0e0; text-align: center; margin: 0; padding: 10px; }
+        .container { max-width: 500px; margin: 0 auto; background: #1e1e1e; padding: 15px; border-radius: 25px; border: 1px solid #333; }
+        .monitor { background: #000; padding: 15px; border-radius: 15px; border: 2px solid #007bff; margin-bottom: 10px; }
+        .bpm-view { font-size: 3em; font-weight: bold; color: #00ff88; font-family: monospace; line-height: 1.2; }
+        .ts-display { font-size: 1.1em; color: #ffcc00; font-family: monospace; margin-bottom: 5px; }
+
+        .adj-group { background: #252525; padding: 10px; border-radius: 15px; margin-bottom: 10px; border: 1px solid #444; }
+        .adj-row { display: flex; justify-content: center; align-items: center; gap: 8px; margin: 5px 0; }
+        .btn-mini { padding: 10px; background: #444; border: none; color: white; border-radius: 8px; cursor: pointer; flex: 1; font-weight: bold; font-size: 0.85em; }
+        
+        .tap-zone { height: 160px; background: #1a1a1a; border: 3px dashed #444; border-radius: 20px; display: flex; align-items: center; justify-content: center; cursor: pointer; margin-bottom: 15px; }
+        
+        .btn-action { width: 100%; padding: 15px; border: none; border-radius: 12px; font-weight: bold; font-size: 1.1em; cursor: pointer; margin-bottom: 10px; }
+        .btn-next { background: #6f42c1; color: white; }
+        .btn-file { background: #007bff; color: white; }
+        .log { text-align: left; font-family: monospace; font-size: 0.7em; background: #000; padding: 10px; height: 80px; overflow-y: auto; color: #00ff00; margin-top: 10px; border-radius: 10px; }
+        
+        /* 最終確認エリア */
+        #finalCheckArea { display: none; background: #2a2a2a; padding: 15px; border-radius: 15px; border: 2px solid #28a745; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="monitor">
+        <div id="statusLabel" style="font-size: 0.8em; color: #aaa; margin-bottom: 5px;">BPM & 1拍目位置</div>
+        <div id="bpmDisplay" class="bpm-view">---.--</div>
+        <div id="tsDisplay" class="ts-display">TS: --.---s</div>
+    </div>
+
+    <div id="tapArea" class="tap-zone">
+        <div id="tapLabel" style="font-size: 1.2em; font-weight: bold;">READY</div>
+    </div>
+
+    <div id="adjustPanel" style="display:none;">
+        <div class="adj-group">
+            <div style="font-size:0.7em; color:#888;">BPM間隔微調整</div>
+            <div class="adj-row">
+                <button class="btn-mini" onclick="adjBpm(-0.01)">-0.01</button>
+                <button class="btn-mini" onclick="adjBpm(0.01)">+0.01</button>
+            </div>
+        </div>
+        <div class="adj-group">
+            <div style="font-size:0.7em; color:#888;">1拍目スライド (ms)</div>
+            <input type="range" id="slipLatency" min="0" max="500" value="0" style="width:90%">
+            <div class="adj-row">
+                <button class="btn-mini" onclick="nudgeLatency(-10)">-10ms</button>
+                <button class="btn-mini" onclick="nudgeLatency(-1)">-1ms</button>
+                <button class="btn-mini" onclick="nudgeLatency(1)">+1ms</button>
+                <button class="btn-mini" onclick="nudgeLatency(10)">+10ms</button>
+            </div>
+        </div>
+        <button id="nextBtn" class="btn-action btn-next" onclick="proceedToNext()">納得！次へ進む</button>
+        <button id="inheritBtn" class="btn-action" style="display:none; background:#444; color:white;" onclick="inheritBpm()">1箇所目のBPMを使う</button>
+    </div>
+
+    <div id="finalCheckArea">
+        <div style="color:#00ff88; font-weight:bold; margin-bottom:10px;">🏆 最終確認：2地点ワープ</div>
+        <div class="adj-row">
+            <button class="btn-action" style="background:#007bff;" onclick="warpCheck('start')">開始アンカーへ</button>
+            <button class="btn-action" style="background:#6f42c1;" onclick="warpCheck('end')">終了アンカーへ</button>
+        </div>
+        <button class="btn-action" style="background:#28a745;" onclick="saveAndFinish()">これで決定！接続へ進む</button>
+    </div>
+
+    <button id="fileBtn" class="btn-action btn-file">📁 曲を読み込む</button>
+    <div id="logBox" class="log"></div>
+</div>
+
+<script>
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+
+    let audioCtx, audioBuf, currentSource;
+    let mode = 'start'; 
+    let startTime = 0, currentOffset = 0;
+    let tempTaps = [];
+    let scheduledTicks = [];
+    let config = { 
+        adjBpm: 0, 
+        startOff: 0, 
+        endOff: 0, 
+        latency: 0, 
+        anchors: { start: 5, end: 0 } 
+    };
+
+    const log = (m) => { const b = document.getElementById('logBox'); b.innerHTML = `> ${m}<br>${b.innerHTML}`; };
+
+    document.getElementById('fileBtn').onclick = async () => {
+        try {
+            const [fileHandle] = await window.showOpenFilePicker();
+            const file = await fileHandle.getFile();
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            audioBuf = await audioCtx.decodeAudioData(await file.arrayBuffer());
+            config.anchors.end = Math.max(0, audioBuf.duration - 25); 
+            startPhase('start');
+        } catch (e) { log("エラー: " + e.message); }
+    };
+
+    function startPhase(m) {
+        mode = m; tempTaps = [];
+        document.getElementById('adjustPanel').style.display = 'none';
+        document.getElementById('finalCheckArea').style.display = 'none';
+        document.getElementById('tapArea').style.display = 'flex';
+        document.getElementById('tapLabel').innerText = (mode === 'start' ? "開始" : "終了") + "地点タップ(12回)";
+        document.getElementById('inheritBtn').style.display = (mode === 'end' ? 'block' : 'none');
+        playAt(config.anchors[mode], false);
+    }
+
+    document.getElementById('tapArea').onpointerdown = () => {
+        const now = (audioCtx.currentTime - startTime) + currentOffset;
+        tempTaps.push(now);
+        if (tempTaps.length >= 12) {
+            const stable = tempTaps.slice(4);
+            let ivls = [];
+            for(let i=1; i<stable.length; i++) ivls.push(stable[i] - stable[i-1]);
+            config.adjBpm = 60 / (ivls.reduce((a,b)=>a+b, 0) / ivls.length);
+            if (mode === 'start') config.startOff = stable[0]; else config.endOff = stable[0];
+            showAdjustPanel();
+        }
+    };
+
+    function showAdjustPanel() {
+        document.getElementById('tapArea').style.display = 'none';
+        document.getElementById('adjustPanel').style.display = 'block';
+        updateDisplay();
+        playAt(currentOffset, true);
+    }
+
+    function updateDisplay() {
+        document.getElementById('bpmDisplay').innerText = config.adjBpm.toFixed(2);
+        const currentTS = (mode === 'start') ? config.startOff : config.endOff;
+        document.getElementById('tsDisplay').innerText = `TS: ${currentTS.toFixed(3)}s`;
+    }
+
+    function adjBpm(val) {
+        config.adjBpm += val;
+        updateDisplay();
+        playAt(currentOffset, true);
+    }
+
+    function nudgeLatency(ms) {
+        config.latency = Math.max(0, Math.min(500, config.latency + ms));
+        document.getElementById('slipLatency').value = config.latency;
+        playAt(currentOffset, true);
+    }
+
+    document.getElementById('slipLatency').oninput = (e) => {
+        config.latency = parseInt(e.target.value);
+        playAt(currentOffset, true);
+    };
+
+    function inheritBpm() {
+        log("1箇所目のBPMを適用。");
+        showAdjustPanel();
+    }
+
+    function proceedToNext() {
+        if (mode === 'start') { log("開始点確定。"); startPhase('end'); }
+        else { showFinalCheck(); }
+    }
+
+    function showFinalCheck() {
+        document.getElementById('adjustPanel').style.display = 'none';
+        document.getElementById('finalCheckArea').style.display = 'block';
+        log("最終確認モード。2つの地点をチェックしてください。");
+        stopAll();
+    }
+
+    function warpCheck(target) {
+        mode = target;
+        const targetTime = (target === 'start') ? config.startOff : config.endOff;
+        log(`${target}アンカーへジャンプ (${targetTime.toFixed(3)}s)`);
+        playAt(targetTime, true);
+    }
+
+    function saveAndFinish() {
+        log("✅ すべての接続情報を保存しました！");
+        alert("補正完了！\nBPM: " + config.adjBpm.toFixed(2) + "\nStart TS: " + config.startOff.toFixed(3) + "\nEnd TS: " + config.endOff.toFixed(3));
+    }
+
+    function playAt(time, withMetronome) {
+        if (currentSource) currentSource.stop();
+        clearTicks();
+        currentSource = audioCtx.createBufferSource();
+        currentSource.buffer = audioBuf;
+        currentSource.connect(audioCtx.destination);
+        startTime = audioCtx.currentTime;
+        currentOffset = time;
+        currentSource.start(0, time);
+        if (withMetronome) scheduleMetronome();
+    }
+
+    function scheduleMetronome() {
+        const ivl = 60 / config.adjBpm;
+        const anchor = (mode === 'start') ? config.startOff : config.endOff;
+        const lat = config.latency / 1000;
+        for (let t = anchor - (ivl * 10); t < currentOffset + 60; t += ivl) {
+            if (t >= currentOffset) scheduleTick(startTime + (t - currentOffset) + lat);
+        }
+    }
+
+    function scheduleTick(t) {
+        const osc = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        osc.connect(g); g.connect(audioCtx.destination);
+        osc.frequency.setValueAtTime(1500, t);
+        osc.type = 'square';
+        g.gain.setValueAtTime(0.4, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+        osc.start(t); osc.stop(t + 0.15);
+        scheduledTicks.push(osc);
+    }
+
+    function clearTicks() { scheduledTicks.forEach(o => { try{o.stop();}catch(e){} }); scheduledTicks = []; }
+    function stopAll() { if(currentSource) currentSource.stop(); clearTicks(); }
+</script>
+</body>
+</html>
