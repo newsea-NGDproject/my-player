@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Beat-Link Mod Ver 1.3</title>
+    <style>
+        body { font-family: sans-serif; background: #121212; color: #e0e0e0; text-align: center; margin: 0; padding: 10px; }
+        .container { max-width: 500px; margin: 0 auto; background: #1e1e1e; padding: 15px; border-radius: 25px; border: 1px solid #333; }
+        .monitor { background: #000; padding: 15px; border-radius: 15px; border: 2px solid #007bff; margin-bottom: 10px; position: relative; }
+        .bpm-view { font-size: 3em; font-weight: bold; color: #00ff88; font-family: monospace; }
+        
+        /* BPM微調整ボタン */
+        .bpm-adj { display: flex; justify-content: center; align-items: center; gap: 15px; margin-top: 5px; }
+        .btn-mini { padding: 5px 15px; background: #333; border: 1px solid #555; color: white; border-radius: 5px; cursor: pointer; }
+
+        .tap-zone {
+            height: 180px; background: #252525; border: 3px dashed #444; border-radius: 20px;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            cursor: pointer; user-select: none; touch-action: none; margin-bottom: 15px;
+        }
+
+        #adjustPanel { display: none; background: #2a2a2a; padding: 15px; border-radius: 15px; margin-bottom: 15px; }
+        .slider-label { display: flex; justify-content: space-between; font-size: 0.9em; margin-bottom: 10px; }
+        input[type=range] { width: 100%; height: 20px; }
+
+        .btn-action { width: 100%; padding: 15px; border: none; border-radius: 12px; font-weight: bold; font-size: 1.1em; cursor: pointer; margin-bottom: 10px; }
+        .btn-next { background: #6f42c1; color: white; }
+        .btn-file { background: #007bff; color: white; }
+        .log { text-align: left; font-family: monospace; font-size: 0.75em; background: #000; padding: 10px; height: 100px; overflow-y: auto; color: #00ff00; margin-top: 10px; border-radius: 10px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="monitor">
+        <div id="bpmDisplay" class="bpm-view">---.--</div>
+        <div class="bpm-adj">
+            <button class="btn-mini" onclick="adjBpm(-0.01)">-0.01</button>
+            <span style="font-size: 0.8em; color:#888;">BPM微調整</span>
+            <button class="btn-mini" onclick="adjBpm(0.01)">+0.01</button>
+        </div>
+        <div id="statusLabel" style="color: #aaa; margin-top:10px;">曲を読み込んでください</div>
+    </div>
+
+    <div id="tapArea" class="tap-zone">
+        <div class="tap-count" id="tapLabel">WAITING</div>
+        <div id="tapSub" style="font-size: 0.8em; color: #888; margin-top: 5px;"></div>
+    </div>
+
+    <div id="adjustPanel">
+        <div style="color: #00ff88; font-weight: bold; margin-bottom: 10px;">👂 聴覚補正：ズレを直してくれ</div>
+        <div class="slider-label"><span>遅延補正 (Bluetooth)</span><span id="valLatency">0ms</span></div>
+        <input type="range" id="slipLatency" min="0" max="500" value="0">
+        
+        <div style="display: flex; gap: 10px; margin-top: 15px;">
+            <button class="btn-action" style="background:#444; color:white; margin:0;" onclick="nudgeLatency(-10)">-10ms</button>
+            <button class="btn-action" style="background:#444; color:white; margin:0;" onclick="nudgeLatency(10)">+10ms</button>
+        </div>
+        
+        <button id="nextBtn" class="btn-action btn-next" style="margin-top:20px;" onclick="proceedToNext()">納得！次へ進む ➔</button>
+    </div>
+
+    <button id="fileBtn" class="btn-action btn-file">📁 曲を読み込む</button>
+    <div id="logBox" class="log"></div>
+</div>
+
+<script>
+    let audioCtx, audioBuf, currentSource;
+    let mode = 'start'; 
+    let startTime = 0, currentOffset = 0;
+    let tempTaps = [];
+    let scheduledTicks = [];
+    let config = { bpm: 0, startOff: 0, endOff: 0, latency: 0, anchors: { start: 0, end: 0 } };
+
+    const log = (m) => { const b = document.getElementById('logBox'); b.innerHTML = `> ${m}<br>${b.innerHTML}`; };
+
+    document.getElementById('fileBtn').onclick = async () => {
+        try {
+            const [fileHandle] = await window.showOpenFilePicker();
+            const file = await fileHandle.getFile();
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            audioBuf = await audioCtx.decodeAudioData(await file.arrayBuffer());
+            config.anchors.start = 5; 
+            config.anchors.end = Math.max(0, audioBuf.duration - 25); 
+            startPhase('start');
+        } catch (e) { log("エラー: " + e.message); }
+    };
+
+    function startPhase(m) {
+        mode = m; tempTaps = [];
+        document.getElementById('adjustPanel').style.display = 'none';
+        document.getElementById('tapArea').style.display = 'flex';
+        document.getElementById('tapLabel').innerText = (mode === 'start' ? "開始" : "終了") + "地点タップ";
+        playAt(config.anchors[mode], false);
+    }
+
+    function playAt(time, withMetronome) {
+        if (currentSource) currentSource.stop();
+        clearTicks();
+        currentSource = audioCtx.createBufferSource();
+        currentSource.buffer = audioBuf;
+        currentSource.connect(audioCtx.destination);
+        startTime = audioCtx.currentTime;
+        currentOffset = time;
+        currentSource.start(0, time);
+        if (withMetronome && config.bpm > 0) scheduleMetronome();
+    }
+
+    document.getElementById('tapArea').onpointerdown = () => {
+        const now = (audioCtx.currentTime - startTime) + currentOffset;
+        tempTaps.push(now);
+        document.getElementById('tapSub').innerText = `計測中: ${tempTaps.length} / 12`;
+        if (tempTaps.length >= 12) {
+            const stable = tempTaps.slice(4);
+            let ivls = [];
+            for(let i=1; i<stable.length; i++) ivls.push(stable[i] - stable[i-1]);
+            config.bpm = 60 / (ivls.reduce((a,b)=>a+b, 0) / ivls.length);
+            if (mode === 'start') config.startOff = stable[0]; else config.endOff = stable[0];
+            updateBpmDisplay();
+            showAdjustPanel();
+        }
+    };
+
+    function updateBpmDisplay() {
+        document.getElementById('bpmDisplay').innerText = config.bpm.toFixed(2);
+    }
+
+    // BPM微調整 & 頭戻し
+    function adjBpm(val) {
+        config.bpm += val;
+        updateBpmDisplay();
+        log(`BPM調整: ${config.bpm.toFixed(2)}`);
+        playAt(currentOffset, true); // 頭戻し再生
+    }
+
+    function showAdjustPanel() {
+        document.getElementById('tapArea').style.display = 'none';
+        document.getElementById('adjustPanel').style.display = 'block';
+        playAt(currentOffset, true);
+    }
+
+    // 遅延補正の連動（スライダー & ボタン）
+    document.getElementById('slipLatency').oninput = (e) => {
+        config.latency = parseInt(e.target.value);
+        syncLatencyUI();
+        playAt(currentOffset, true);
+    };
+
+    function nudgeLatency(ms) {
+        config.latency = Math.max(0, Math.min(500, config.latency + ms));
+        syncLatencyUI();
+        playAt(currentOffset, true); // 頭戻し
+    }
+
+    function syncLatencyUI() {
+        document.getElementById('valLatency').innerText = config.latency + "ms";
+        document.getElementById('slipLatency').value = config.latency;
+    }
+
+    function proceedToNext() {
+        if (mode === 'start') { log("開始アンカー確定。"); startPhase('end'); }
+        else { log("全工程完了！"); document.getElementById('statusLabel').innerText = "全工程完了・保存準備よし"; if(currentSource) currentSource.stop(); clearTicks(); }
+    }
+
+    function scheduleMetronome() {
+        const ivl = 60 / config.bpm;
+        const anchor = (mode === 'start') ? config.startOff : config.endOff;
+        const lat = config.latency / 1000;
+        for (let t = anchor - (ivl*10); t < currentOffset + 60; t += ivl) {
+            if (t >= currentOffset) scheduleTick(startTime + (t - currentOffset) + lat);
+        }
+    }
+
+    function scheduleTick(t) {
+        const osc = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        osc.connect(g); g.connect(audioCtx.destination);
+        osc.frequency.setValueAtTime(1500, t);
+        osc.type = 'square';
+        g.gain.setValueAtTime(0.4, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+        osc.start(t); osc.stop(t + 0.15);
+        scheduledTicks.push(osc);
+    }
+
+    function clearTicks() { scheduledTicks.forEach(o => { try{o.stop();}catch(e){} }); scheduledTicks = []; }
+</script>
+</body>
+</html>
