@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#007bff">
+    <title>Tap Sync Module V1.0</title>
+    <style>
+        body { font-family: sans-serif; background: #121212; color: #e0e0e0; text-align: center; margin: 0; padding: 10px; }
+        .container { max-width: 500px; margin: 0 auto; background: #1e1e1e; padding: 15px; border-radius: 25px; border: 1px solid #333; }
+        .monitor { background: #000; padding: 15px; border-radius: 15px; border: 2px solid #007bff; margin-bottom: 10px; min-height: 140px; display: flex; flex-direction: column; justify-content: center; }
+        .bpm-view { font-size: 3.5em; font-weight: bold; color: #00ff88; font-family: monospace; line-height: 1.1; }
+        .ts-view { font-size: 1.1em; color: #ffcc00; font-family: monospace; margin: 5px 0; }
+        .latency-badge { display: inline-block; background: #ff3e3e; color: white; padding: 2px 10px; border-radius: 5px; font-size: 0.9em; font-weight: bold; }
+
+        .guide-text { font-size: 0.9em; color: #00ff88; font-weight: bold; margin: 10px 0; background: rgba(0,255,136,0.1); padding: 8px; border-radius: 5px; }
+        .mini-guide { font-size: 0.75em; color: #aaa; margin-top: 4px; text-align: center; }
+
+        .adj-group { background: #2a2a2a; padding: 12px; border-radius: 15px; margin-bottom: 10px; border-left: 5px solid #00ff88; text-align: left; }
+        .adj-title { font-size: 0.8em; font-weight: bold; margin-bottom: 8px; color: #aaa; }
+        .adj-row { display: flex; gap: 5px; }
+        .btn-mini { flex: 1; padding: 12px 5px; background: #444; border: none; color: white; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 1.1em; }
+
+        .btn-action { width: 100%; padding: 18px; border: none; border-radius: 15px; font-weight: bold; font-size: 1.2em; cursor: pointer; margin-bottom: 10px; }
+        .btn-next { background: #6f42c1; color: white; box-shadow: 0 4px #4b2d89; }
+        .btn-file { background: #007bff; color: white; }
+        .btn-inherit { background: #444; color: #fff; border: 1px solid #666; font-size: 1em; margin-bottom: 15px; width: 100%; border-radius: 10px; padding: 10px; cursor: pointer; }
+        
+        .tap-zone { height: 120px; background: #1a1a1a; border: 3px dashed #444; border-radius: 20px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; margin-bottom: 15px; }
+        .log { text-align: left; font-family: monospace; font-size: 0.8em; background: #000; padding: 12px; border-radius: 10px; margin-top: 10px; color: #00ff00; border: 1px solid #333; }
+        
+        /* 結果画面用 */
+        #resultPanel { background: #002200; border: 2px solid #00ff88; padding: 15px; border-radius: 15px; margin-top: 15px; text-align: left; display: none; }
+        .res-line { border-bottom: 1px dashed #005500; padding: 5px 0; font-family: monospace; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="monitor">
+        <div id="modeLabel" style="font-size:0.7em; color:#007bff; font-weight:bold;">READY</div>
+        <div id="bpmDisplay" class="bpm-view">---.--</div>
+        <div id="tsDisplay" class="ts-view">TS: --.---s</div>
+        <div id="latencyDisplay" class="latency-badge">Slide: 0ms</div>
+    </div>
+
+    <div id="guide" class="guide-text">曲を読み込んで解析を開始してください</div>
+
+    <div id="tapArea" class="tap-zone" style="display:none;">
+        <div id="tapLabel" style="font-size: 1.1em; font-weight: bold;">リズムに合わせて12回タップ</div>
+        <div id="tapCount" style="font-size: 0.9em; color: #888; margin-top: 5px;">準備完了</div>
+    </div>
+
+    <div id="adjustPanel" style="display:none;">
+        <button id="inheritBtn" class="btn-inherit" onclick="inheritBpm()" style="display:none;">
+            開始地点のBPM ( <span id="prevBpmLabel">---</span> ) を引き継ぐ
+        </button>
+
+        <div class="adj-group" style="border-color: #00ff88;">
+            <div class="adj-title">① メトロノーム速度を曲に合わせて下さい</div>
+            <div class="adj-row">
+                <button class="btn-mini" onclick="adjBpm(-0.1)">-0.1</button>
+                <button class="btn-mini" onclick="adjBpm(-0.01)">-0.01</button>
+                <button class="btn-mini" onclick="adjBpm(0.01)">+0.01</button>
+                <button class="btn-mini" onclick="adjBpm(0.1)">+0.1</button>
+            </div>
+            <div class="mini-guide">※数値を上げると速くなります</div>
+        </div>
+
+        <div class="adj-group" style="border-color: #ffcc00;">
+            <div class="adj-title">② 一拍目位置スライド（Bluetooth遅延補正）</div>
+            <div class="adj-row">
+                <button class="btn-mini" onclick="nudgeLatency(-10)">-10ms</button>
+                <button class="btn-mini" onclick="nudgeLatency(-1)">-1ms</button>
+                <button class="btn-mini" onclick="nudgeLatency(1)">+1ms</button>
+                <button class="btn-mini" onclick="nudgeLatency(10)">+10ms</button>
+            </div>
+            <div class="mini-guide">※Bluetooth遅延は+250前後が目安です</div>
+        </div>
+        
+        <button id="nextActionBtn" class="btn-action btn-next" onclick="proceedToNext()">これで確定！次へ</button>
+    </div>
+
+    <div id="resultPanel">
+        <div style="font-weight:bold; color:#00ff88; margin-bottom:10px;">★解析完了：真の楽曲データ</div>
+        <div class="res-line" id="resBpm">BPM: --</div>
+        <div class="res-line" id="resStart">Start One-Beat: --s</div>
+        <div class="res-line" id="resEnd">End One-Beat: --s</div>
+        <div class="res-line" id="resLat">System Latency: --ms</div>
+        <button class="btn-action btn-file" style="margin-top:15px;" onclick="location.reload()">別の曲を解析する</button>
+    </div>
+
+    <button id="fileBtn" class="btn-action btn-file">📁 解析する曲を読み込む</button>
+    <div id="logBox" class="log">> Standby...</div>
+</div>
+
+<script>
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('sw.js').catch(err => console.log(err));
+    }
+
+    let audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    let currentSong = null;
+    let mode = 'start'; 
+    let currentSource = null, startTime = 0, currentOffset = 0;
+    
+    // 音量バランス
+    let songGain = audioCtx.createGain(); 
+    songGain.connect(audioCtx.destination);
+    songGain.gain.value = 0.5; // 楽曲は50%
+
+    let tempTaps = [];
+    let scheduledTicks = [];
+    let currentLatencyTotal = 0;
+
+    const log = (m) => { const b = document.getElementById('logBox'); b.innerHTML = `> ${m}`; };
+
+    document.getElementById('fileBtn').onclick = async () => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.onchange = async (e) => {
+            const file = e.target.files[0];
+            log(`${file.name} を読込中...`);
+            const arrayBuffer = await file.arrayBuffer();
+            const buffer = await audioCtx.decodeAudioData(arrayBuffer);
+            currentSong = { buffer: buffer, config: { adjBpm: 120, startOff: 0, endOff: 0, startBpm: 0 } };
+            document.getElementById('fileBtn').style.display = 'none';
+            startPhase('start');
+        };
+        input.click();
+    };
+
+    function startPhase(m) {
+        mode = m; tempTaps = []; currentLatencyTotal = 0;
+        document.getElementById('adjustPanel').style.display = 'none';
+        document.getElementById('tapArea').style.display = 'flex';
+        document.getElementById('guide').innerText = (mode === 'start' ? "【開始地点】" : "【終了地点】") + "のBPMを計測します";
+        document.getElementById('modeLabel').innerText = mode.toUpperCase() + " TAP ANALYZE";
+        
+        // 解析ポイントへシーク（開始は5秒、終了はラスト25秒付近）
+        const initialPos = (mode === 'start') ? 5 : currentSong.buffer.duration - 25;
+        playAt(initialPos, false);
+    }
+
+    document.getElementById('tapArea').onpointerdown = (e) => {
+        e.preventDefault();
+        const now = (audioCtx.currentTime - startTime) + currentOffset;
+        tempTaps.push(now);
+        document.getElementById('tapCount').innerText = `${tempTaps.length} / 12`;
+        
+        if (tempTaps.length >= 12) {
+            const stable = tempTaps.slice(4); // 最初の4回を捨てる
+            let ivls = [];
+            for(let i=1; i<stable.length; i++) ivls.push(stable[i] - stable[i-1]);
+            const avgIvl = ivls.reduce((a,b)=>a+b, 0) / ivls.length;
+            currentSong.config.adjBpm = 60 / avgIvl;
+            
+            if (mode === 'start') {
+                currentSong.config.startOff = stable[0];
+                currentSong.config.startBpm = currentSong.config.adjBpm; // 引き継ぎ用
+            } else {
+                currentSong.config.endOff = stable[0];
+            }
+            showAdjustPanel();
+        }
+    };
+
+    function showAdjustPanel() {
+        document.getElementById('tapArea').style.display = 'none';
+        document.getElementById('adjustPanel').style.display = 'block';
+        document.getElementById('guide').innerText = "メトロノームの速度を曲に合わせて下さい";
+        
+        // 引き継ぎボタン：END地点の調整時のみ、START地点のBPMを表示
+        const inheritBtn = document.getElementById('inheritBtn');
+        if (mode === 'end') {
+            inheritBtn.style.display = 'block';
+            document.getElementById('prevBpmLabel').innerText = currentSong.config.startBpm.toFixed(2);
+        } else {
+            inheritBtn.style.display = 'none';
+        }
+        
+        updateDisplay();
+        playAt(currentOffset, true);
+    }
+
+    function inheritBpm() {
+        currentSong.config.adjBpm = currentSong.config.startBpm;
+        log("開始地点のBPMを反映しました。");
+        updateDisplay();
+        playAt(currentOffset, true);
+    }
+
+    function updateDisplay() {
+        document.getElementById('bpmDisplay').innerText = currentSong.config.adjBpm.toFixed(2);
+        const ts = (mode === 'start') ? currentSong.config.startOff : currentSong.config.endOff;
+        document.getElementById('tsDisplay').innerText = `TS: ${ts.toFixed(3)}s`;
+        document.getElementById('latencyDisplay').innerText = `Slide: ${currentLatencyTotal}ms`;
+    }
+
+    function adjBpm(val) { 
+        currentSong.config.adjBpm += val; 
+        updateDisplay(); 
+        playAt(currentOffset, true);
+    }
+
+    function nudgeLatency(ms) {
+        currentLatencyTotal += ms;
+        if (mode === 'start') currentSong.config.startOff += (ms/1000); 
+        else currentSong.config.endOff += (ms/1000);
+        updateDisplay(); 
+        playAt(currentOffset, true);
+    }
+
+    function playAt(time, withMetronome) {
+        stopAll();
+        currentSource = audioCtx.createBufferSource();
+        currentSource.buffer = currentSong.buffer;
+        currentSource.connect(songGain);
+        startTime = audioCtx.currentTime; 
+        currentOffset = time;
+        currentSource.start(0, time);
+        
+        if (withMetronome) {
+            const ivl = 60 / currentSong.config.adjBpm;
+            const anchor = (mode === 'start') ? currentSong.config.startOff : currentSong.config.endOff;
+            // メトロノーム予約
+            for (let t = anchor - (ivl * 20); t < currentOffset + 30; t += ivl) {
+                if (t >= currentOffset) scheduleTick(startTime + (t - currentOffset));
+            }
+        }
+    }
+
+    function scheduleTick(t) {
+        const osc = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        osc.connect(g); g.connect(audioCtx.destination);
+        osc.frequency.setValueAtTime(1500, t);
+        g.gain.setValueAtTime(0.8, t); // メトロノームはハッキリ
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+        osc.start(t); osc.stop(t + 0.15);
+        scheduledTicks.push(osc);
+    }
+
+    function stopAll() {
+        if (currentSource) try{currentSource.stop();}catch(e){}
+        scheduledTicks.forEach(o => { try{o.stop();}catch(e){} });
+        scheduledTicks = [];
+    }
+
+    function proceedToNext() {
+        if (mode === 'start') {
+            startPhase('end');
+        } else {
+            // 解析完了処理
+            stopAll();
+            document.getElementById('adjustPanel').style.display = 'none';
+            document.getElementById('guide').style.display = 'none';
+            document.getElementById('modeLabel').innerText = "COMPLETE";
+            
+            document.getElementById('resultPanel').style.display = 'block';
+            document.getElementById('resBpm').innerText = `真のBPM: ${currentSong.config.adjBpm.toFixed(2)}`;
+            document.getElementById('resStart').innerText = `真の開始位置: ${currentSong.config.startOff.toFixed(3)}s`;
+            document.getElementById('resEnd').innerText = `真の終了位置: ${currentSong.config.endOff.toFixed(3)}s`;
+            document.getElementById('resLat').innerText = `Bluetooth遅延(Slide): ${currentLatencyTotal}ms`;
+            log("楽曲解析が完了しました。数値を保存してください。");
+        }
+    }
+</script>
+</body>
+</html>
