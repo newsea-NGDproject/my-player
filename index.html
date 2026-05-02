@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Link Module V1.5 - Anti-Alien</title>
+    <style>
+        body { font-family: sans-serif; background: #121212; color: #e0e0e0; text-align: center; margin: 0; padding: 10px; }
+        .container { max-width: 500px; margin: 0 auto; background: #1e1e1e; padding: 15px; border-radius: 25px; border: 1px solid #333; }
+        .monitor { background: #000; padding: 15px; border-radius: 15px; border: 2px solid #ff00ff; margin-bottom: 10px; }
+        .status-text { font-size: 1.1em; color: #00ff88; font-family: monospace; }
+        .btn-action { width: 100%; padding: 18px; border: none; border-radius: 15px; font-weight: bold; font-size: 1.1em; cursor: pointer; margin-bottom: 10px; }
+        .btn-blue { background: #007bff; color: white; }
+        .btn-magenta { background: #ff00ff; color: white; }
+        .btn-red { background: #550000; color: #ff8888; width: 100%; border: none; padding: 10px; border-radius: 10px; }
+        .bpm-input { width: 100%; background: #000; border: 1px solid #444; color: #00ff88; font-size: 2em; text-align: center; border-radius: 10px; padding: 10px; box-sizing: border-box; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2 style="color:#ff00ff; margin:0 0 15px 0;">LINK MODULE V1.5</h2>
+    <div class="monitor">
+        <div id="linkStatus" class="status-text">音源をロードしてください</div>
+        <div id="timerDisplay" style="font-size: 2.5em; font-weight: bold; font-family: monospace;">00:00.00</div>
+    </div>
+
+    <div style="text-align:left; padding:10px;">
+        <button class="btn-action btn-blue" onclick="pickFile(0)">🎵 曲1 ロード</button>
+        <button class="btn-action btn-blue" onclick="pickFile(1)">🎵 曲2 ロード</button>
+        <label style="color:#888; font-size:0.8em;">目標BPM</label>
+        <input type="number" id="targetBpm" class="bpm-input" value="128.0" step="0.1">
+    </div>
+
+    <button id="previewBtn" class="btn-action btn-magenta" onclick="startLinkPreview()" disabled>🔗 接続テスト（宇宙人対策版）</button>
+    <button class="btn-red" onclick="stopAll()">STOP</button>
+</div>
+
+<script>
+    let audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    let songBuffers = [null, null];
+    let sources = [null, null];
+    let gains = [null, null];
+    let songData = [null, null];
+    let isPlaying = false;
+    let scheduledTicks = [];
+
+    window.onload = () => {
+        const d0 = localStorage.getItem("song_0_data");
+        const d1 = localStorage.getItem("song_1_data");
+        if (d0 && d1) {
+            songData[0] = JSON.parse(d0);
+            songData[1] = JSON.parse(d1);
+        }
+    };
+
+    async function pickFile(idx) {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.onchange = async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            document.getElementById('linkStatus').innerText = `曲${idx+1} 読込中...`;
+            const arrayBuffer = await file.arrayBuffer();
+            songBuffers[idx] = await audioCtx.decodeAudioData(arrayBuffer);
+            document.getElementById('linkStatus').innerText = `曲${idx+1} OK`;
+            if (songBuffers[0] && songBuffers[1]) document.getElementById('previewBtn').disabled = false;
+        };
+        input.click();
+    }
+
+    // --- ここが宇宙人対策の核心 ---
+    function createProtectedSource(buffer, rate) {
+        const source = audioCtx.createBufferSource();
+        source.buffer = buffer;
+        
+        // 【重要】再生速度を入れる「前」にピッチ維持を宣言する
+        if ('preservesPitch' in source) {
+            source.preservesPitch = true;
+        } else if ('webkitPreservesPitch' in source) {
+            source.webkitPreservesPitch = true;
+        }
+
+        // その後に速度をセット
+        source.playbackRate.value = rate;
+        
+        return source;
+    }
+
+    function startLinkPreview() {
+        if (isPlaying) return;
+        audioCtx.resume();
+        isPlaying = true;
+        const targetBpm = parseFloat(document.getElementById('targetBpm').value);
+        const beatSec = 60 / targetBpm;
+
+        // 曲1
+        const rate1 = targetBpm / songData[0].bpm;
+        sources[0] = createProtectedSource(songBuffers[0], rate1);
+        gains[0] = audioCtx.createGain();
+        sources[0].connect(gains[0]);
+        gains[0].connect(audioCtx.destination);
+
+        // 曲2
+        const rate2 = targetBpm / songData[1].bpm;
+        sources[1] = createProtectedSource(songBuffers[1], rate2);
+        gains[1] = audioCtx.createGain();
+        gains[1].gain.value = 0;
+        sources[1].connect(gains[1]);
+        gains[1].connect(audioCtx.destination);
+
+        const now = audioCtx.currentTime + 0.2; // 開始までの余裕を少し増やす
+        const bPoint = songData[0].endTS;
+        const startOffset = bPoint - 10;
+        const linkTime = now + ((bPoint - startOffset) / rate1);
+        const fadeDuration = beatSec * 4;
+
+        // 再生開始
+        sources[0].start(now, Math.max(0, startOffset));
+        
+        const s2Start = linkTime - (fadeDuration / 2);
+        const s2Offset = (songData[1].startTS + (songData[1].latency/1000)) - ((fadeDuration / 2) * rate2);
+        sources[1].start(s2Start, Math.max(0, s2Offset));
+
+        // フェード処理
+        gains[0].gain.setValueAtTime(1.0, linkTime - (fadeDuration / 2));
+        gains[0].gain.linearRampToValueAtTime(0.0, linkTime + (fadeDuration / 2));
+        gains[1].gain.setValueAtTime(0.0, linkTime - (fadeDuration / 2));
+        gains[1].gain.linearRampToValueAtTime(1.0, linkTime + (fadeDuration / 2));
+
+        // メトロノーム（確認用）
+        for (let i = -15; i < 30; i++) scheduleTick(linkTime + (i * beatSec));
+        
+        updateMonitor(now, linkTime);
+    }
+
+    function scheduleTick(t) {
+        const osc = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        osc.connect(g); g.connect(audioCtx.destination);
+        osc.frequency.setValueAtTime(1500, t);
+        g.gain.setValueAtTime(0.3, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+        osc.start(t); osc.stop(t + 0.1);
+        scheduledTicks.push(osc);
+    }
+
+    function updateMonitor(startTime, linkTime) {
+        if (!isPlaying) return;
+        const now = audioCtx.currentTime;
+        document.getElementById('timerDisplay').innerText = (now - startTime).toFixed(2) + "s";
+        if (now < linkTime + 2) requestAnimationFrame(() => updateMonitor(startTime, linkTime));
+    }
+
+    function stopAll() {
+        sources.forEach(s => { if(s) try{s.stop();}catch(e){} });
+        scheduledTicks.forEach(o => { try{o.stop();}catch(e){} });
+        sources = [null, null]; scheduledTicks = []; isPlaying = false;
+        document.getElementById('linkStatus').innerText = "STOPPED";
+    }
+</script>
+</body>
+</html>
