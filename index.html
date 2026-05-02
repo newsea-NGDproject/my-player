@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Link Module V2.1 - Double Debug</title>
+    <style>
+        body { font-family: sans-serif; background: #121212; color: #e0e0e0; text-align: center; margin: 0; padding: 10px; }
+        .container { max-width: 550px; margin: 0 auto; background: #1e1e1e; padding: 15px; border-radius: 25px; border: 1px solid #333; }
+        .monitor { background: #000; padding: 15px; border-radius: 15px; border: 2px solid #ff00ff; margin-bottom: 10px; }
+        .status-text { font-size: 0.9em; color: #00ff88; font-family: monospace; }
+        .input-group { background: #2a2a2a; padding: 12px; border-radius: 15px; margin-bottom: 10px; text-align: left; }
+        .bpm-input { width: 100%; background: #000; border: 1px solid #444; color: #00ff88; font-size: 1.8em; text-align: center; border-radius: 10px; padding: 8px; box-sizing: border-box; }
+        .btn-action { width: 100%; padding: 15px; border: none; border-radius: 12px; font-weight: bold; cursor: pointer; margin-bottom: 6px; }
+        .btn-magenta { background: #ff00ff; color: white; }
+        .btn-blue { background: #007bff; color: white; }
+        .info { font-size: 0.7em; color: #ffcc00; margin-bottom: 10px; line-height: 1.3; }
+        audio { display: none; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2 style="color:#ff00ff; margin:0 0 10px 0;">LINK MODULE V2.1</h2>
+    
+    <div class="info">
+        【ダブル検証】<br>
+        ● 高音(2kH)：1曲目の終わり基準（全編鳴動）<br>
+        ● 低音(1kH)：2曲目の一拍目から逆算（全編鳴動）
+    </div>
+
+    <div class="monitor">
+        <div id="linkStatus" class="status-text">音源をロードしてください</div>
+        <div id="timerDisplay" style="font-size: 2.2em; font-weight: bold; font-family: monospace; margin:5px 0;">00:00.00</div>
+    </div>
+
+    <div class="input-group">
+        <label style="color:#bbb; font-size:0.75em;">目標BPM</label>
+        <input type="number" id="targetBpm" class="bpm-input" value="128.0" step="0.1">
+    </div>
+
+    <div class="input-group">
+        <button class="btn-action btn-blue" onclick="document.getElementById('file0').click()">🎵 曲1 ロード</button>
+        <input type="file" id="file0" accept="audio/*" onchange="loadAudio(0, this)" style="display:none">
+        
+        <button class="btn-action btn-blue" onclick="document.getElementById('file1').click()">🎵 曲2 ロード</button>
+        <input type="file" id="file1" accept="audio/*" onchange="loadAudio(1, this)" style="display:none">
+    </div>
+
+    <div class="input-group" style="background:#331133;">
+        <button id="previewBtn" class="btn-action btn-magenta" onclick="startVerificationLink(0, 1)" disabled>🔗 正接続 (1→2) 検証再生</button>
+        <button id="reverseBtn" class="btn-action btn-magenta" style="background:#aa00aa;" onclick="startVerificationLink(1, 0)" disabled>🔄 逆接続 (2→1) 検証再生</button>
+    </div>
+
+    <button class="btn-action" style="background:#550000; color:#ff8888;" onclick="stopAll()">STOP / RESET</button>
+</div>
+
+<audio id="player0"></audio>
+<audio id="player1"></audio>
+
+<script>
+    const players = [document.getElementById('player0'), document.getElementById('player1')];
+    let audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    let songData = [null, null];
+    let isPlaying = false;
+    let mainLoop = null;
+    let lastTick1 = 0;
+    let lastTick2 = 0;
+
+    window.onload = () => {
+        const d0 = localStorage.getItem("song_0_data");
+        const d1 = localStorage.getItem("song_1_data");
+        if (d0 && d1) {
+            songData[0] = JSON.parse(d0);
+            songData[1] = JSON.parse(d1);
+        }
+    };
+
+    function loadAudio(idx, input) {
+        const file = input.files[0];
+        if (!file) return;
+        players[idx].src = URL.createObjectURL(file);
+        players[idx].load();
+        players[idx].preservesPitch = true;
+        players[idx].webkitPreservesPitch = true;
+        document.getElementById('linkStatus').innerText = `曲${idx+1} READY`;
+        if (players[0].src && players[1].src) document.getElementById('previewBtn').disabled = false;
+    }
+
+    function startVerificationLink(fromIdx, toIdx) {
+        if (isPlaying) return;
+        stopAll();
+        audioCtx.resume();
+        isPlaying = true;
+
+        const targetBpm = parseFloat(document.getElementById('targetBpm').value);
+        const beatSec = 60 / targetBpm;
+        const rateF = targetBpm / songData[fromIdx].bpm;
+        const rateT = targetBpm / songData[toIdx].bpm;
+
+        players[fromIdx].playbackRate = rateF;
+        players[toIdx].playbackRate = rateT;
+        players[fromIdx].volume = 0.4;
+        players[toIdx].volume = 0;
+
+        const bPoint = songData[fromIdx].endTS;
+        const aPoint = songData[toIdx].startTS + (songData[toIdx].latency/1000);
+
+        // 10秒前から開始
+        players[fromIdx].currentTime = Math.max(0, bPoint - 10);
+        players[fromIdx].play();
+
+        let s2Started = false;
+
+        mainLoop = setInterval(() => {
+            const nowF = players[fromIdx].currentTime;
+            const nowT = players[toIdx].currentTime;
+            document.getElementById('timerDisplay').innerText = (s2Started ? nowT : nowF).toFixed(2) + "s";
+
+            // --- 接続処理 ---
+            if (!s2Started && nowF >= bPoint) {
+                players[toIdx].currentTime = aPoint;
+                players[fromIdx].volume = 0;
+                players[fromIdx].pause();
+                players[toIdx].volume = 0.4;
+                players[toIdx].play();
+                s2Started = true;
+                document.getElementById('linkStatus').innerText = "SWITCHED";
+            }
+
+            const curCtxTime = audioCtx.currentTime;
+
+            // --- 【検証用】ダブル・メトロノーム常時走らせ ---
+            
+            // 1. 曲1基準メトロノーム (高音 2500Hz)
+            // 接続点(bPoint)を基準に、全編にわたって拍を計算
+            const timeToB = (bPoint - nowF) / rateF;
+            for(let i = -30; i <= 30; i++) {
+                const t = curCtxTime + timeToB + (i * beatSec);
+                if (t > curCtxTime && t < curCtxTime + 0.05 && Math.abs(t - lastTick1) > 0.1) {
+                    playTick(t, 2500, 0.7); // 高音・強
+                    lastTick1 = t;
+                }
+            }
+
+            // 2. 曲2基準メトロノーム (低音 1000Hz)
+            // 2曲目の一拍目(aPoint)を基準に、1曲目再生中から「あるべき拍」を逆算して鳴らす
+            const timeToA = s2Started ? (aPoint - nowT) / rateT : timeToB; 
+            for(let i = -30; i <= 30; i++) {
+                const t = curCtxTime + timeToA + (i * beatSec);
+                if (t > curCtxTime && t < curCtxTime + 0.05 && Math.abs(t - lastTick2) > 0.1) {
+                    playTick(t, 1000, 0.5); // 低音・弱
+                    lastTick2 = t;
+                }
+            }
+        }, 10);
+    }
+
+    function playTick(t, freq, vol) {
+        const osc = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        osc.connect(g); g.connect(audioCtx.destination);
+        osc.frequency.setValueAtTime(freq, t);
+        g.gain.setValueAtTime(vol, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+        osc.start(t); osc.stop(t + 0.1);
+    }
+
+    function stopAll() {
+        players.forEach(p => { p.pause(); });
+        clearInterval(mainLoop);
+        isPlaying = false;
+        lastTick1 = 0; lastTick2 = 0;
+        document.getElementById('linkStatus').innerText = "STOPPED";
+    }
+</script>
+</body>
+</html>
