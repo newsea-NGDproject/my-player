@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Link Module V1.7 - Final Debugger</title>
+    <style>
+        body { font-family: sans-serif; background: #121212; color: #e0e0e0; text-align: center; margin: 0; padding: 10px; }
+        .container { max-width: 550px; margin: 0 auto; background: #1e1e1e; padding: 15px; border-radius: 25px; border: 1px solid #333; }
+        .monitor { background: #000; padding: 15px; border-radius: 15px; border: 2px solid #ff00ff; margin-bottom: 10px; position: relative; }
+        .status-text { font-size: 1.1em; color: #00ff88; font-family: monospace; }
+        
+        .input-group { background: #2a2a2a; padding: 12px; border-radius: 15px; margin-bottom: 10px; text-align: left; }
+        .bpm-input { width: 100%; background: #000; border: 1px solid #444; color: #00ff88; font-size: 1.8em; text-align: center; border-radius: 10px; padding: 8px; box-sizing: border-box; }
+
+        .btn-action { width: 100%; padding: 15px; border: none; border-radius: 12px; font-weight: bold; cursor: pointer; margin-bottom: 6px; transition: 0.2s; }
+        .btn-blue { background: #007bff; color: white; }
+        .btn-orange { background: #ff8800; color: white; }
+        .btn-green { background: #00aa00; color: white; }
+        .btn-magenta { background: #ff00ff; color: white; }
+        .btn-red { background: #550000; color: #ff8888; font-size: 0.9em; }
+        
+        .test-row { display: flex; gap: 5px; margin-bottom: 5px; }
+        .small-btn { flex: 1; padding: 10px 5px; font-size: 0.7em; border-radius: 8px; border: none; font-weight: bold; color: white; }
+        
+        .ready-badge { color: #00ff88; font-size: 0.7em; display: block; margin-top: 4px; }
+        audio { display: none; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2 style="color:#ff00ff; margin:0 0 10px 0;">LINK MODULE V1.7</h2>
+
+    <div class="monitor">
+        <div id="linkStatus" class="status-text">音源をロードしてください</div>
+        <div id="timerDisplay" style="font-size: 2.2em; font-weight: bold; font-family: monospace; margin:5px 0;">00:00.00</div>
+    </div>
+
+    <div class="input-group">
+        <label style="color:#bbb; font-size:0.75em;">目標BPM (マイ・ピッチ)</label>
+        <input type="number" id="targetBpm" class="bpm-input" value="128.0" step="0.1">
+    </div>
+
+    <div class="input-group" style="border-left: 5px solid #007bff;">
+        <div style="font-weight:bold; font-size:0.8em; margin-bottom:8px; color:#007bff;">曲1 (解析データ0) 検証</div>
+        <button class="btn-action btn-blue" onclick="document.getElementById('file0').click()">🎵 曲1 ロード</button>
+        <input type="file" id="file0" accept="audio/*" onchange="loadAudio(0, this)" style="display:none">
+        <div class="test-row">
+            <button class="small-btn btn-orange" id="raw0" onclick="testSingle(0, false)" disabled>解析BPM確認</button>
+            <button class="small-btn btn-green" id="my0" onclick="testSingle(0, true)" disabled>マイピッチ確認</button>
+        </div>
+        <span id="badge0" class="ready-badge"></span>
+    </div>
+
+    <div class="input-group" style="border-left: 5px solid #007bff;">
+        <div style="font-weight:bold; font-size:0.8em; margin-bottom:8px; color:#007bff;">曲2 (解析データ1) 検証</div>
+        <button class="btn-action btn-blue" onclick="document.getElementById('file1').click()">🎵 曲2 ロード</button>
+        <input type="file" id="file1" accept="audio/*" onchange="loadAudio(1, this)" style="display:none">
+        <div class="test-row">
+            <button class="small-btn btn-orange" id="raw1" onclick="testSingle(1, false)" disabled>解析BPM確認</button>
+            <button class="small-btn btn-green" id="my1" onclick="testSingle(1, true)" disabled>マイピッチ確認</button>
+        </div>
+        <span id="badge1" class="ready-badge"></span>
+    </div>
+
+    <div class="input-group" style="border: 1px solid #ff00ff; background: #221122;">
+        <div style="color:#ff00ff; font-weight:bold; font-size:0.8em; margin-bottom:8px;">ドンピシャ接続テスト</div>
+        <button id="previewBtn" class="btn-action btn-magenta" onclick="startLink(0, 1)" disabled>🔗 曲1 → 曲2 (正接続)</button>
+        <button id="reverseBtn" class="btn-action btn-magenta" style="background:#aa00aa;" onclick="startLink(1, 0)" disabled>🔄 曲2 → 曲1 (逆接続テスト)</button>
+    </div>
+
+    <button class="btn-red btn-action" onclick="stopAll()">緊急停止 / RESET</button>
+</div>
+
+<audio id="player0"></audio>
+<audio id="player1"></audio>
+
+<script>
+    const players = [document.getElementById('player0'), document.getElementById('player1')];
+    let audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    let songData = [null, null];
+    let isPlaying = false;
+    let mainLoop = null;
+    let scheduledTicks = [];
+
+    window.onload = () => {
+        const d0 = localStorage.getItem("song_0_data");
+        const d1 = localStorage.getItem("song_1_data");
+        if (d0 && d1) {
+            songData[0] = JSON.parse(d0);
+            songData[1] = JSON.parse(d1);
+        } else {
+            alert("解析データが見つからないぜ！");
+        }
+    };
+
+    function loadAudio(idx, input) {
+        const file = input.files[0];
+        if (!file) return;
+        players[idx].src = URL.createObjectURL(file);
+        players[idx].load();
+        
+        // ピッチ維持設定（宇宙人撃退）
+        players[idx].preservesPitch = true;
+        players[idx].webkitPreservesPitch = true;
+
+        document.getElementById(`badge${idx}`).innerText = `READY: ${file.name}`;
+        document.getElementById(`raw${idx}`).disabled = false;
+        document.getElementById(`my${idx}`).disabled = false;
+        if (players[0].src && players[1].src) {
+            document.getElementById('previewBtn').disabled = false;
+            document.getElementById('reverseBtn').disabled = false;
+        }
+    }
+
+    // --- 検証1: 単体テスト ---
+    function testSingle(idx, useMyPitch) {
+        stopAll();
+        audioCtx.resume();
+        isPlaying = true;
+
+        const targetBpm = useMyPitch ? parseFloat(document.getElementById('targetBpm').value) : songData[idx].bpm;
+        const rate = targetBpm / songData[idx].bpm;
+        
+        players[idx].playbackRate = rate;
+        players[idx].volume = 1.0;
+
+        // 確認しやすい位置（曲1なら終点前、曲2なら始点）
+        const offset = (idx === 0) ? songData[idx].endTS - 10 : songData[idx].startTS;
+        players[idx].currentTime = Math.max(0, offset);
+        players[idx].play();
+
+        // メトロノーム同期
+        const beatSec = 60 / targetBpm;
+        const syncPoint = (idx === 0) ? songData[idx].endTS : (songData[idx].startTS + (songData[idx].latency/1000));
+        
+        document.getElementById('linkStatus').innerText = `曲${idx+1} 単体チェック...`;
+        
+        mainLoop = setInterval(() => {
+            const nowTime = players[idx].currentTime;
+            document.getElementById('timerDisplay').innerText = nowTime.toFixed(2) + "s";
+            
+            // 次の拍を予約
+            const lookAhead = 0.1; 
+            const songElapsedSinceSync = (nowTime - syncPoint);
+            const currentBeatCount = Math.ceil(songElapsedSinceSync / (beatSec * rate));
+            
+            // 簡易メトロノーム（AudioContextを使用）
+            const nextTickSongTime = syncPoint + (currentBeatCount * beatSec * rate);
+            const timeToNextTick = (nextTickSongTime - nowTime) / rate;
+
+            if (timeToNextTick < lookAhead && timeToNextTick > 0) {
+                scheduleTick(audioCtx.currentTime + timeToNextTick);
+            }
+        }, 50);
+    }
+
+    // --- 検証2: 接続テスト ---
+    function startLink(fromIdx, toIdx) {
+        stopAll();
+        audioCtx.resume();
+        isPlaying = true;
+        const targetBpm = parseFloat(document.getElementById('targetBpm').value);
+        const beatSec = 60 / targetBpm;
+
+        const rateF = targetBpm / songData[fromIdx].bpm;
+        const rateT = targetBpm / songData[toIdx].bpm;
+
+        players[fromIdx].playbackRate = rateF;
+        players[fromIdx].volume = 1.0;
+        players[toIdx].playbackRate = rateT;
+        players[toIdx].volume = 0;
+
+        const bPoint = songData[fromIdx].endTS;
+        const startOffset = bPoint - 10;
+        players[fromIdx].currentTime = Math.max(0, startOffset);
+        players[fromIdx].play();
+
+        let s2Started = false;
+        const fadeDur = beatSec * 4;
+
+        mainLoop = setInterval(() => {
+            const nowF = players[fromIdx].currentTime;
+            document.getElementById('timerDisplay').innerText = nowF.toFixed(2) + "s";
+
+            // 接続判定（フェード開始タイミング）
+            const fadeStartTime = bPoint - (fadeDur / 2) * rateF;
+
+            if (!s2Started && nowF >= fadeStartTime) {
+                const s2Offset = (songData[toIdx].startTS + (songData[toIdx].latency/1000)) - (fadeDur / 2) * rateT;
+                players[toIdx].currentTime = Math.max(0, s2Offset);
+                players[toIdx].play();
+                s2Started = true;
+                document.getElementById('linkStatus').innerText = "LINKING...";
+            }
+
+            if (s2Started) {
+                const progress = (nowF - fadeStartTime) / (fadeDur * rateF);
+                if (progress >= 0 && progress <= 1) {
+                    players[fromIdx].volume = 1 - progress;
+                    players[toIdx].volume = progress;
+                } else if (progress > 1) {
+                    players[fromIdx].volume = 0;
+                    players[toIdx].volume = 1;
+                    players[fromIdx].pause();
+                    document.getElementById('linkStatus').innerText = "CONNECTED";
+                }
+            }
+
+            // メトロノーム：bPoint（接続点）を基準に打つ
+            const timeToLink = (bPoint - nowF) / rateF;
+            const lookAhead = 0.05;
+            for(let i=-20; i<40; i++){
+                const tickTimeRel = (i * beatSec); // 接続点からの相対秒数
+                const realTimeToTick = timeToLink + tickTimeRel;
+                if(realTimeToTick > 0 && realTimeToTick < lookAhead) {
+                    scheduleTick(audioCtx.currentTime + realTimeToTick);
+                }
+            }
+        }, 30);
+    }
+
+    function scheduleTick(t) {
+        // 同じタイミングで二重に鳴らさない簡易ガード
+        if (scheduledTicks.some(st => Math.abs(st - t) < 0.01)) return;
+        
+        const osc = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        osc.connect(g); g.connect(audioCtx.destination);
+        osc.frequency.setValueAtTime(1600, t);
+        g.gain.setValueAtTime(0.2, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+        osc.start(t); osc.stop(t + 0.05);
+        scheduledTicks.push(t);
+        if(scheduledTicks.length > 100) scheduledTicks.shift();
+    }
+
+    function stopAll() {
+        players.forEach(p => { p.pause(); });
+        clearInterval(mainLoop);
+        isPlaying = false;
+        scheduledTicks = [];
+        document.getElementById('linkStatus').innerText = "STOPPED";
+    }
+</script>
+</body>
+</html>
