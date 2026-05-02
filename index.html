@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Link Module V1.2 - Metronome Test</title>
+    <style>
+        body { font-family: sans-serif; background: #121212; color: #e0e0e0; text-align: center; margin: 0; padding: 10px; }
+        .container { max-width: 500px; margin: 0 auto; background: #1e1e1e; padding: 20px; border-radius: 25px; border: 1px solid #333; }
+        .monitor { background: #000; padding: 20px; border-radius: 15px; border: 2px solid #ff00ff; margin-bottom: 15px; position: relative; }
+        .status-text { font-size: 1.2em; color: #00ff88; font-family: monospace; }
+        
+        /* メトロノーム点滅ランプ */
+        #beatLamp { position: absolute; top: 10px; right: 10px; width: 20px; height: 20px; background: #333; border-radius: 50%; }
+        .lamp-on { background: #00ff88 !important; box-shadow: 0 0 10px #00ff88; }
+
+        .input-group { background: #2a2a2a; padding: 15px; border-radius: 15px; margin-bottom: 15px; text-align: left; }
+        .input-label { font-size: 0.85em; color: #bbb; margin-bottom: 5px; display: block; }
+        .bpm-input { width: 100%; background: #000; border: 1px solid #444; color: #00ff88; font-size: 2em; text-align: center; border-radius: 10px; padding: 10px; box-sizing: border-box; }
+
+        .btn-action { width: 100%; padding: 20px; border: none; border-radius: 15px; font-weight: bold; font-size: 1.2em; cursor: pointer; margin-bottom: 10px; transition: 0.3s; }
+        .btn-magenta { background: #ff00ff; color: white; }
+        .btn-magenta:disabled { background: #444; color: #888; }
+        .btn-blue { background: #007bff; color: white; padding: 12px; font-size: 0.9em; margin-bottom: 5px; }
+        .btn-red { background: #550000; color: #ff8888; border-radius: 10px; border:none; padding:10px; width:100%; }
+        
+        .file-status { font-size: 0.75em; color: #888; margin-bottom: 10px; }
+        .file-ready { color: #00ff88; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2 style="color:#ff00ff; margin:0 0 15px 0;">LINK MODULE V1.2</h2>
+
+    <div class="monitor">
+        <div id="beatLamp"></div>
+        <div id="linkStatus" class="status-text">音源をロードしてくれ</div>
+        <div id="timerDisplay" style="font-size: 2.5em; font-weight: bold; font-family: monospace; margin:10px 0;">00:00.00</div>
+        <div style="font-size: 0.8em; color: #ffcc00;">※メトロノームが鳴るぜ！</div>
+    </div>
+
+    <div class="input-group">
+        <button class="btn-action btn-blue" onclick="pickFile(0)">🎵 曲1 (解析0) 読込</button>
+        <div id="fileStatus0" class="file-status">未選択</div>
+        <button class="btn-action btn-blue" onclick="pickFile(1)">🎵 曲2 (解析1) 読込</button>
+        <div id="fileStatus1" class="file-status">未選択</div>
+    </div>
+
+    <div class="input-group">
+        <label class="input-label">目標BPM (マイ・ピッチ)</label>
+        <input type="number" id="targetBpm" class="bpm-input" value="128.0" step="0.1">
+    </div>
+
+    <button id="previewBtn" class="btn-action btn-magenta" onclick="startLinkPreview()" disabled>🔗 接続テスト（メトロノーム付）</button>
+    <button class="btn-red" onclick="stopAll()">緊急停止</button>
+</div>
+
+<script>
+    let audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    let songBuffers = [null, null];
+    let sources = [null, null];
+    let gains = [null, null];
+    let songData = [null, null];
+    let isPlaying = false;
+    let scheduledMetronome = [];
+
+    window.onload = () => {
+        const d0 = localStorage.getItem("song_0_data");
+        const d1 = localStorage.getItem("song_1_data");
+        if (d0 && d1) {
+            songData[0] = JSON.parse(d0);
+            songData[1] = JSON.parse(d1);
+        } else {
+            alert("先に解析を完了させてくれ！");
+        }
+    };
+
+    async function pickFile(idx) {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.onchange = async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            document.getElementById(`fileStatus${idx}`).innerText = "読込中...";
+            const arrayBuffer = await file.arrayBuffer();
+            songBuffers[idx] = await audioCtx.decodeAudioData(arrayBuffer);
+            document.getElementById(`fileStatus${idx}`).innerText = `OK: ${file.name}`;
+            document.getElementById(`fileStatus${idx}`).classList.add('file-ready');
+            if (songBuffers[0] && songBuffers[1]) {
+                document.getElementById('previewBtn').disabled = false;
+                document.getElementById('linkStatus').innerText = "READY";
+            }
+        };
+        input.click();
+    }
+
+    function startLinkPreview() {
+        if (isPlaying) return;
+        audioCtx.resume();
+        isPlaying = true;
+
+        const targetBpm = parseFloat(document.getElementById('targetBpm').value);
+        const beatSec = 60 / targetBpm;
+
+        // --- 1曲目準備 ---
+        const rate1 = targetBpm / songData[0].bpm;
+        const bPoint = songData[0].endTS; 
+        const startOffset = bPoint - 10; // 10秒前から
+        
+        sources[0] = audioCtx.createBufferSource();
+        sources[0].buffer = songBuffers[0];
+        sources[0].playbackRate.value = rate1;
+        if (sources[0].preservesPitch !== undefined) sources[0].preservesPitch = true;
+
+        gains[0] = audioCtx.createGain();
+        sources[0].connect(gains[0]);
+        gains[0].connect(audioCtx.destination);
+
+        // --- 2曲目準備 ---
+        const rate2 = targetBpm / songData[1].bpm;
+        const aPoint = songData[1].startTS; 
+        const slide2 = songData[1].latency / 1000; // Slide補正(s)
+
+        sources[1] = audioCtx.createBufferSource();
+        sources[1].buffer = songBuffers[1];
+        sources[1].playbackRate.value = rate2;
+        if (sources[1].preservesPitch !== undefined) sources[1].preservesPitch = true;
+
+        gains[1] = audioCtx.createGain();
+        gains[1].gain.value = 0;
+        sources[1].connect(gains[1]);
+        gains[1].connect(audioCtx.destination);
+
+        // --- タイミング計算 ---
+        const now = audioCtx.currentTime + 0.1; // 少し余裕を持つ
+        const timeToLink = (bPoint - startOffset) / rate1;
+        const linkTime = now + timeToLink;
+        const fadeDuration = beatSec * 4;
+
+        // 1曲目スタート
+        sources[0].start(now, Math.max(0, startOffset));
+
+        // 2曲目予約
+        const source2StartTime = linkTime - (fadeDuration / 2);
+        const source2Offset = (aPoint + slide2) - ((fadeDuration / 2) * rate2);
+        sources[1].start(source2StartTime, Math.max(0, source2Offset));
+
+        // フェード予約
+        gains[0].gain.setValueAtTime(1.0, linkTime - (fadeDuration / 2));
+        gains[0].gain.linearRampToValueAtTime(0.0, linkTime + (fadeDuration / 2));
+        gains[1].gain.setValueAtTime(0.0, linkTime - (fadeDuration / 2));
+        gains[1].gain.linearRampToValueAtTime(1.0, linkTime + (fadeDuration / 2));
+
+        // --- 【テスト用】メトロノーム予約 ---
+        // 1曲目の1拍目からマイピッチで鳴らし続ける
+        // startOffset地点が何拍目かを計算
+        for (let i = -20; i < 40; i++) {
+            const beatTime = linkTime + (i * beatSec);
+            if (beatTime >= now) {
+                scheduleTick(beatTime);
+            }
+        }
+
+        updateMonitor(now, linkTime, beatSec);
+    }
+
+    function scheduleTick(t) {
+        const osc = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        osc.connect(g); g.connect(audioCtx.destination);
+        osc.frequency.setValueAtTime(1200, t);
+        g.gain.setValueAtTime(0.4, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+        osc.start(t); osc.stop(t + 0.1);
+        scheduledMetronome.push(osc);
+    }
+
+    function updateMonitor(startTime, linkTime, beatSec) {
+        if (!isPlaying) return;
+        const now = audioCtx.currentTime;
+        const elapsed = now - startTime;
+        const remain = linkTime - now;
+
+        document.getElementById('timerDisplay').innerText = elapsed.toFixed(2) + "s";
+        
+        // ランプ点滅
+        const beatProgress = (now - startTime) % beatSec;
+        if (beatProgress < 0.1) {
+            document.getElementById('beatLamp').classList.add('lamp-on');
+        } else {
+            document.getElementById('beatLamp').classList.remove('lamp-on');
+        }
+
+        if (remain > 0) {
+            document.getElementById('linkStatus').innerText = `LINK IN: ${remain.toFixed(1)}s`;
+            requestAnimationFrame(() => updateMonitor(startTime, linkTime, beatSec));
+        } else {
+            document.getElementById('linkStatus').innerText = "CONNECTED";
+        }
+    }
+
+    function stopAll() {
+        sources.forEach(s => { if(s) try{s.stop();}catch(e){} });
+        scheduledMetronome.forEach(o => { try{o.stop();}catch(e){} });
+        scheduledMetronome = [];
+        isPlaying = false;
+        document.getElementById('linkStatus').innerText = "STOPPED";
+    }
+</script>
+</body>
+</html>
