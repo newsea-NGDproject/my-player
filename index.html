@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Link Module V2.2 - Stereo Sync</title>
+    <style>
+        body { font-family: sans-serif; background: #121212; color: #e0e0e0; text-align: center; margin: 0; padding: 10px; }
+        .container { max-width: 550px; margin: 0 auto; background: #1e1e1e; padding: 15px; border-radius: 25px; border: 1px solid #333; }
+        .monitor { background: #000; padding: 15px; border-radius: 15px; border: 2px solid #ff00ff; margin-bottom: 10px; }
+        .info { font-size: 0.75em; color: #ffcc00; margin-bottom: 10px; border: 1px dashed #555; padding: 8px; border-radius: 10px; }
+        .btn-action { width: 100%; padding: 15px; border: none; border-radius: 12px; font-weight: bold; cursor: pointer; margin-bottom: 6px; }
+        .btn-magenta { background: #ff00ff; color: white; }
+        .btn-blue { background: #007bff; color: white; }
+        audio { display: none; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2 style="color:#ff00ff; margin:0 0 10px 0;">LINK MODULE V2.2</h2>
+    
+    <div class="info">
+        【ステレオ同期検証】<br>
+        🎧 **左耳(高音)**: 曲1エンド基準<br>
+        🎧 **右耳(低音)**: 曲2スタート基準<br>
+        ※真ん中から1つの音に聞こえれば同期成功！
+    </div>
+
+    <div class="monitor">
+        <div id="linkStatus" style="color: #00ff88; font-family: monospace;">LOAD SONGS...</div>
+        <div id="timerDisplay" style="font-size: 2.2em; font-weight: bold; font-family: monospace;">00:00.00</div>
+    </div>
+
+    <div style="background:#2a2a2a; padding:12px; border-radius:15px; margin-bottom:10px; text-align:left;">
+        <label style="color:#bbb; font-size:0.75em;">目標BPM</label>
+        <input type="number" id="targetBpm" style="width:100%; background:#000; color:#00ff88; font-size:1.8em; text-align:center; border:1px solid #444;" value="128.0" step="0.1">
+    </div>
+
+    <button class="btn-action btn-blue" onclick="document.getElementById('file0').click()">🎵 曲1 ロード</button>
+    <input type="file" id="file0" accept="audio/*" onchange="loadAudio(0, this)" style="display:none">
+    
+    <button class="btn-action btn-blue" onclick="document.getElementById('file1').click()">🎵 曲2 ロード</button>
+    <input type="file" id="file1" accept="audio/*" onchange="loadAudio(1, this)" style="display:none">
+
+    <div style="margin-top:10px; border-top:1px solid #444; padding-top:10px;">
+        <button id="previewBtn" class="btn-action btn-magenta" onclick="startStereoTest(0, 1)" disabled>🔗 正接続 (1→2) 同期検証</button>
+        <button id="reverseBtn" class="btn-action btn-magenta" style="background:#aa00aa;" onclick="startStereoTest(1, 0)" disabled>🔄 逆接続 (2→1) 同期検証</button>
+    </div>
+
+    <button class="btn-action" style="background:#440000; color:#ff8888;" onclick="stopAll()">STOP</button>
+</div>
+
+<audio id="player0"></audio>
+<audio id="player1"></audio>
+
+<script>
+    const players = [document.getElementById('player0'), document.getElementById('player1')];
+    let audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    let songData = [null, null];
+    let isPlaying = false;
+    let mainLoop = null;
+    let lastTickTime = 0;
+
+    window.onload = () => {
+        const d0 = localStorage.getItem("song_0_data");
+        const d1 = localStorage.getItem("song_1_data");
+        if (d0 && d1) songData = [JSON.parse(d0), JSON.parse(d1)];
+    };
+
+    function loadAudio(idx, input) {
+        const file = input.files[0];
+        if (!file) return;
+        players[idx].src = URL.createObjectURL(file);
+        players[idx].load();
+        players[idx].preservesPitch = true;
+        document.getElementById('linkStatus').innerText = `READY: Song ${idx+1}`;
+        if (players[0].src && players[1].src) document.getElementById('previewBtn').disabled = false;
+    }
+
+    function startStereoTest(fromIdx, toIdx) {
+        if (isPlaying) return;
+        stopAll();
+        audioCtx.resume();
+        isPlaying = true;
+
+        const targetBpm = parseFloat(document.getElementById('targetBpm').value);
+        const beatSec = 60 / targetBpm;
+        const rateF = targetBpm / songData[fromIdx].bpm;
+        const rateT = targetBpm / songData[toIdx].bpm;
+
+        players[fromIdx].playbackRate = rateF;
+        players[toIdx].playbackRate = rateT;
+        players[fromIdx].volume = 0.3; // 曲は控えめ
+        players[toIdx].volume = 0;
+
+        const bPoint = songData[fromIdx].endTS;
+        const aPoint = songData[toIdx].startTS + (songData[toIdx].latency/1000);
+
+        players[fromIdx].currentTime = Math.max(0, bPoint - 8);
+        players[fromIdx].play();
+
+        let s2Started = false;
+
+        mainLoop = setInterval(() => {
+            const nowF = players[fromIdx].currentTime;
+            const nowT = players[toIdx].currentTime;
+            document.getElementById('timerDisplay').innerText = (s2Started ? nowT : nowF).toFixed(2) + "s";
+
+            // 接続処理
+            if (!s2Started && nowF >= bPoint) {
+                players[toIdx].currentTime = aPoint;
+                players[fromIdx].volume = 0; players[fromIdx].pause();
+                players[toIdx].volume = 0.3; players[toIdx].play();
+                s2Started = true;
+                document.getElementById('linkStatus').innerText = "SWITCHED";
+            }
+
+            // 同期検証用：1回の命令で左右同時に鳴らす
+            const curCtxTime = audioCtx.currentTime;
+            const timeToB = (bPoint - nowF) / (s2Started ? rateT : rateF); 
+
+            for(let i = -20; i <= 20; i++) {
+                const t = curCtxTime + timeToB + (i * beatSec);
+                if (t > curCtxTime && t < curCtxTime + 0.05 && Math.abs(t - lastTickTime) > 0.1) {
+                    // 同一関数内で、左右パンを分けて発音
+                    playSyncTicks(t);
+                    lastTickTime = t;
+                }
+            }
+        }, 15);
+    }
+
+    function playSyncTicks(t) {
+        // --- 左耳：曲1基準 (2400Hz) ---
+        const oscL = audioCtx.createOscillator();
+        const pannerL = audioCtx.createPanner();
+        const gL = audioCtx.createGain();
+        pannerL.setPosition(-1, 0, 0); // 真左
+        oscL.frequency.setValueAtTime(2400, t);
+        oscL.connect(gL); gL.connect(pannerL); pannerL.connect(audioCtx.destination);
+        gL.gain.setValueAtTime(0.8, t);
+        gL.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+        oscL.start(t); oscL.stop(t + 0.1);
+
+        // --- 右耳：曲2基準 (1200Hz) ---
+        const oscR = audioCtx.createOscillator();
+        const pannerR = audioCtx.createPanner();
+        const gR = audioCtx.createGain();
+        pannerR.setPosition(1, 0, 0); // 真右
+        oscR.frequency.setValueAtTime(1200, t);
+        oscR.connect(gR); gR.connect(pannerR); pannerR.connect(audioCtx.destination);
+        gR.gain.setValueAtTime(0.8, t);
+        gR.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+        oscR.start(t); oscR.stop(t + 0.1);
+    }
+
+    function stopAll() {
+        players.forEach(p => { p.pause(); });
+        clearInterval(mainLoop);
+        isPlaying = false;
+        lastTickTime = 0;
+        document.getElementById('linkStatus').innerText = "STOPPED";
+    }
+</script>
+</body>
+</html>
