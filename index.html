@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SYNC MASTER V4.1 - Precision Debug System</title>
+    <style>
+        :root { --neon-green: #00ff88; --neon-magenta: #ff00ff; --bg-dark: #0a0a0a; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg-dark); color: #e0e0e0; margin: 0; padding: 10px; }
+        .container { max-width: 500px; margin: 0 auto; background: #161616; padding: 20px; border-radius: 40px; border: 1px solid #333; }
+        
+        /* モニター */
+        .monitor { background: #000; padding: 25px; border-radius: 30px; border: 2px solid var(--neon-green); margin-bottom: 20px; text-align: center; }
+        .timer { font-size: 3.2em; font-weight: 900; font-family: 'Courier New', monospace; color: var(--neon-green); }
+        .status { font-size: 0.9em; color: var(--neon-magenta); font-weight: bold; margin-top: 10px; letter-spacing: 1px; }
+
+        /* 操作パネル */
+        .panel { background: #222; padding: 15px; border-radius: 20px; margin-bottom: 15px; border: 1px solid #333; }
+        .row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .label { font-size: 0.8em; font-weight: bold; color: #888; }
+        input[type=number] { width: 90px; background: #000; color: var(--neon-magenta); border: 1px solid #444; border-radius: 10px; padding: 8px; font-size: 1.2em; text-align: center; font-weight: bold; }
+        input[type=range] { flex: 1; height: 8px; background: #444; border-radius: 4px; accent-color: var(--neon-green); margin-left: 10px; }
+
+        .mode-box { display: flex; gap: 8px; margin-top: 5px; }
+        .mode-btn { flex: 1; padding: 10px; border-radius: 10px; border: 1px solid #444; background: #333; color: #888; font-size: 0.75em; font-weight: bold; cursor: pointer; }
+        .mode-btn.active { background: var(--neon-green); color: #000; border-color: var(--neon-green); }
+
+        /* ボタン */
+        .btn { width: 100%; padding: 20px; border: none; border-radius: 18px; font-weight: 900; font-size: 1.1em; cursor: pointer; margin-bottom: 10px; transition: 0.2s; }
+        .btn-blue { background: #0066ff; color: #fff; }
+        .btn-start { background: var(--neon-magenta); color: #fff; box-shadow: 0 10px 25px rgba(255,0,255,0.3); }
+        .btn-stop { background: #441111; color: #ff6666; font-size: 0.9em; }
+        .btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+        /* デバッグモニター */
+        .debug-monitor { background: #000; padding: 10px; border-radius: 10px; font-size: 0.65em; font-family: monospace; color: #666; text-align: left; line-height: 1.4; border: 1px dashed #333; }
+        .debug-title { color: #aaa; margin-bottom: 5px; font-weight: bold; border-bottom: 1px solid #222; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="monitor">
+        <div id="timerDisplay" class="timer">00:00.00</div>
+        <div id="statusLabel" class="status">SYSTEM INITIALIZING</div>
+    </div>
+
+    <div class="panel">
+        <div class="row">
+            <span class="label">MY PITCH BPM</span>
+            <input type="number" id="targetBpm" value="128.0" step="0.1">
+        </div>
+        <div class="mode-box">
+            <button id="m_seamless" class="mode-btn active" onclick="setMode('seamless')">シームレス検証</button>
+            <button id="m_brain" class="mode-btn" onclick="setMode('brain')">脳内整理(無音)</button>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="row"><span class="label">D1 Vol</span><input type="range" id="vol1" min="0" max="1" step="0.01" value="0.5"></div>
+        <div class="row"><span class="label">D2 Vol</span><input type="range" id="vol2" min="0" max="1" step="0.01" value="0.5"></div>
+    </div>
+
+    <button class="btn btn-blue" onclick="document.getElementById('f1').click()">🎵 先行曲 読込</button>
+    <input type="file" id="f1" accept="audio/*" onchange="loadAudio(0, this)" style="display:none">
+    
+    <button class="btn btn-blue" onclick="document.getElementById('f2').click()">🎵 後続曲 読込</button>
+    <input type="file" id="f2" accept="audio/*" onchange="loadAudio(1, this)" style="display:none">
+
+    <button id="startBtn" class="btn btn-start" onclick="runSync()" disabled>START VERIFICATION</button>
+    <button class="btn btn-stop" onclick="killSync()">EMERGENCY STOP</button>
+
+    <div class="debug-monitor">
+        <div class="debug-title">DEBUG: DATA MONITOR</div>
+        <div id="debugD1">Deck 1: No Data (localStorage)</div>
+        <div id="debugD2">Deck 2: No Data (localStorage)</div>
+        <div id="debugSync">Calc: Waiting...</div>
+    </div>
+</div>
+
+<audio id="audio1"></audio>
+<audio id="audio2"></audio>
+
+<script>
+    const players = [document.getElementById('audio1'), document.getElementById('audio2')];
+    let audioCtx = null;
+    let clickBuffer = null;
+    let songData = [null, null];
+    let isPlaying = false;
+    let verifyMode = 'seamless';
+    let loopId = null;
+
+    // 初期化とデータの安全読込
+    window.onload = async () => {
+        try {
+            const d0 = JSON.parse(localStorage.getItem("song_0_data"));
+            const d1 = JSON.parse(localStorage.getItem("song_1_data"));
+            
+            if (d0 && d0.bpm > 30 && d0.bpm < 300) {
+                songData[0] = d0;
+                document.getElementById('debugD1').innerText = `D1: BPM=${d0.bpm} / ST=${d0.startTS}s / EN=${d0.endTS}s`;
+                document.getElementById('targetBpm').value = d0.bpm;
+            } else {
+                document.getElementById('targetBpm').value = 128.0;
+            }
+            if (d1) {
+                songData[1] = d1;
+                document.getElementById('debugD2').innerText = `D2: BPM=${d1.bpm} / ST=${d1.startTS}s`;
+            }
+            checkReady();
+        } catch (e) {
+            console.error("Data Load Error", e);
+            document.getElementById('targetBpm').value = 128.0;
+        }
+    };
+
+    function checkReady() {
+        if (players[0].src && players[1].src && songData[0] && songData[1]) {
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('statusLabel').innerText = "READY";
+        }
+    }
+
+    function setMode(m) {
+        verifyMode = m;
+        document.getElementById('m_seamless').classList.toggle('active', m === 'seamless');
+        document.getElementById('m_brain').classList.toggle('active', m === 'brain');
+    }
+
+    function loadAudio(idx, input) {
+        const file = input.files[0];
+        if (file) {
+            players[idx].src = URL.createObjectURL(file);
+            checkReady();
+        }
+    }
+
+    async function runSync() {
+        if (isPlaying) return;
+        
+        // 毎回フレッシュなAudioContextを生成 (STOP対策)
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        // click.wav の再ロード
+        const res = await fetch('click.wav');
+        const ab = await res.arrayBuffer();
+        clickBuffer = await audioCtx.decodeAudioData(ab);
+
+        isPlaying = true;
+        const targetBpm = parseFloat(document.getElementById('targetBpm').value);
+        const leadTime = 15;
+        const exitPoint = songData[0].endTS;
+        const entryPoint = songData[1].startTS;
+
+        // 計算ログ
+        document.getElementById('debugSync').innerText = `Calc: Target=${targetBpm} / Lead=${leadTime}s`;
+
+        const rate1 = targetBpm / songData[0].bpm;
+        const rate2 = targetBpm / songData[1].bpm;
+        players[0].playbackRate = rate1;
+        players[1].playbackRate = rate2;
+
+        players[0].currentTime = exitPoint - leadTime;
+        players[1].currentTime = entryPoint - leadTime;
+
+        // 【精密同期スケジューリング】
+        const now = audioCtx.currentTime;
+        const startTime = now + 0.1; // 0.1秒のバッファ
+        const beatSec = 60 / targetBpm;
+        
+        // Deck 1の1拍目(startTS)がメトロノームの0拍目になるようにオフセットを計算
+        const d1StartInSong = songData[0].startTS;
+        const d1CurrentInSong = players[0].currentTime;
+        const timeToFirstBeat = (d1StartInSong - d1CurrentInSong) / rate1;
+
+        // 向こう300秒分を予約 (1秒単位より安定)
+        for (let i = -50; i < 400; i++) {
+            const tickTime = startTime + timeToFirstBeat + (i * beatSec);
+            if (tickTime > now) scheduleTick(tickTime);
+        }
+
+        setTimeout(() => { players[0].play(); players[1].play(); }, 100);
+        document.getElementById('statusLabel').innerText = "VIBRATING...";
+
+        loopId = setInterval(() => {
+            const cur1 = players[0].currentTime;
+            const dist = exitPoint - cur1;
+            document.getElementById('timerDisplay').innerText = (dist > 0 ? "-" : "+") + Math.abs(dist).toFixed(2) + "s";
+
+            const v1 = parseFloat(document.getElementById('vol1').value);
+            const v2 = parseFloat(document.getElementById('vol2').value);
+
+            if (verifyMode === 'brain') {
+                if (dist > 2) { players[0].volume = v1; players[1].volume = 0; }
+                else if (dist <= 2 && dist > 0) { players[0].volume = v1 * (dist / 2); players[1].volume = 0; }
+                else if (dist <= 0 && dist > -2) { players[0].volume = 0; players[1].volume = 0; }
+                else if (dist <= -2 && dist > -4) { players[1].volume = v2 * (Math.abs(dist + 2) / 2); }
+                else { players[1].volume = v2; }
+            } else {
+                if (dist > 0) { players[0].volume = v1; players[1].volume = v2; }
+                else { players[0].volume = 0; players[1].volume = v2; }
+            }
+        }, 16);
+    }
+
+    function scheduleTick(t) {
+        const s = audioCtx.createBufferSource();
+        s.buffer = clickBuffer;
+        const g = audioCtx.createGain();
+        g.gain.value = 1.0; 
+        s.connect(g); g.connect(audioCtx.destination);
+        s.start(t);
+    }
+
+    function killSync() {
+        clearInterval(loopId);
+        players.forEach(p => { p.pause(); p.volume = 0.5; });
+        if (audioCtx) {
+            audioCtx.close().then(() => {
+                console.log("Audio Hardware Stopped.");
+            });
+        }
+        isPlaying = false;
+        document.getElementById('statusLabel').innerText = "EMERGENCY STOPPED";
+    }
+</script>
+</body>
+</html>
