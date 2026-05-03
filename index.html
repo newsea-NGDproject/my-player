@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Link Module V2.7 - Double Constant Sync</title>
+    <style>
+        body { font-family: sans-serif; background: #121212; color: #e0e0e0; text-align: center; margin: 0; padding: 10px; }
+        .container { max-width: 550px; margin: 0 auto; background: #1e1e1e; padding: 15px; border-radius: 25px; border: 1px solid #333; }
+        .monitor { background: #000; padding: 15px; border-radius: 15px; border: 2px solid #ff00ff; margin-bottom: 10px; }
+        .control-panel { background: #2a2a2a; padding: 12px; border-radius: 15px; margin-bottom: 10px; text-align: left; }
+        .label-row { display: flex; justify-content: space-between; color: #00ff88; font-weight: bold; font-size: 0.8em; margin-bottom: 5px; }
+        input[type=range] { width: 100%; cursor: pointer; accent-color: #ff00ff; }
+        .btn-action { width: 100%; padding: 15px; border: none; border-radius: 12px; font-weight: bold; cursor: pointer; margin-bottom: 6px; }
+        .btn-magenta { background: #ff00ff; color: white; }
+        .btn-blue { background: #007bff; color: white; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2 style="color:#ff00ff; margin:0 0 10px 0;">LINK MODULE V2.7</h2>
+    
+    <div class="monitor">
+        <div id="linkStatus" style="color: #00ff88; font-family: monospace;">READY</div>
+        <div id="timerDisplay" style="font-size: 2.2em; font-weight: bold; font-family: monospace;">00:00.00</div>
+    </div>
+
+    <div class="control-panel">
+        <div class="label-row"><span>曲の音量</span><span id="volVal">0.20</span></div>
+        <input type="range" min="0" max="0.5" step="0.01" value="0.20" oninput="updateVolume(this.value)">
+    </div>
+
+    <div class="control-panel">
+        <div class="label-row" style="color:#ffcc00;"><span>接続点オフセット（低音メトロを移動）</span><span id="offsetVal">0 ms</span></div>
+        <input type="range" id="offsetSlider" min="-500" max="500" value="0" oninput="updateOffset(this.value)">
+    </div>
+
+    <div style="background:#2a2a2a; padding:12px; border-radius:15px; margin-bottom:10px;">
+        <input type="number" id="targetBpm" style="width:100%; background:#000; color:#00ff88; font-size:1.8em; text-align:center; border:1px solid #444;" value="128.0" step="0.1">
+    </div>
+
+    <button class="btn-action btn-blue" onclick="document.getElementById('file0').click()">🎵 曲1 ロード</button>
+    <input type="file" id="file0" accept="audio/*" onchange="loadAudio(0, this)" style="display:none">
+    
+    <button class="btn-action btn-blue" onclick="document.getElementById('file1').click()">🎵 曲2 ロード</button>
+    <input type="file" id="file1" accept="audio/*" onchange="loadAudio(1, this)" style="display:none">
+
+    <button id="previewBtn" class="btn-action btn-magenta" onclick="startVerification(0, 1)" disabled>🔗 正接続 (1→2) 検証再生</button>
+    <button id="reverseBtn" class="btn-action btn-magenta" style="background:#aa00aa;" onclick="startVerification(1, 0)" disabled>🔄 逆接続 (2→1) 検証再生</button>
+
+    <button class="btn-action" style="background:#440000; color:#ff8888;" onclick="stopAll()">STOP / RESET</button>
+</div>
+
+<audio id="player0"></audio>
+<audio id="player1"></audio>
+
+<script>
+    const players = [document.getElementById('player0'), document.getElementById('player1')];
+    let audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    let songData = [null, null];
+    let isPlaying = false;
+    let mainLoop = null;
+    let lastTick1 = 0;
+    let lastTick2 = 0;
+    let manualOffset = 0;
+    let currentVol = 0.2;
+
+    window.onload = () => {
+        const d0 = localStorage.getItem("song_0_data");
+        const d1 = localStorage.getItem("song_1_data");
+        if (d0 && d1) songData = [JSON.parse(d0), JSON.parse(d1)];
+    };
+
+    function updateVolume(v) { currentVol = parseFloat(v); document.getElementById('volVal').innerText = currentVol.toFixed(2); }
+    function updateOffset(ms) { manualOffset = parseFloat(ms) / 1000; document.getElementById('offsetVal').innerText = ms + " ms"; }
+
+    function loadAudio(idx, input) {
+        const file = input.files[0];
+        if (!file) return;
+        players[idx].src = URL.createObjectURL(file);
+        players[idx].load();
+        players[idx].preservesPitch = true;
+        document.getElementById('linkStatus').innerText = `READY: Song ${idx+1}`;
+        if (players[0].src && players[1].src) {
+            document.getElementById('previewBtn').disabled = false;
+            document.getElementById('reverseBtn').disabled = false;
+        }
+    }
+
+    function startVerification(fromIdx, toIdx) {
+        if (isPlaying) return;
+        stopAll();
+        audioCtx.resume();
+        isPlaying = true;
+
+        const targetBpm = parseFloat(document.getElementById('targetBpm').value);
+        const beatSec = 60 / targetBpm;
+        const rateF = targetBpm / songData[fromIdx].bpm;
+        const rateT = targetBpm / songData[toIdx].bpm;
+
+        players[fromIdx].playbackRate = rateF;
+        players[toIdx].playbackRate = rateT;
+        players[fromIdx].volume = currentVol;
+        players[toIdx].volume = 0;
+
+        const bPoint = songData[fromIdx].endTS;
+        const aPoint = songData[toIdx].startTS + (songData[toIdx].latency/1000);
+
+        players[fromIdx].currentTime = Math.max(0, bPoint - 10);
+        players[fromIdx].play();
+
+        let s2Started = false;
+
+        mainLoop = setInterval(() => {
+            const nowF = players[fromIdx].currentTime;
+            const nowT = players[toIdx].currentTime;
+            const displayTime = s2Started ? nowT : nowF;
+            document.getElementById('timerDisplay').innerText = displayTime.toFixed(2) + "s";
+
+            // 接続処理 (オフセット反映)
+            if (!s2Started && nowF >= (bPoint + manualOffset * rateF)) {
+                players[toIdx].currentTime = aPoint;
+                players[fromIdx].volume = 0; players[fromIdx].pause();
+                players[toIdx].volume = currentVol; players[toIdx].play();
+                s2Started = true;
+                document.getElementById('linkStatus').innerText = "SWITCHED";
+            }
+
+            const curCtxTime = audioCtx.currentTime;
+            
+            // --- 常時メトロノームロジック ---
+            
+            // 1. 曲1基準 (高音: 2500Hz) - 常にbPointを「0拍目」として計算
+            const timeToB = s2Started ? ( (bPoint - (players[fromIdx].currentTime)) / rateF ) : ( (bPoint - nowF) / rateF );
+            // ※1曲目が止まっても計算上の拍は維持
+            for(let i = -40; i <= 40; i++) {
+                const t = curCtxTime + timeToB + (i * beatSec);
+                if (t > curCtxTime && t < curCtxTime + 0.05 && Math.abs(t - lastTick1) > 0.05) {
+                    playTick(t, 2500, 0.6); lastTick1 = t;
+                }
+            }
+
+            // 2. 曲2基準 (低音: 1000Hz) - aPointを基準に逆算して常時鳴らす
+            // スライダーを動かすと、この低音メトロのタイミングが移動する
+            const timeToA = s2Started ? ( (aPoint - nowT) / rateT ) : ( (bPoint - nowF) / rateF );
+            for(let i = -40; i <= 40; i++) {
+                const t = curCtxTime + timeToA + (i * beatSec);
+                if (t > curCtxTime && t < curCtxTime + 0.05 && Math.abs(t - lastTick2) > 0.05) {
+                    playTick(t, 1000, 0.4); lastTick2 = t;
+                }
+            }
+        }, 15);
+    }
+
+    function playTick(t, freq, vol) {
+        const osc = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        osc.frequency.setValueAtTime(freq, t);
+        osc.connect(g); g.connect(audioCtx.destination);
+        g.gain.setValueAtTime(vol, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+        osc.start(t); osc.stop(t + 0.1);
+    }
+
+    function stopAll() {
+        players.forEach(p => { p.pause(); });
+        clearInterval(mainLoop);
+        isPlaying = false;
+        lastTick1 = 0; lastTick2 = 0;
+        document.getElementById('linkStatus').innerText = "STOPPED";
+    }
+</script>
+</body>
+</html>
