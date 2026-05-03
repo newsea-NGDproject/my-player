@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SYNC MASTER V3.3 - Living Track Sync</title>
+    <style>
+        body { font-family: sans-serif; background: #0a0a0a; color: #e0e0e0; text-align: center; margin: 0; padding: 10px; }
+        .container { max-width: 600px; margin: 0 auto; background: #161616; padding: 20px; border-radius: 30px; border: 1px solid #333; }
+        .monitor { background: #000; padding: 20px; border-radius: 20px; border: 2px solid #00ff88; margin-bottom: 15px; }
+        .timer { font-size: 2.8em; font-weight: bold; font-family: monospace; color: #00ff88; }
+        .mixer-panel { background: #222; padding: 15px; border-radius: 20px; margin-bottom: 10px; text-align: left; }
+        .label-row { display: flex; justify-content: space-between; color: #00ff88; font-weight: bold; margin-bottom: 5px; }
+        input[type=range] { width: 100%; accent-color: #00ff88; cursor: pointer; margin-bottom: 15px; }
+        .btn { width: 100%; padding: 18px; border: none; border-radius: 15px; font-weight: bold; cursor: pointer; margin-bottom: 8px; }
+        .btn-magenta { background: #ff00ff; color: white; }
+        .btn-stop { background: #441111; color: #ff8888; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2 style="color: #00ff88;">SYNC MASTER V3.3</h2>
+    
+    <div class="monitor">
+        <div id="timerDisplay" class="timer">00:00.00</div>
+        <div id="phaseLabel" style="color: #ff00ff; font-size: 0.9em;">READY</div>
+    </div>
+
+    <div class="mixer-panel">
+        <div class="label-row"><span>マイピッチBPM</span><span id="bpmVal">128.0</span></div>
+        <input type="number" id="targetBpm" value="128.0" step="0.1" style="width:100%; font-size:1.5em; text-align:center; background:#000; color:#ff00ff; border:1px solid #444; border-radius:10px; margin-bottom:15px;">
+
+        <div class="label-row"><span>1曲目 音量</span></div>
+        <input type="range" id="vol1" min="0" max="1" step="0.01" value="0.5">
+        
+        <div class="label-row"><span>2曲目 音量 (接続前から同時再生)</span></div>
+        <input type="range" id="vol2" min="0" max="1" step="0.01" value="0.5">
+        
+        <div class="label-row" style="color:#00ff88;"><span>爆音メトロ (1曲目に完全同期)</span></div>
+        <input type="range" id="volM" min="0" max="1" step="0.01" value="0.8">
+    </div>
+
+    <button id="startBtn" class="btn btn-magenta" onclick="runSync()" disabled>🔗 同期検証スタート</button>
+    <button class="btn btn-stop" onclick="stopEverything()">STOP</button>
+</div>
+
+<audio id="p1"></audio>
+<audio id="p2"></audio>
+
+<script>
+    const players = [document.getElementById('p1'), document.getElementById('p2')];
+    let audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    let songData = [null, null];
+    let isRunning = false;
+    let loopId = null;
+    let lastTickBeat = -1;
+
+    window.onload = () => {
+        const d0 = localStorage.getItem("song_0_data");
+        const d1 = localStorage.getItem("song_1_data");
+        if (d0 && d1) {
+            songData = [JSON.parse(d0), JSON.parse(d1)];
+            document.getElementById('targetBpm').value = songData[0].bpm;
+            document.getElementById('startBtn').disabled = false;
+        }
+    };
+
+    async function runSync() {
+        if (isRunning) return;
+        await audioCtx.resume();
+        isRunning = true;
+        
+        const targetBpm = parseFloat(document.getElementById('targetBpm').value);
+        const exitPoint = songData[0].endTS; 
+        const entryPoint = songData[1].startTS;
+        const leadTime = 15; 
+
+        // マイピッチ設定
+        players[0].playbackRate = targetBpm / songData[0].bpm;
+        players[1].playbackRate = targetBpm / songData[1].bpm;
+
+        players[0].currentTime = exitPoint - leadTime;
+        players[1].currentTime = entryPoint - leadTime;
+        
+        players[0].play();
+        players[1].play();
+
+        lastTickBeat = -1;
+
+        loopId = setInterval(() => {
+            const cur1 = players[0].currentTime;
+            const distToJump = exitPoint - cur1;
+            
+            document.getElementById('timerDisplay').innerText = (distToJump > 0 ? "-" : "+") + Math.abs(distToJump).toFixed(2) + "s";
+
+            // --- メトロノーム: 1曲目の再生位置から「逆算」して拍を打つ ---
+            const beatSecOrig = 60 / songData[0].bpm;
+            const currentBeatCount = Math.floor(cur1 / beatSecOrig);
+            
+            if (currentBeatCount !== lastTickBeat) {
+                playTick(audioCtx.currentTime, 2000, document.getElementById('volM').value);
+                lastTickBeat = currentBeatCount;
+            }
+
+            // --- ボリューム制御 (先行曲は止めずに0にする) ---
+            let v1Base = document.getElementById('vol1').value;
+            let v2Base = document.getElementById('vol2').value;
+
+            if (distToJump > 2) {
+                players[0].volume = v1Base;
+                players[1].volume = v2Base; // 手動で混ぜて確認可能
+                document.getElementById('phaseLabel').innerText = "PRE-SYNC";
+            } else if (distToJump <= 2 && distToJump > 0) {
+                players[0].volume = v1Base * (distToJump / 2); // フェードアウト
+                players[1].volume = 0;
+                document.getElementById('phaseLabel').innerText = "FADE OUT...";
+            } else if (distToJump <= 0 && distToJump > -2) {
+                players[0].volume = 0; // 先行曲は流したままミュート
+                players[1].volume = 0; // 無音区間
+                document.getElementById('phaseLabel').innerText = "SILENCE (4s)";
+            } else if (distToJump <= -2 && distToJump > -4) {
+                players[1].volume = v2Base * (Math.abs(distToJump + 2) / 2); // フェードイン
+                document.getElementById('phaseLabel').innerText = "FADE IN...";
+            } else {
+                players[1].volume = v2Base;
+                document.getElementById('phaseLabel').innerText = "POST-SYNC (P1 LIVES MUTE)";
+            }
+        }, 20);
+    }
+
+    function playTick(t, freq, vol) {
+        const osc = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        osc.frequency.setValueAtTime(freq, t);
+        g.gain.setValueAtTime(vol, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+        osc.connect(g); g.connect(audioCtx.destination);
+        osc.start(t); osc.stop(t + 0.1);
+    }
+
+    function stopEverything() {
+        clearInterval(loopId);
+        players.forEach(p => p.pause());
+        isRunning = false;
+        document.getElementById('phaseLabel').innerText = "STOPPED";
+    }
+</script>
+</body>
+</html>
