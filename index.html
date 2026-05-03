@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SYNC MASTER V4.2 - Debug & Isolation</title>
+    <style>
+        :root { --neon-green: #00ff88; --neon-magenta: #ff00ff; --bg-dark: #0a0a0a; --warning: #ffcc00; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg-dark); color: #e0e0e0; margin: 0; padding: 10px; display: flex; justify-content: center; }
+        .container { width: 100%; max-width: 500px; background: #161616; padding: 25px; border-radius: 40px; border: 1px solid #333; box-shadow: 0 30px 60px rgba(0,0,0,0.7); }
+        
+        /* ステータスモニター */
+        .monitor { background: #000; padding: 20px; border-radius: 30px; border: 2px solid var(--neon-green); margin-bottom: 15px; text-align: center; }
+        .timer { font-size: 2.8em; font-weight: 900; font-family: 'Courier New', monospace; color: var(--neon-green); }
+        .status { font-size: 0.8em; color: var(--neon-magenta); font-weight: bold; margin-top: 8px; letter-spacing: 1px; }
+
+        /* 切り分けテストパネル */
+        .test-panel { background: #1a1a1a; padding: 15px; border-radius: 20px; border: 1px solid #444; margin-bottom: 15px; }
+        .test-title { font-size: 0.85em; color: var(--warning); font-weight: bold; margin-bottom: 10px; text-align: center; border-bottom: 1px solid #333; padding-bottom: 5px; }
+        
+        .btn { width: 100%; padding: 16px; border: none; border-radius: 14px; font-weight: 900; cursor: pointer; margin-bottom: 8px; transition: 0.2s; }
+        .btn-init { background: #333; color: var(--neon-green); border: 1px solid var(--neon-green); }
+        .btn-test { background: #444; color: #fff; font-size: 0.9em; }
+        .btn-start { background: var(--neon-magenta); color: #fff; font-size: 1.1em; margin-top: 10px; }
+        .btn-stop { background: #441111; color: #ff6666; font-size: 0.85em; }
+        .btn:disabled { opacity: 0.2; cursor: not-allowed; }
+
+        /* データモニター */
+        .debug-monitor { background: #000; padding: 12px; border-radius: 15px; font-size: 0.65em; font-family: monospace; color: #888; border: 1px dashed #444; }
+        .debug-row { display: flex; justify-content: space-between; padding: 2px 0; border-bottom: 1px solid #111; }
+        .val { color: var(--neon-green); }
+        .val-d2 { color: #00ccff; }
+
+        input[type=number] { width: 80px; background: #000; color: var(--neon-magenta); border: 1px solid #444; border-radius: 8px; padding: 5px; text-align: center; }
+        .label { font-size: 0.7em; color: #aaa; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="monitor">
+        <div id="timerDisplay" class="timer">00:00.00</div>
+        <div id="statusLabel" class="status">1. INITIALIZE SYSTEM</div>
+    </div>
+
+    <div class="test-panel">
+        <div class="test-title">STEP 1: 根詰まり解消 & 資産ロード</div>
+        <button id="initBtn" class="btn btn-init" onclick="initializeSystem()">INITIALIZE / LOAD click.wav</button>
+    </div>
+
+    <div class="test-panel">
+        <div class="test-title">STEP 2 & 3: 切り分け試験</div>
+        <button id="testClickBtn" class="btn btn-test" onclick="testClickOnly()" disabled>TEST 1: Click Only (L3/L4)</button>
+        <button id="testLeadBtn" class="btn btn-test" onclick="testLeadSync()" disabled>TEST 2: Deck 1 + Click (L1/3/4)</button>
+    </div>
+
+    <div class="test-panel">
+        <div class="test-title">FINAL: 13=0 VERIFICATION</div>
+        <div class="debug-row" style="margin-bottom:10px;">
+            <span class="label">PITCH BPM</span>
+            <input type="number" id="targetBpm" value="128.00" step="0.01">
+        </div>
+        <button id="startBtn" class="btn btn-start" onclick="runFullSync()" disabled>START ALL LAYERS</button>
+        <button class="btn btn-stop" onclick="killEverything()">EMERGENCY STOP</button>
+    </div>
+
+    <div class="debug-monitor">
+        <div style="color:#aaa; font-weight:bold; margin-bottom:5px;">[ACCURACY MONITOR]</div>
+        <div class="debug-row"><span>D1 BPM:</span><span id="d1_bpm" class="val">-</span></div>
+        <div class="debug-row"><span>D1 StartTS:</span><span id="d1_st" class="val">-</span></div>
+        <div class="debug-row"><span>D1 EndTS:</span><span id="d1_en" class="val">-</span></div>
+        <div class="debug-row"><span>D2 StartTS:</span><span id="d2_st" class="val-d2">-</span></div>
+        <div style="margin-top:5px; font-size:0.9em;">
+            D1: <input type="file" id="f1" accept="audio/*" onchange="loadAudio(0, this)">
+            <br>D2: <input type="file" id="f2" accept="audio/*" onchange="loadAudio(1, this)">
+        </div>
+    </div>
+</div>
+
+<audio id="audio1"></audio>
+<audio id="audio2"></audio>
+
+<script>
+    const players = [document.getElementById('audio1'), document.getElementById('audio2')];
+    let audioCtx = null;
+    let clickBuffer = null;
+    let songData = [null, null];
+    let isRunning = false;
+    let masterTimer = null;
+
+    // 起動時にデータを読み込み
+    window.onload = refreshDataDisplay;
+
+    function refreshDataDisplay() {
+        try {
+            const raw0 = JSON.parse(localStorage.getItem("song_0_data"));
+            const raw1 = JSON.parse(localStorage.getItem("song_1_data"));
+            if (raw0) {
+                songData[0] = { bpm: parseFloat(raw0.bpm).toFixed(2), startTS: parseFloat(raw0.startTS).toFixed(3), endTS: parseFloat(raw0.endTS).toFixed(3) };
+                document.getElementById('d1_bpm').innerText = songData[0].bpm;
+                document.getElementById('d1_st').innerText = songData[0].startTS;
+                document.getElementById('d1_en').innerText = songData[0].endTS;
+                document.getElementById('targetBpm').value = songData[0].bpm;
+            }
+            if (raw1) {
+                songData[1] = { bpm: parseFloat(raw1.bpm).toFixed(2), startTS: parseFloat(raw1.startTS).toFixed(3) };
+                document.getElementById('d2_st').innerText = songData[1].startTS;
+            } else {
+                document.getElementById('d2_st').innerText = "MISSING";
+            }
+        } catch (e) { console.error("Data load error", e); }
+    }
+
+    function loadAudio(idx, input) {
+        const file = input.files[0];
+        if (file) players[idx].src = URL.createObjectURL(file);
+    }
+
+    // --- STEP 1: 初期化 (根詰まり解消) ---
+    async function initializeSystem() {
+        document.getElementById('statusLabel').innerText = "INITIALIZING...";
+        if (audioCtx) await audioCtx.close();
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        try {
+            // キャッシュ対策で?t=を付与
+            const res = await fetch('click.wav?t=' + Date.now());
+            const ab = await res.arrayBuffer();
+            clickBuffer = await audioCtx.decodeAudioData(ab);
+            
+            document.getElementById('statusLabel').innerText = "SYSTEM ARMED / WAV LOADED";
+            document.getElementById('testClickBtn').disabled = false;
+            document.getElementById('testLeadBtn').disabled = false;
+            document.getElementById('startBtn').disabled = false;
+            
+            if (audioCtx.state === 'suspended') await audioCtx.resume();
+        } catch (e) {
+            document.getElementById('statusLabel').innerText = "FAILED TO LOAD click.wav";
+        }
+    }
+
+    // --- STEP 2: メトロノーム単体テスト (L3/L4) ---
+    function testClickOnly() {
+        if (!audioCtx || !clickBuffer) return;
+        killEverything();
+        isRunning = true;
+        
+        const bpm = parseFloat(document.getElementById('targetBpm').value);
+        const beatSec = 60 / bpm;
+        const now = audioCtx.currentTime;
+        
+        for (let i = 0; i < 120; i++) {
+            scheduleClick(now + 0.1 + (i * beatSec));
+        }
+        document.getElementById('statusLabel').innerText = "TEST 1: CLICK ONLY RUNNING";
+    }
+
+    // --- STEP 3: 先行曲 + メトロノーム試験 (L1/3/4) ---
+    function testLeadSync() {
+        if (!players[0].src || !songData[0]) { alert("D1ファイルを読み込んでください"); return; }
+        killEverything();
+        isRunning = true;
+
+        const targetBpm = parseFloat(document.getElementById('targetBpm').value);
+        const rate1 = targetBpm / parseFloat(songData[0].bpm);
+        players[0].playbackRate = rate1;
+        players[0].currentTime = Math.max(0, parseFloat(songData[0].startTS) - 5); 
+
+        const startTime = audioCtx.currentTime + 0.1;
+        const beatSec = 60 / targetBpm;
+        const offsetToStartTS = (parseFloat(songData[0].startTS) - players[0].currentTime) / rate1;
+
+        for (let i = -10; i < 100; i++) {
+            scheduleClick(startTime + offsetToStartTS + (i * beatSec));
+        }
+
+        players[0].play();
+        document.getElementById('statusLabel').innerText = "TEST 2: D1 SYNC TEST";
+    }
+
+    // --- FINAL: フル検証 (All Layers) ---
+    function runFullSync() {
+        if (!players[0].src || !players[1].src || !songData[0] || !songData[1]) {
+            alert("D1, D2両方のファイルと下準備データが必要です");
+            return;
+        }
+        killEverything();
+        isRunning = true;
+
+        const targetBpm = parseFloat(document.getElementById('targetBpm').value);
+        const exitPoint = parseFloat(songData[0].endTS);
+        const entryPoint = parseFloat(songData[1].startTS);
+        const rate1 = targetBpm / parseFloat(songData[0].bpm);
+        const rate2 = targetBpm / parseFloat(songData[1].bpm);
+
+        players[0].playbackRate = rate1;
+        players[1].playbackRate = rate2;
+        players[0].currentTime = exitPoint - 15;
+        players[1].currentTime = entryPoint - 15;
+
+        const startTime = audioCtx.currentTime + 0.2;
+        const beatSec = 60 / targetBpm;
+        const offsetToStartTS = (parseFloat(songData[0].startTS) - players[0].currentTime) / rate1;
+
+        for (let i = -50; i < 500; i++) {
+            scheduleClick(startTime + offsetToStartTS + (i * beatSec));
+        }
+
+        setTimeout(() => { players[0].play(); players[1].play(); }, 200);
+        document.getElementById('statusLabel').innerText = "VERIFYING 13=0...";
+
+        masterTimer = setInterval(() => {
+            const dist = exitPoint - players[0].currentTime;
+            document.getElementById('timerDisplay').innerText = (dist > 0 ? "-" : "+") + Math.abs(dist).toFixed(2) + "s";
+            
+            if (dist > 0) { players[0].volume = 0.5; players[1].volume = 0.5; }
+            else { players[0].volume = 0; players[1].volume = 0.5; }
+        }, 20);
+    }
+
+    function scheduleClick(t) {
+        if (t < audioCtx.currentTime) return;
+        const s = audioCtx.createBufferSource();
+        s.buffer = clickBuffer;
+        s.connect(audioCtx.destination);
+        s.start(t);
+    }
+
+    function killEverything() {
+        clearInterval(masterTimer);
+        players.forEach(p => { p.pause(); p.volume = 0.5; });
+        isRunning = false;
+        document.getElementById('statusLabel').innerText = "STOPPED";
+    }
+</script>
+</body>
+</html>
