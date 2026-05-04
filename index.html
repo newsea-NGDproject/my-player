@@ -1,0 +1,84 @@
+<script>
+class ConnectionEngine {
+    constructor() {
+        this.ctx = null;
+        this.deck1 = { audio: document.getElementById('audio1'), gainRes: null, gainMan: null, source: null };
+        this.deck2 = { audio: document.getElementById('audio2'), gainRes: null, gainMan: null, source: null };
+        this.clickBuffer = null;
+        this.isReserved = false;
+        this.clean = (val, dec) => parseFloat(parseFloat(val).toFixed(dec));
+
+        // 起動時に既存データを読み込む
+        this.autoLoadStoredData();
+    }
+
+    // 【重要】既存のlocalStorageデータ (d1_data / d2_data) を読み込んで表示する
+    autoLoadStoredData() {
+        const d1 = JSON.parse(localStorage.getItem('d1_data'));
+        const d2 = JSON.parse(localStorage.getItem('d2_data'));
+
+        if (d1) {
+            document.getElementById('in-bpm1').value = d1.bpm;
+            document.getElementById('in-endts').value = d1.endTS;
+            document.getElementById('d1-info').innerText = `BPM:${d1.bpm} End:${d1.endTS}`;
+            document.getElementById('target-bpm-val').innerText = d1.bpm;
+        }
+        if (d2) {
+            document.getElementById('in-bpm2').value = d2.bpm;
+            document.getElementById('in-startts').value = d2.startTS;
+            document.getElementById('d2-info').innerText = `BPM:${d2.bpm} Start:${d2.startTS}`;
+            // L2データの存在をログにも出すぜ！
+            console.log("L2 Data Recovered:", d2);
+        }
+        
+        if (d1 && d2) {
+            console.log("🛡️ 下準備データの自動読み込みに成功したぜ！");
+        }
+    }
+
+    // (中略: step1, setupGraph, executeL4Reservation はそのまま維持)
+    
+    // startTestのデータ取得先も「d1_data」等に修正
+    async startTest(isFinal = false) {
+        const d1 = JSON.parse(localStorage.getItem('d1_data'));
+        const d2 = JSON.parse(localStorage.getItem('d2_data'));
+        
+        if (!d1 || !d2 || !this.deck1.audio.src) {
+            alert("ファイルを選択するか、データを確認してくれ！");
+            return;
+        }
+        
+        const targetBPM = this.clean(d1.bpm, 2);
+        const beatDur = this.clean(60 / targetBPM, 3);
+        const endTS = this.clean(d1.endTS, 3);
+        
+        this.setupGraph();
+        this.deck1.audio.currentTime = Math.max(0, endTS - 25);
+        this.deck1.audio.play();
+
+        const monitor = setInterval(() => {
+            const curr = this.deck1.audio.currentTime;
+            const remain = endTS - curr;
+            document.getElementById('timer-display').innerText = (remain * -1).toFixed(3) + "s";
+            if (!this.isReserved && remain <= 20) {
+                this.executeL4Reservation(endTS, beatDur, isFinal, d2.startTS);
+            }
+            if (curr >= endTS + 15) clearInterval(monitor);
+        }, 16);
+    }
+}
+
+// (中略: イベントリスナー部分)
+
+// 保存ボタンも、既存の「d1_data」等のキーで上書き保存するように修正
+document.getElementById('btn-save-data').onclick = () => {
+    const d1 = { bpm: document.getElementById('in-bpm1').value, endTS: document.getElementById('in-endts').value };
+    const d2 = { bpm: document.getElementById('in-bpm2').value, startTS: document.getElementById('in-startts').value };
+    localStorage.setItem('d1_data', JSON.stringify(d1));
+    localStorage.setItem('d2_data', JSON.stringify(d2));
+    document.getElementById('d1-info').innerText = `BPM:${d1.bpm} End:${d1.endTS}`;
+    document.getElementById('d2-info').innerText = `BPM:${d2.bpm} Start:${d2.startTS}`;
+    document.getElementById('target-bpm-val').innerText = d1.bpm;
+    alert("データを更新・保存したぜ！");
+};
+</script>
