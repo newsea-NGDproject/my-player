@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>13=0 接続検証 V4.6.5 - PERFECT STOP</title>
+    <style>
+        :root { --bg: #0f0f0f; --panel: #1a1a1a; --accent: #00ffcc; --warn: #ffcc00; --danger: #ff4444; --text: #e0e0e0; }
+        body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', sans-serif; padding: 10px; font-size: 14px; line-height: 1.4; }
+        .monitor { background: #000; border: 2px solid var(--accent); padding: 12px; border-radius: 10px; margin-bottom: 15px; position: relative; }
+        .monitor-title { position: absolute; top: -10px; left: 10px; background: var(--bg); padding: 0 5px; font-size: 10px; color: var(--accent); }
+        .row { display: flex; justify-content: space-between; border-bottom: 1px solid #333; padding: 5px 0; }
+        .val { color: var(--warn); font-weight: bold; }
+        .timer { font-size: 2.8rem; text-align: center; color: var(--warn); margin: 10px 0; font-family: monospace; }
+        .status-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+        .lamp { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #333; margin-right: 5px; }
+        .lamp-on { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+        
+        .panel { background: var(--panel); border-radius: 8px; padding: 12px; margin-bottom: 10px; border: 1px solid #333; }
+        .label { color: var(--accent); font-size: 11px; margin-bottom: 8px; display: block; font-weight: bold; text-transform: uppercase; }
+        
+        .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        button { background: #2a2a2a; color: #fff; border: 1px solid var(--accent); padding: 10px; border-radius: 5px; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        button:hover { background: #333; box-shadow: 0 0 10px rgba(0,255,204,0.3); }
+        button:active { background: var(--accent); color: #000; }
+        button:disabled { opacity: 0.3; border-color: #555; cursor: not-allowed; }
+        .btn-stop { border-color: var(--danger); color: var(--danger); }
+        .btn-reset { border-color: #888; color: #888; }
+        
+        input[type="number"], select { background: #000; color: var(--accent); border: 1px solid #444; padding: 8px; border-radius: 4px; width: 100%; box-sizing: border-box; font-family: monospace; }
+        .mixer-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+        input[type="range"] { flex-grow: 1; accent-color: var(--accent); cursor: pointer; }
+    </style>
+</head>
+<body>
+
+<div class="monitor">
+    <div class="monitor-title">L4 STATUS MONITOR V4.6.5</div>
+    <div class="row">
+        <span>L1 (Lead): <span id="l1-tag" class="val">--</span> <span id="l1-bpm-disp" style="font-size:10px; color:#888;"></span></span>
+        <span>EndTS: <span id="l1-end-disp" class="val">0.000</span>s</span>
+    </div>
+    <div class="row">
+        <span>L2 (Next): <span id="l2-tag" class="val">--</span> <span id="l2-bpm-disp" style="font-size:10px; color:#888;"></span></span>
+        <span>StartTS: <span id="l2-start-disp" class="val">0.000</span>s</span>
+    </div>
+    <div class="timer" id="timer">-00.000</div>
+    <div class="status-grid">
+        <div><span id="lamp-res" class="lamp"></span> RESERVATION</div>
+        <div style="text-align:right;">Rate: <span id="rate-disp" class="val">1.000</span></div>
+    </div>
+</div>
+
+<div class="panel">
+    <span class="label">STEP 1: ASSETS & SWAP</span>
+    <div style="display:flex; gap:5px; margin-bottom:10px;">
+        <input type="file" id="file1" accept="audio/*" style="font-size:10px; width:40%;">
+        <button id="btn-swap" style="padding:5px; width:20%;">⇄ SWAP</button>
+        <input type="file" id="file2" accept="audio/*" style="font-size:10px; width:40%;">
+    </div>
+    <div style="display:flex; align-items:center; gap:10px;">
+        <span>MyPitch BPM:</span>
+        <input type="number" id="my-bpm" value="120.00" step="0.01">
+        <button id="btn-load">LOAD</button>
+    </div>
+</div>
+
+<div class="panel">
+    <span class="label">STEP 2 & FINAL: EXECUTION</span>
+    <div style="margin-bottom:10px;">
+        モード: 
+        <select id="mode-select">
+            <option value="seamless">シームレスモード</option>
+            <option value="brain">脳内整理モード（おもてなし）</option>
+        </select>
+    </div>
+    <div class="btn-grid">
+        <button id="btn-step2" disabled>L1 逆算同期試験</button>
+        <button id="btn-final" disabled>総合接続試験</button>
+        <button id="btn-stop" class="btn-stop">STOP</button>
+        <button id="btn-reset" class="btn-reset">RESET</button>
+    </div>
+</div>
+
+<div class="panel">
+    <span class="label">MANUAL MIXER / LATENCY</span>
+    <div class="mixer-row"><span>L1 Vol</span><input type="range" id="v1" min="0" max="1" step="0.01" value="0.5"></div>
+    <div class="mixer-row"><span>L2 Vol</span><input type="range" id="v2" min="0" max="1" step="0.01" value="0.5"></div>
+    <div class="mixer-row"><span>Latency</span><input type="range" id="lat-adj" min="-200" max="200" step="1" value="0"><span id="lat-val" class="val">0</span>ms</div>
+</div>
+
+<audio id="aud1"></audio><audio id="aud2"></audio>
+
+<script>
+class PowerfulEngineV465 {
+    constructor() {
+        this.ctx = null;
+        this.d1 = null; this.d2 = null;
+        this.deck1 = { el: document.getElementById('aud1'), gRes: null, gMan: null, node: null };
+        this.deck2 = { el: document.getElementById('aud2'), gRes: null, gMan: null, node: null };
+        this.l3Master = null; // V4.6.5 メトロノーム専用防音室
+        this.clickBuf = null;
+        this.timerId = null;
+        this.isReserved = false;
+        this.offset = -0.180;
+        this.loadStorage();
+    }
+
+    loadStorage() {
+        const s1 = localStorage.getItem('song_0_data');
+        const s2 = localStorage.getItem('song_1_data');
+        if (s1) this.d1 = JSON.parse(s1);
+        if (s2) this.d2 = JSON.parse(s2);
+        this.updateMonitor();
+    }
+
+    updateMonitor() {
+        if (this.d1) {
+            document.getElementById('l1-tag').innerText = "D1 READY";
+            document.getElementById('l1-bpm-disp').innerText = `(${parseFloat(this.d1.bpm).toFixed(2)})`;
+            document.getElementById('l1-end-disp').innerText = parseFloat(this.d1.endTS).toFixed(3);
+        }
+        if (this.d2) {
+            document.getElementById('l2-tag').innerText = "D2 READY";
+            document.getElementById('l2-bpm-disp').innerText = `(${parseFloat(this.d2.bpm).toFixed(2)})`;
+            document.getElementById('l2-start-disp').innerText = parseFloat(this.d2.startTS).toFixed(3);
+        }
+    }
+
+    async initAudioCircuit() {
+        if (!this.ctx) {
+            this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const res = await fetch('click.wav');
+            this.clickBuf = await this.ctx.decodeAudioData(await res.arrayBuffer());
+            
+            // L3専用の回路（防音室）を設置
+            this.l3Master = this.ctx.createGain();
+            this.l3Master.connect(this.ctx.destination);
+        }
+        
+        if (!this.deck1.node) {
+            this.deck1.node = this.ctx.createMediaElementSource(this.deck1.el);
+            this.deck1.gRes = this.ctx.createGain();
+            this.deck1.gMan = this.ctx.createGain();
+            this.deck1.node.connect(this.deck1.gRes).connect(this.deck1.gMan).connect(this.ctx.destination);
+        }
+        if (!this.deck2.node) {
+            this.deck2.node = this.ctx.createMediaElementSource(this.deck2.el);
+            this.deck2.gRes = this.ctx.createGain();
+            this.deck2.gMan = this.ctx.createGain();
+            this.deck2.node.connect(this.deck2.gRes).connect(this.deck2.gMan).connect(this.ctx.destination);
+        }
+    }
+
+    swap() {
+        [this.d1, this.d2] = [this.d2, this.d1];
+        const tempSrc = this.deck1.el.src;
+        this.deck1.el.src = this.deck2.el.src;
+        this.deck2.el.src = tempSrc;
+        this.updateMonitor();
+        alert("SWAP完了！");
+    }
+
+    run(isFinal) {
+        this.stop(); // 実行前に確実に掃除
+
+        this.initAudioCircuit().then(() => {
+            if (this.ctx.state === 'suspended') this.ctx.resume();
+            
+            // L3防音室の開放
+            this.l3Master.gain.setValueAtTime(1, this.ctx.currentTime);
+
+            const myBpm = parseFloat(document.getElementById('my-bpm').value);
+            const rate = (myBpm / parseFloat(this.d1.bpm)).toFixed(3);
+            const endTS = parseFloat(this.d1.endTS);
+            const beatDur = (60 / myBpm).toFixed(3);
+            
+            document.getElementById('rate-disp').innerText = rate;
+            
+            const startPos = endTS - (25 * rate);
+            this.deck1.el.playbackRate = rate;
+            this.deck1.el.currentTime = Math.max(0, startPos);
+            
+            this.deck1.gRes.gain.setValueAtTime(1, this.ctx.currentTime);
+            this.deck2.gRes.gain.setValueAtTime(1, this.ctx.currentTime);
+
+            this.deck1.el.play();
+
+            this.timerId = setInterval(() => {
+                const curr = this.deck1.el.currentTime;
+                const remain = (endTS - curr) / rate;
+                document.getElementById('timer').innerText = (remain * -1).toFixed(3);
+
+                if (!this.isReserved && remain <= 20.0) {
+                    this.executeL4(endTS, rate, beatDur, isFinal);
+                }
+            }, 16);
+        });
+    }
+
+    executeL4(endTS, rate, beatDur, isFinal) {
+        const now = this.ctx.currentTime;
+        const remain = (endTS - this.deck1.el.currentTime) / rate;
+        const userLat = parseInt(document.getElementById('lat-adj').value) / 1000;
+        const totalOffset = this.offset + userLat;
+        const mode = document.getElementById('mode-select').value;
+
+        // L3永続予約：L3専用GainNode（l3Master）に繋ぐ
+        if (this.clickBuf) {
+            for (let n = -50; n <= 200; n++) {
+                const t = now + remain + (n * beatDur) + totalOffset;
+                if (t > now) {
+                    const s = this.ctx.createBufferSource();
+                    s.buffer = this.clickBuf;
+                    s.connect(this.l3Master); // ここがキモ！専用回路に繋ぐ
+                    s.start(t);
+                }
+            }
+        }
+
+        if (mode === 'brain') {
+            const nowTime = this.ctx.currentTime;
+            const fadeOutStart = nowTime + remain - 12;
+            const silenceStart = nowTime + remain - 2;
+            const silenceEnd = nowTime + remain + 2;
+            const fadeInEnd = nowTime + remain + 12;
+
+            this.deck1.gRes.gain.cancelScheduledValues(nowTime);
+            this.deck1.gRes.gain.setValueAtTime(1, Math.max(nowTime, fadeOutStart));
+            this.deck1.gRes.gain.linearRampToValueAtTime(0, silenceStart);
+            
+            if (isFinal) {
+                this.deck2.gRes.gain.cancelScheduledValues(nowTime);
+                this.deck2.gRes.gain.setValueAtTime(0, nowTime);
+                this.deck2.gRes.gain.setValueAtTime(0, silenceEnd);
+                this.deck2.gRes.gain.linearRampToValueAtTime(1, fadeInEnd);
+            }
+        }
+
+        if (isFinal && this.d2) {
+            const l2Rate = (parseFloat(document.getElementById('my-bpm').value) / parseFloat(this.d2.bpm));
+            const startTS2 = parseFloat(this.d2.startTS);
+            const l2ZeroPos = startTS2 - (60 / parseFloat(this.d2.bpm));
+            
+            setTimeout(() => {
+                this.deck2.el.playbackRate = l2Rate;
+                this.deck2.el.currentTime = l2ZeroPos;
+                this.deck2.el.play();
+            }, remain * 1000);
+        }
+
+        this.isReserved = true;
+        document.getElementById('lamp-res').classList.add('lamp-on');
+    }
+
+    // 徹底的な掃除：V4.6.5強化版
+    stop() {
+        clearInterval(this.timerId);
+        this.timerId = null;
+        this.isReserved = false;
+        document.getElementById('lamp-res').classList.remove('lamp-on');
+        document.getElementById('timer').innerText = "-00.000";
+        
+        this.deck1.el.pause();
+        this.deck2.el.pause();
+
+        if (this.ctx) {
+            const now = this.ctx.currentTime;
+            // 楽曲の予約フェードをキャンセル
+            this.deck1.gRes.gain.cancelScheduledValues(now);
+            this.deck2.gRes.gain.cancelScheduledValues(now);
+            this.deck1.gRes.gain.setValueAtTime(1, now);
+            this.deck2.gRes.gain.setValueAtTime(1, now);
+
+            // V4.6.5：メトロノームの息の根を止める
+            if (this.l3Master) {
+                this.l3Master.gain.cancelScheduledValues(now);
+                this.l3Master.gain.setValueAtTime(0, now); // 音量をゼロにして封印
+            }
+        }
+    }
+
+    reset() {
+        location.reload();
+    }
+}
+
+const app = new PowerfulEngineV465();
+
+document.getElementById('btn-load').onclick = () => {
+    const f1 = document.getElementById('file1').files[0];
+    const f2 = document.getElementById('file2').files[0];
+    if (f1) app.deck1.el.src = URL.createObjectURL(f1);
+    if (f2) app.deck2.el.src = URL.createObjectURL(f2);
+    document.getElementById('btn-step2').disabled = false;
+    document.getElementById('btn-final').disabled = false;
+    alert("V4.6.5 ロード完了！STOPでメトロノームも消音されます。");
+};
+
+document.getElementById('btn-swap').onclick = () => app.swap();
+document.getElementById('btn-step2').onclick = () => app.run(false);
+document.getElementById('btn-final').onclick = () => app.run(true);
+document.getElementById('btn-stop').onclick = () => app.stop();
+document.getElementById('btn-reset').onclick = () => app.reset();
+
+document.getElementById('v1').oninput = (e) => app.deck1.gMan && (app.deck1.gMan.gain.value = e.target.value);
+document.getElementById('v2').oninput = (e) => app.deck2.gMan && (app.deck2.gMan.gain.value = e.target.value);
+document.getElementById('lat-adj').oninput = (e) => document.getElementById('lat-val').innerText = e.target.value;
+</script>
+</body>
+</html>
