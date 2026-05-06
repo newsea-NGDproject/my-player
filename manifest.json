@@ -1,6 +1,6 @@
 {
-  "name": "竹弘の特別プレイヤー",
-  "short_name": "竹弘Player",
+  "name": "NoriRun",
+  "short_name": "NoriRun",
   "start_url": "index.html",
   "display": "standalone",
   "background_color": "#eef2f3",
