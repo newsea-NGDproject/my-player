@@ -1,0 +1,35 @@
+<div id="init-screen" style="display: flex; flex-direction: column; align-items: center; padding: 20px;">
+    <h2>🕺ノリノリRun設定</h2>
+    
+    <div class="setting-group" style="width: 100%; max-width: 400px; text-align: center;">
+        <label>あなたの「マイ・ピッチ」目安</label>
+        <div id="pitch-value" style="font-size: 2em; font-weight: bold; color: #007bff;">170</div>
+        <input type="range" id="pitch-slider" min="100" max="220" value="170" style="width: 100%;">
+        <div id="pitch-label" style="font-weight: bold; margin-bottom: 20px;">🏃 マラソンペース</div>
+    </div>
+
+    <div class="safety-box" style="background: #e8f4fd; border: 1px solid #b3d7ff; padding: 15px; border-radius: 10px; font-size: 0.9em; line-height: 1.5;">
+        <p>🛡️ **安心・安全への取り組み**</p>
+        <p>この後、ブラウザからフォルダへのアクセス許可を求められますが、**あなたの個人情報が外部に漏れることは一切ありません。** 解析データはあなたのスマホ内だけに安全に保存されます。</p>
+    </div>
+
+    <button id="start-scan-btn" style="margin-top: 25px; padding: 15px 30px; font-size: 1.2em;">
+        設定を保存して音楽を読み込む
+    </button>
+</div>
+
+<script>
+// ピッチスライダーの動的表示（可視化）
+const slider = document.getElementById('pitch-slider');
+const valDisp = document.getElementById('pitch-value');
+const labelDisp = document.getElementById('pitch-label');
+
+slider.oninput = function() {
+    const val = this.value;
+    valDisp.innerText = val;
+    if (val < 120) labelDisp.innerText = "🚶 ウォーキング";
+    else if (val < 150) labelDisp.innerText = "🚶‍♂️ 早歩き・行進";
+    else if (val < 185) labelDisp.innerText = "🏃 マラソンペース";
+    else labelDisp.innerText = "🏁 全力ダッシュ！";
+};
+</script>
