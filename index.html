@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>NoriRun Ver.9 - Initial Setup</title>
+    <style>
+        :root {
+            --accent-red: #ff4444;
+            --main-blue: #007bff;
+            --bg-color: #f8f9fa;
+        }
+        body, html {
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-color);
+            overflow: hidden; /* 定規のスワイプに集中させるため */
+        }
+        #init-screen {
+            display: flex; flex-direction: column; align-items: center;
+            width: 100%; height: 100%; box-sizing: border-box; padding: 10px;
+        }
+        h1 { margin: 10px 0 5px; font-size: 1.5rem; }
+        .instruction { font-size: 0.9rem; margin-bottom: 2px; }
+        .sub-instruction { font-size: 0.8rem; color: #666; margin-bottom: 10px; }
+
+        /* --- 魂のスワイプ定規エリア --- */
+        .ruler-container {
+            position: relative; width: 100%; height: 150px;
+            background: white; border-radius: 15px;
+            box-shadow: inset 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden; touch-action: pan-x;
+            margin-bottom: 15px;
+        }
+        /* 中央の赤線 */
+        .center-line {
+            position: absolute; left: 50%; top: 0; bottom: 0;
+            width: 2px; background: var(--accent-red);
+            z-index: 10; transform: translateX(-50%);
+        }
+        /* 動く定規本体 */
+        #ruler-canvas {
+            cursor: grab; display: block;
+        }
+
+        /* --- 可視化ラベル --- */
+        #status-display {
+            text-align: center; margin-bottom: 20px;
+        }
+        #pitch-number { font-size: 3rem; font-weight: bold; color: var(--main-blue); line-height: 1; }
+        #pitch-label { font-size: 1.2rem; font-weight: bold; margin-top: 5px; }
+
+        /* --- 安心メッセージ --- */
+        .safety-box {
+            background: #e8f4fd; border: 1px solid #b3d7ff;
+            padding: 12px; border-radius: 12px;
+            width: 90%; max-width: 400px;
+            font-size: 0.85rem; line-height: 1.4; color: #333;
+        }
+        .safety-title { font-weight: bold; display: block; margin-bottom: 5px; }
+
+        /* --- 実行ボタン --- */
+        #save-btn {
+            margin-top: auto; margin-bottom: 20px;
+            background: var(--main-blue); color: white;
+            border: none; padding: 15px 40px;
+            font-size: 1.1rem; font-weight: bold;
+            border-radius: 30px; cursor: pointer;
+            box-shadow: 0 4px 15px rgba(0,123,255,0.3);
+        }
+        #save-btn:active { transform: scale(0.95); }
+
+        /* 横画面対応の微調整 */
+        @media (orientation: landscape) {
+            #init-screen { flex-direction: row; flex-wrap: wrap; justify-content: center; overflow-y: auto; }
+            .ruler-container { width: 60%; height: 120px; }
+            #status-display { width: 35%; }
+            #save-btn { width: 80%; margin-top: 10px; }
+        }
+    </style>
+</head>
+<body>
+
+<div id="init-screen">
+    <h1>初期設定</h1>
+    <p class="instruction">あなたの「マイ・ピッチ」を設定して下さい</p>
+    <p class="sub-instruction">(※次回以降は、メニューから再設定出来ます)</p>
+
+    <div id="status-display">
+        <div id="pitch-number">170</div>
+        <div id="pitch-label">🏃‍♂️ マラソン</div>
+    </div>
+
+    <div class="ruler-container" id="ruler-box">
+        <div class="center-line"></div>
+        <canvas id="ruler-canvas"></canvas>
+    </div>
+
+    <div class="safety-box">
+        <span class="safety-title">🛡️ 安心・安全への取り組み</span>
+        あなたの個人情報が外部に漏れることは一切ありません。解析データはあなたのスマホ内にのみ安全に保存されます。
+    </div>
+
+    <button id="save-btn">設定を保存して音楽を読み込む</button>
+</div>
+
+<script>
+/**
+ * NoriRun Ver.9 - STEP 1-A Logic
+ * (C) 2026 Takehiro & つよぽん
+ */
+
+const state = {
+    bpm: 170,
+    minBpm: 100,
+    maxBpm: 220,
+    pixelsPerUnit: 15, // 目盛り1つ分のピクセル幅
+    offsetX: 0,
+    isDragging: false,
+    startX: 0,
+    audioCtx: null,
+    clickBuffer: null,
+    lastClickTime: 0
+};
+
+const canvas = document.getElementById('ruler-canvas');
+const ctx = canvas.getContext('2d');
+const numDisp = document.getElementById('pitch-number');
+const labelDisp = document.getElementById('pitch-label');
+const saveBtn = document.getElementById('save-btn');
+
+// --- 1. Audio初期化（竹弘オリジナル音 click.wav） ---
+async function initAudio() {
+    state.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    try {
+        const response = await fetch('click.wav');
+        const arrayBuffer = await response.arrayBuffer();
+        state.clickBuffer = await state.audioCtx.decodeAudioData(arrayBuffer);
+    } catch (e) {
+        console.error("Audio Load Error:", e);
+        // 音がなくても動作は継続させる
+    }
+}
+
+function playClick() {
+    if (!state.audioCtx || !state.clickBuffer) return;
+    const source = state.audioCtx.createBufferSource();
+    source.buffer = state.clickBuffer;
+    source.connect(state.audioCtx.destination);
+    source.start(0);
+}
+
+// --- 2. メトロノーム制御 ---
+function tick() {
+    if (!state.isDragging) return;
+    const now = state.audioCtx.currentTime;
+    const interval = 60 / state.bpm;
+    if (now - state.lastClickTime >= interval) {
+        playClick();
+        state.lastClickTime = now;
+    }
+    requestAnimationFrame(tick);
+}
+
+// --- 3. 定規描画ロジック ---
+function drawRuler() {
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    ctx.strokeStyle = '#333';
+    ctx.fillStyle = '#333';
+    ctx.font = '14px Arial';
+    ctx.textAlign = 'center';
+
+    const centerX = w / 2;
+    const startBpm = Math.floor(state.minBpm);
+    const endBpm = Math.ceil(state.maxBpm);
+
+    for (let b = startBpm; b <= endBpm; b++) {
+        const x = centerX + (b - state.bpm) * state.pixelsPerUnit;
+        
+        if (x < 0 || x > w) continue;
+
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        if (b % 10 === 0) {
+            ctx.lineTo(x, 40);
+            ctx.fillText(b, x, 55);
+        } else if (b % 5 === 0) {
+            ctx.lineTo(x, 25);
+        } else {
+            ctx.lineTo(x, 15);
+        }
+        ctx.stroke();
+    }
+}
+
+function updateLabel() {
+    const b = state.bpm;
+    numDisp.innerText = b;
+    if (b <= 120) labelDisp.innerText = "🚶‍♂️ ウォーキング";
+    else if (b <= 135) labelDisp.innerText = "🥁 行進";
+    else if (b <= 200) labelDisp.innerText = "🏃‍♂️ マラソン";
+    else labelDisp.innerText = "🏎️ 全力ダッシュ！";
+}
+
+// --- 4. スワイプ操作イベント ---
+function onStart(x) {
+    if (!state.audioCtx) initAudio();
+    state.isDragging = true;
+    state.startX = x;
+    tick();
+}
+
+function onMove(x) {
+    if (!state.isDragging) return;
+    const diff = x - state.startX;
+    const bpmDiff = diff / state.pixelsPerUnit;
+    
+    let newBpm = Math.round(state.bpm - bpmDiff);
+    if (newBpm < state.minBpm) newBpm = state.minBpm;
+    if (newBpm > state.maxBpm) newBpm = state.maxBpm;
+    
+    if (newBpm !== state.bpm) {
+        state.bpm = newBpm;
+        updateLabel();
+        drawRuler();
+    }
+    state.startX = x;
+}
+
+function onEnd() {
+    state.isDragging = false;
+}
+
+canvas.addEventListener('touchstart', (e) => onStart(e.touches[0].clientX));
+window.addEventListener('touchmove', (e) => onMove(e.touches[0].clientX), {passive: false});
+window.addEventListener('touchend', onEnd);
+
+// PCマウス用（デバッグ用）
+canvas.addEventListener('mousedown', (e) => onStart(e.clientX));
+window.addEventListener('mousemove', (e) => onMove(e.clientX));
+window.addEventListener('mouseup', onEnd);
+
+// --- 5. IndexedDB 建設ロジック ---
+async function saveAndNext() {
+    const request = indexedDB.open("NoriRunDB", 1);
+
+    request.onupgradeneeded = (e) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains('settings')) {
+            db.createObjectStore('settings');
+        }
+        if (!db.objectStoreNames.contains('music_library')) {
+            db.createObjectStore('music_library', { keyPath: 'file_path' });
+        }
+    };
+
+    request.onsuccess = (e) => {
+        const db = e.target.result;
+        const tx = db.transaction('settings', 'readwrite');
+        tx.objectStore('settings').put(state.bpm, 'my_pitch');
+        tx.objectStore('settings').put(true, 'init_completed');
+        
+        tx.oncomplete = () => {
+            alert("設定を保存しました！音楽スキャンを開始します。");
+            // ここで次のスキャンモジュールへ（今は仮にリロード）
+            // location.href = "main.html"; 
+        };
+    };
+}
+
+saveBtn.onclick = saveAndNext;
+
+// --- 6. 初期描画 & リサイズ対策 ---
+function resize() {
+    const box = document.getElementById('ruler-box');
+    canvas.width = box.clientWidth;
+    canvas.height = box.clientHeight;
+    drawRuler();
+}
+
+window.addEventListener('resize', resize);
+resize();
+updateLabel();
+
+</script>
+</body>
+</html>
