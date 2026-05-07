@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>NoriRun Ver.9 - Step 1-A & 1-B</title>
+<style>
+:root {
+--accent-red: #ff3b30;
+--main-blue: #007aff;
+--bg-color: #f2f2f7;
+--indicator-red: #ff3b30;
+--indicator-green: #34c759;
+--indicator-blue: #007aff;
+}
+
+body, html {
+margin: 0; padding: 0; width: 100%; height: 100%;
+font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+background-color: var(--bg-color);
+overflow: hidden; touch-action: none;
+}
+
+/* 画面切り替え制御 */
+.screen { display: none; width: 100%; height: 100%; flex-direction: column; }
+.active { display: flex !important; }
+
+/* --- [1-A] 初期設定画面 --- */
+#init-screen { align-items: center; box-sizing: border-box; padding: 15px; text-align: center; }
+.safety-box { background: white; padding: 15px; border-radius: 12px; margin: 10px 0; box-shadow: 0 2px 8px rgba(0,0,0,0.05); text-align: left; }
+.safety-text { font-size: 0.9rem; line-height: 1.5; color: #3a3a3c; }
+
+/* スワイプ定規聖域 */
+#ruler-container { width: 100%; height: 150px; position: relative; margin: 20px 0; cursor: grab; }
+#ruler-canvas { width: 100%; height: 100%; display: block; }
+
+.bpm-display { font-size: 3rem; font-weight: bold; color: var(--main-blue); margin: 5px 0; }
+.pitch-label { font-size: 1.2rem; font-weight: 600; color: #1c1c1e; min-height: 1.5em; }
+
+.btn-setup {
+width: 80%; max-width: 300px; height: 50px; background: var(--main-blue);
+color: white; border: none; border-radius: 25px; font-size: 1.1rem; font-weight: bold;
+margin-top: auto; margin-bottom: 20px; box-shadow: 0 4px 12px rgba(0,122,255,0.3);
+}
+
+/* --- [1-B] メインメニュー画面 --- */
+#main-menu { background: #fff; }
+.header { height: 50px; display: flex; align-items: center; justify-content: space-between; padding: 0 15px; border-bottom: 1px solid #ddd; }
+.header h2 { font-size: 1.1rem; margin: 0; }
+
+/* インジケーター */
+.status-lamp { display: flex; align-items: center; font-size: 0.75rem; font-weight: bold; }
+.lamp-dot { width: 12px; height: 12px; border-radius: 50%; margin-left: 5px; }
+.dot-red { background: var(--indicator-red); animation: blink 1s infinite; }
+.dot-green { background: var(--indicator-green); animation: blink 1s infinite; }
+.dot-blue { background: var(--indicator-blue); }
+
+@keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
+
+/* 再生情報 & 操作エリア (Ver.8.5継承) */
+.now-playing { display: flex; padding: 10px; height: 80px; border-bottom: 1px solid #eee; }
+.song-meta { flex: 3; display: flex; flex-direction: column; justify-content: center; }
+.song-title { font-weight: bold; font-size: 1rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.song-artist { font-size: 0.85rem; color: #666; }
+.song-jacket { flex: 1; height: 60px; background: #ddd; border-radius: 4px; object-fit: cover; }
+
+.bpm-control { display: flex; align-items: center; padding: 10px; background: #f9f9f9; }
+.bpm-input { width: 80px; font-size: 1.5rem; text-align: center; border: 1px solid #ccc; border-radius: 4px; padding: 5px; }
+.btn-reset-bpm { margin-left: 10px; padding: 8px 15px; background: #8e8e93; color: white; border-radius: 6px; border: none; font-size: 0.8rem; }
+
+/* メインメニュー定規スライダー */
+.menu-ruler { width: 100%; height: 80px; background: #eee; position: relative; }
+
+/* ボタンエリア */
+.action-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; padding: 10px; background: #f2f2f7; }
+.action-btn { font-size: 0.7rem; padding: 10px 2px; text-align: center; background: white; border: 1px solid #ddd; border-radius: 8px; }
+
+/* 楽曲リスト (1:1:3:2:1:1) */
+.list-header { display: flex; background: #e5e5ea; font-size: 0.7rem; padding: 5px 0; text-align: center; }
+.music-list { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.list-item { display: flex; align-items: center; border-bottom: 1px solid #eee; height: 50px; text-align: center; font-size: 0.85rem; }
+
+.col-1 { flex: 1; } .col-2 { flex: 1; } .col-3 { flex: 3; text-align: left; padding: 0 5px; overflow: hidden; white-space: nowrap; } .col-2-meta { flex: 2; text-align: left; color: #666; font-size: 0.75rem; }
+.list-jacket { width: 35px; height: 35px; border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<div id="init-screen" class="screen active">
+<h1>初期設定</h1>
+<p class="instruction">あなたの「マイ・ピッチ」を設定して下さい</p>
+<p class="sub-instruction">(※次回以降は、メニューから再設定出来ます)</p>
+
+<div id="bpm-val" class="bpm-display">120</div>
+<div id="pitch-tag" class="pitch-label">🥁 行進</div>
+
+<div id="ruler-container">
+<canvas id="ruler-canvas"></canvas>
+</div>
+
+<div class="safety-box">
+<div class="safety-text">
+🛡️ 安心・安全への取り組み<br>
+下記**「設定」**ボタンを押すと<br>
+「このサイトにファイルの表示とコピーを許可しますか？ 」<br>
+と、ブラウザの確認画面が出ますが、あなたの個人情報が外部に漏れることは一切ありません。NoriRunアプリで作成されるデータは、あなたのスマホ内にのみ安全に保存されます。
+</div>
+</div>
+
+<button id="setup-btn" class="btn-setup">設定</button>
+</div>
+
+<div id="main-menu" class="screen">
+<div class="header">
+<h2>メインメニュー</h2>
+<div class="status-lamp">
+<span id="lamp-text">曲データ取込中</span>
+<div id="indicator" class="lamp-dot dot-red"></div>
+</div>
+</div>
+
+<div class="now-playing">
+<div class="song-meta">
+<div id="main-title" class="song-title">楽曲を選択してください</div>
+<div id="main-artist" class="song-artist">-</div>
+</div>
+<img id="main-jacket" class="song-jacket" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
+</div>
+
+<div class="bpm-control">
+<input type="number" id="manual-bpm" class="bpm-input" value="120">
+<button id="origin-bpm-btn" class="btn-reset-bpm">元BPM</button>
+</div>
+
+<div id="menu-ruler-box" class="menu-ruler">
+<canvas id="menu-ruler-canvas"></canvas>
+</div>
+
+<div class="action-grid">
+<div class="action-btn">🕺ノリノリRun再生</div>
+<div class="action-btn" onclick="startNoriRunScan()">曲追加</div>
+<div class="action-btn">停止</div>
+<div class="action-btn" onclick="location.reload()">マイ・ピッチ設定</div>
+<div class="action-btn">終了ボタン</div>
+</div>
+
+<div class="list-header">
+<div class="col-1">🕺/🛌</div><div class="col-1">画像</div><div class="col-3">曲名</div><div class="col-2-meta">アーティスト</div><div class="col-1">↑</div><div class="col-1">↓</div>
+</div>
+<div id="music-list" class="music-list">
+</div>
+</div>
+
+<script>
+// ==========================================
+// 1. グローバル設定 & 状態管理
+// ==========================================
+const state = {
+bpm: 120,
+targetBpm: 120,
+isDragging: false,
+startX: 0,
+startBpm: 120,
+myPitch: 120,
+audioCtx: null,
+clickBuffer: null,
+nextClickTime: 0,
+isPlaying: true, // 1-Aでは常に鳴らす
+db: null
+};
+
+const canvas = document.getElementById('ruler-canvas');
+const ctx = canvas.getContext('2d');
+const bpmDisplay = document.getElementById('bpm-val');
+const pitchTag = document.getElementById('pitch-tag');
+
+// ==========================================
+// 2. 音源処理 (click.wav / Web Audio API)
+// ==========================================
+async function initAudio() {
+if (state.audioCtx) return;
+state.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+try {
+const response = await fetch('click.wav');
+const arrayBuffer = await response.arrayBuffer();
+state.clickBuffer = await state.audioCtx.decodeAudioData(arrayBuffer);
+scheduler();
+} catch (e) { console.error("Audio error:", e); }
+}
+
+function scheduler() {
+while (state.nextClickTime < state.audioCtx.currentTime + 0.1) {
+if (state.isPlaying) playClick(state.nextClickTime);
+state.nextClickTime += 60.0 / state.bpm;
+}
+setTimeout(scheduler, 25);
+}
+
+function playClick(time) {
+if (!state.clickBuffer) return;
+const source = state.audioCtx.createBufferSource();
+source.buffer = state.clickBuffer;
+source.connect(state.audioCtx.destination);
+source.start(time);
+}
+
+// ==========================================
+// 3. 描画・操作ロジック (1-A核心)
+// ==========================================
+function getPitchLabel(b) {
+if (b <= 120) return "🚶‍♂️ ウォーキング";
+if (b <= 135) return "🥁 行進";
+if (b <= 200) return "🏃‍♂️ マラソン";
+return "🏎️ 全力ダッシュ！";
+}
+
+function render() {
+// 慣性吸い付き補完 (仕様書 5.1)
+state.bpm += (state.targetBpm - state.bpm) * 0.25;
+const displayBpm = Math.round(state.bpm);
+
+bpmDisplay.innerText = displayBpm;
+pitchTag.innerText = getPitchLabel(displayBpm);
+
+const w = canvas.width;
+const h = canvas.height;
+ctx.clearRect(0, 0, w, h);
+
+// 定規描画
+const centerX = w / 2;
+const step = 10; // 1BPMあたりのピクセル
+ctx.strokeStyle = "#3a3a3c";
+ctx.font = "12px sans-serif";
+ctx.textAlign = "center";
+
+for (let i = -20; i <= 20; i++) {
+const currentTick = Math.floor(state.bpm) + i;
+const x = centerX + (currentTick - state.bpm) * step;
+
+ctx.beginPath();
+ctx.moveTo(x, h * 0.3);
+ctx.lineTo(x, h * 0.7);
+ctx.lineWidth = (currentTick % 5 === 0) ? 2 : 1;
+ctx.stroke();
+
+if (currentTick % 10 === 0) {
+ctx.fillText(currentTick, x, h * 0.9);
+}
+}
+
+// 中心赤線
+ctx.strokeStyle = "#ff3b30";
+ctx.lineWidth = 3;
+ctx.beginPath(); ctx.moveTo(centerX, 0); ctx.lineTo(centerX, h); ctx.stroke();
+
+requestAnimationFrame(render);
+}
+
+function handleStart(x) {
+state.isDragging = true;
+state.startX = x;
+state.startBpm = state.targetBpm;
+if (state.audioCtx) state.audioCtx.resume();
+else initAudio();
+}
+
+function handleMove(x) {
+if (!state.isDragging) return;
+const diff = (x - state.startX) / 10;
+state.targetBpm = Math.max(80, Math.min(250, state.startBpm - diff));
+}
+
+function handleEnd() {
+state.isDragging = false;
+state.targetBpm = Math.round(state.targetBpm); // 吸い付き収束
+}
+
+// ==========================================
+// 4. [1-B] 音楽フォルダスキャン & DB
+// ==========================================
+async function openDB() {
+return new Promise((resolve) => {
+const req = indexedDB.open("NoriRunDB", 1);
+req.onupgradeneeded = e => {
+const db = e.target.result;
+db.createObjectStore('settings');
+db.createObjectStore('music_library', { keyPath: 'file_path' });
+};
+req.onsuccess = e => resolve(e.target.result);
+});
+}
+
+async function startNoriRunScan() {
+try {
+const handle = await window.showDirectoryPicker();
+document.getElementById('init-screen').classList.remove('active');
+document.getElementById('main-menu').classList.add('active');
+
+const db = await openDB();
+const files = [];
+
+// 再帰的にスキャン
+async function scan(dirHandle, path = "") {
+for await (const entry of dirHandle.values()) {
+if (entry.kind === 'file' && entry.name.match(/.(mp3|m4a|wav)$`/i)) {
+files.push({ handle: entry, path: path + entry.name });
+} else if (entry.kind === 'directory') {
+await scan(entry, path + entry.name + "/");
+}
+}
+}
+await scan(handle);
+
+const indicator = document.getElementById('indicator');
+const listContainer = document.getElementById('music-list');
+
+// 第一段階：文字情報取込 (赤点滅)
+indicator.className = "lamp-dot dot-red";
+for (const f of files) {
+const tx = db.transaction('music_library', 'readwrite');
+const data = {
+file_path: f.path,
+title: f.handle.name,
+artist: "Unknown",
+nori_data: [],
+sort_order: Date.now()
+};
+tx.objectStore('music_library').put(data);
+addToList(data);
+}
+
+// 第二段階：画像取込 (緑点滅 - ダミー実装)
+indicator.className = "lamp-dot dot-green";
+setTimeout(() => {
+// 第三段階：完了 (青点灯)
+indicator.className = "lamp-dot dot-blue";
+document.getElementById('lamp-text').innerText = "取込完了";
+}, 3000);
+
+} catch (e) {
+console.error("User cancelled or Error:", e);
+}
+}
+
+function addToList(item) {
+const list = document.getElementById('music-list');
+const row = document.createElement('div');
+row.className = 'list-item';
+row.innerHTML = &lt;div class="col-1"&gt;🛌&lt;/div&gt; &lt;div class="col-1"&gt;&lt;div class="list-jacket" style="background:#eee"&gt;&lt;/div&gt;&lt;/div&gt; &lt;div class="col-3"&gt;${item.title}</div>
+<div class="col-2-meta">${item.artist}</div>
+<div class="col-1">↑</div>
+<div class="col-1">↓</div>
+`;
+list.appendChild(row);
+}
+
+// ==========================================
+// 5. 初期化
+// ==========================================
+window.onload = async () => {
+const container = document.getElementById('ruler-container');
+canvas.width = container.clientWidth;
+canvas.height = container.clientHeight;
+
+// 1-A描画開始 (DB接続を待たない優先描画)
+render();
+
+const db = await openDB();
+const tx = db.transaction('settings', 'readonly');
+tx.objectStore('settings').get('init_completed').onsuccess = (e) => {
+if (e.target.result) {
+document.getElementById('init-screen').classList.remove('active');
+document.getElementById('main-menu').classList.add('active');
+}
+};
+};
+
+document.getElementById('setup-btn').onclick = async () => {
+state.isPlaying = false;
+const db = await openDB();
+const tx = db.transaction('settings', 'readwrite');
+tx.objectStore('settings').put(Math.round(state.bpm), 'my_pitch');
+tx.objectStore('settings').put(true, 'init_completed');
+tx.oncomplete = () => {
+startNoriRunScan(); // 設定ボタンがスキャンのトリガー
+};
+};
+
+// イベント登録
+const handleStartEv = (e) => handleStart(e.touches ? e.touches[0].clientX : e.clientX);
+const handleMoveEv = (e) => handleMove(e.touches ? e.touches[0].clientX : e.clientX);
+
+canvas.addEventListener('touchstart', handleStartEv, {passive: false});
+window.addEventListener('touchmove', handleMoveEv, {passive: false});
+window.addEventListener('touchend', handleEnd);
+canvas.addEventListener('mousedown', handleStartEv);
+window.addEventListener('mousemove', handleMoveEv);
+window.addEventListener('mouseup', handleEnd);
+
+window.addEventListener('resize', () => {
+const container = document.getElementById('ruler-container');
+canvas.width = container.clientWidth;
+canvas.height = container.clientHeight;
+});
+</script>
+</body>
+</html>
