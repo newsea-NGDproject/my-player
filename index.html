@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>NoriRun Ver.9 - Step 1-A</title>
+<style>
+/* === 3.1 デグレード対策（CSS聖域） === */
+:root {
+--accent-red: #ff3b30;
+--main-blue: #007aff;
+--bg-color: #f2f2f7;
+}
+body, html {
+margin: 0; padding: 0; width: 100%; height: 100%;
+font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+background-color: var(--bg-color);
+overflow: hidden; touch-action: none;
+}
+#init-screen {
+display: flex; flex-direction: column; align-items: center;
+width: 100%; height: 100%; box-sizing: border-box; padding: 15px;
+text-align: center;
+}
+
+/* 2.2 構成要素の配置 */
+h1 { margin: 10px 0 5px; font-size: 1.6rem; color: #1c1c1e; }
+.instruction { font-size: 1rem; margin: 0; font-weight: 500; }
+.sub-instruction { font-size: 0.85rem; color: #8e8e93; margin-bottom: 10px; }
+
+#pitch-number { font-size: 4rem; font-weight: 900; color: var(--main-blue); line-height: 1; margin: 10px 0; }
+#pitch-label { font-size: 1.2rem; font-weight: bold; margin-bottom: 15px; height: 1.5rem; }
+
+/* スワイプ定規エリア */
+.ruler-outer {
+position: relative; width: 100%; height: 140px;
+background: #fff; border-radius: 20px;
+box-shadow: 0 4px 15px rgba(0,0,0,0.05); overflow: hidden; margin-bottom: 20px;
+}
+.center-line {
+position: absolute; left: 50%; top: 0; bottom: 0;
+width: 3px; background: var(--accent-red); z-index: 10; transform: translateX(-50%);
+}
+#ruler-canvas { width: 100%; height: 100%; cursor: grab; display: block; }
+
+/* 2.1 安心メッセージ（一字一句固定） */
+.safety-box {
+background: #fff; border: 1px solid #d1d1d6; padding: 15px;
+border-radius: 15px; width: 95%; font-size: 0.85rem; line-height: 1.6; color: #3a3a3c;
+text-align: left; box-sizing: border-box;
+}
+
+/* 2.2 ボタン名称: 「設定」 */
+#save-btn {
+margin-top: auto; margin-bottom: 30px;
+background: var(--main-blue); color: white; border: none;
+padding: 16px 80px; font-size: 1.2rem; font-weight: bold;
+border-radius: 30px; box-shadow: 0 5px 15px rgba(0,122,255,0.3);
+cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+</style>
+</head>
+<body>
+
+<div id="init-screen">
+<h1>初期設定</h1>
+<p class="instruction">あなたの「マイ・ピッチ」を設定して下さい</p>
+<p class="sub-instruction">(※次回以降は、メニューから再設定出来ます)</p>
+
+<div id="pitch-number">170</div>
+<div id="pitch-label">🏃‍♂️ マラソン</div>
+
+<div class="ruler-outer" id="ruler-container">
+<div class="center-line"></div>
+<canvas id="ruler-canvas"></canvas>
+</div>
+
+<div class="safety-box">
+🛡️ <strong>安心・安全への取り組み</strong><br>
+下記<strong>「設定」</strong>ボタンを押すと<br>
+「このサイトにファイルの表示とコピーを許可しますか？ 」<br>
+と、ブラウザの確認画面が出ますが、あなたの個人情報が外部に漏れることは一切ありません。NoriRunアプリで作成されるデータは、あなたのスマホ内にのみ安全に保存されます。
+</div>
+
+<button id="save-btn">設定</button>
+</div>
+
+<script>
+// --- 3.2 音源デグレード封印（外部ファイル click.wav 強制） ---
+const state = {
+bpm: 170,
+targetBpm: 170,
+isDragging: false,
+lastX: 0,
+audioCtx: null,
+audioBuffer: null,
+nextNoteTime: 0,
+timerId: null
+};
+
+// 音源のプリロード
+async function loadClickSound() {
+if (!state.audioCtx) {
+state.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+try {
+const response = await fetch('click.wav');
+const arrayBuffer = await response.arrayBuffer();
+state.audioBuffer = await state.audioCtx.decodeAudioData(arrayBuffer);
+} catch (e) {
+console.error("click.wavの読み込みに失敗しました。ファイルが同階層にあるか確認してください。");
+}
+}
+
+function playClick(time) {
+if (!state.audioBuffer) return;
+const source = state.audioCtx.createBufferSource();
+source.buffer = state.audioBuffer;
+source.connect(state.audioCtx.destination);
+source.start(time);
+}
+
+function scheduler() {
+while (state.nextNoteTime < state.audioCtx.currentTime + 0.1) {
+playClick(state.nextNoteTime);
+const secondsPerBeat = 60.0 / state.targetBpm;
+state.nextNoteTime += secondsPerBeat;
+}
+state.timerId = setTimeout(scheduler, 25);
+}
+
+// --- 3.1 スワイプ定規 & 慣性補完 ---
+const canvas = document.getElementById('ruler-canvas');
+const ctx = canvas.getContext('2d', { alpha: false });
+const pitchNum = document.getElementById('pitch-number');
+const pitchLab = document.getElementById('pitch-label');
+
+function getLabel(b) {
+if (b <= 120) return "🚶‍♂️ ウォーキング";
+if (b <= 135) return "🥁 行進";
+if (b <= 200) return "🏃‍♂️ マラソン";
+return "🏎️ 全力ダッシュ！";
+}
+
+function render() {
+// 3.1 慣性補完ロジック
+if (!state.isDragging) {
+state.bpm += (state.targetBpm - state.bpm) * 0.25;
+}
+
+const roundedBpm = Math.round(state.bpm);
+pitchNum.innerText = roundedBpm;
+pitchLab.innerText = getLabel(roundedBpm);
+
+const w = canvas.width, h = canvas.height, centerX = w / 2;
+const unitW = 20;
+
+ctx.fillStyle = '#ffffff';
+ctx.fillRect(0, 0, w, h);
+
+ctx.strokeStyle = '#333';
+ctx.textAlign = 'center';
+ctx.textBaseline = 'middle';
+ctx.font = '14px sans-serif';
+
+for (let i = Math.floor(state.bpm - 60); i <= Math.ceil(state.bpm + 60); i++) {
+if (i < 100 || i > 220) continue;
+const x = centerX + (i - state.bpm) * unitW;
+
+ctx.beginPath();
+ctx.moveTo(x, 0);
+if (i % 10 === 0) {
+ctx.lineWidth = 2;
+ctx.lineTo(x, 40);
+ctx.fillStyle = '#333';
+ctx.fillText(i, x, 60);
+} else {
+ctx.lineWidth = 1;
+ctx.lineTo(x, 15);
+}
+ctx.stroke();
+}
+requestAnimationFrame(render);
+}
+
+// 操作イベント
+async function handleStart(x) {
+if (!state.audioCtx) {
+await loadClickSound();
+state.nextNoteTime = state.audioCtx.currentTime;
+scheduler();
+}
+if (state.audioCtx.state === 'suspended') state.audioCtx.resume();
+state.isDragging = true;
+state.lastX = x;
+}
+
+function handleMove(x) {
+if (!state.isDragging) return;
+const dx = x - state.lastX;
+state.targetBpm -= dx * 0.1;
+state.targetBpm = Math.max(100, Math.min(220, state.targetBpm));
+state.bpm = state.targetBpm;
+state.lastX = x;
+}
+
+function handleEnd() {
+state.isDragging = false;
+state.targetBpm = Math.round(state.targetBpm); // 3.1 整数値へ収束
+}
+
+// 3.1 横画面対応
+function resize() {
+const container = document.getElementById('ruler-container');
+canvas.width = container.clientWidth;
+canvas.height = container.clientHeight;
+}
+
+window.addEventListener('resize', resize);
+canvas.addEventListener('touchstart', e => { e.preventDefault(); handleStart(e.touches[0].clientX); }, {passive: false});
+window.addEventListener('touchmove', e => { e.preventDefault(); handleMove(e.touches[0].clientX); }, {passive: false});
+window.addEventListener('touchend', handleEnd);
+canvas.addEventListener('mousedown', e => handleStart(e.clientX));
+window.addEventListener('mousemove', e => handleMove(e.clientX));
+window.addEventListener('mouseup', handleEnd);
+
+// 4. 保存 & 二重表示防止 (IndexedDB)
+document.getElementById('save-btn').onclick = () => {
+const request = indexedDB.open("NoriRunDB", 1);
+request.onupgradeneeded = e => {
+const db = e.target.result;
+if (!db.objectStoreNames.contains('settings')) db.createObjectStore('settings');
+};
+request.onsuccess = e => {
+const db = e.target.result;
+const tx = db.transaction('settings', 'readwrite');
+tx.objectStore('settings').put(Math.round(state.bpm), 'my_pitch');
+tx.objectStore('settings').put(true, 'init_completed');
+tx.oncomplete = () => {
+alert("初期設定が完了しました！");
+};
+};
+};
+
+window.onload = () => {
+resize();
+render();
+};
+</script>
+</body>
+</html>
