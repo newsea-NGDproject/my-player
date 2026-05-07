@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>NoriRun Ver.9 - Initial Setup</title>
+<style>
+/* 第2章：CSS聖域の確立（デグレード対策強化） */
+:root {
+--bg-color: #f2f2f7;
+--accent-red: #ff3b30;
+--main-blue: #007aff;
+--text-black: #1c1c1e;
+--text-gray: #8e8e93;
+--white: #ffffff;
+}
+
+body, html {
+margin: 0; padding: 0; width: 100%; height: 100%;
+font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+background-color: var(--bg-color);
+overflow: hidden; touch-action: none;
+-webkit-font-smoothing: antialiased;
+}
+
+#init-screen {
+display: flex; flex-direction: column; align-items: center;
+width: 100%; height: 100%; box-sizing: border-box; padding: 15px;
+text-align: center;
+}
+
+/* 第4章：画面レイアウト（一字一句厳守） */
+h1 { margin: 10px 0 5px; font-size: 1.6rem; color: var(--text-black); }
+.instruction { font-size: 1rem; margin: 0; font-weight: 500; }
+.sub-instruction { font-size: 0.85rem; color: var(--text-gray); margin-bottom: 5px; }
+
+/* 第4.2章：巨大BPM表示とラベル */
+#pitch-number {
+font-size: 4rem; font-weight: 900; color: var(--text-black);
+line-height: 1; margin: 15px 0 5px;
+font-variant-numeric: tabular-nums;
+}
+#pitch-label {
+font-size: 1.3rem; font-weight: bold; color: var(--text-black);
+height: 1.6rem; margin-bottom: 20px;
+}
+
+/* 【教訓：赤線の閉じ込め】 定規コンテナの聖域 /
+.ruler-outer {
+width: 100%; height: 160px;
+background: var(--white);
+border-radius: 20px;
+position: relative; / 子要素の絶対配置の基準 /
+box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+overflow: hidden; / ★重要：赤線が箱を突き抜けるのを物理的に遮断 */
+margin-bottom: 20px;
+}
+
+/* 中央の赤線（白い箱の中だけで成立する聖域） /
+.center-line {
+position: absolute;
+left: 50%; top: 0;
+width: 3px; height: 100%;
+background-color: var(--accent-red);
+transform: translateX(-50%);
+z-index: 10;
+pointer-events: none; / スワイプを邪魔しない */
+}
+
+canvas { width: 100%; height: 100%; display: block; }
+
+/* 4.1 安心メッセージ（竹弘指定・修正版） */
+.safety-box {
+background: var(--white); border-radius: 12px; padding: 15px;
+margin-top: auto; margin-bottom: 15px;
+font-size: 0.85rem; line-height: 1.5; text-align: left;
+color: #3a3a3c; box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+max-width: 500px; width: 100%;
+}
+.safety-title { display: block; font-weight: bold; margin-bottom: 5px; }
+
+#save-btn {
+width: 100%; max-width: 320px; height: 56px;
+background-color: var(--main-blue); color: white;
+border: none; border-radius: 28px;
+font-size: 1.1rem; font-weight: bold;
+margin-bottom: 10px; cursor: pointer;
+box-shadow: 0 4px 12px rgba(0,122,255,0.3);
+transition: opacity 0.2s;
+}
+#save-btn:active { opacity: 0.8; }
+</style>
+</head>
+<body>
+
+<div id="init-screen">
+<h1>初期設定</h1>
+<p class="instruction">あなたの「マイ・ピッチ」を設定して下さい</p>
+<p class="sub-instruction">(※次回以降は、メニューから再設定出来ます)</p>
+
+<div id="pitch-number">130</div>
+<div id="pitch-label">--</div>
+
+<!-- 第2.1章：赤線を閉じ込めた定規コンテナ -->
+<div class="ruler-outer" id="ruler-container">
+<div class="center-line"></div>
+<canvas id="ruler-canvas"></canvas>
+</div>
+
+<div class="safety-box">
+<span class="safety-title">🛡️ 安心・安全への取り組み</span>
+下記**「設定」**ボタンを押すと<br>
+「このサイトにファイルの表示とコピーを許可しますか？ 」<br>
+と、ブラウザの確認画面が出ますが、あなたの個人情報が外部に漏れることは一切ありません。NoriRunアプリで作成されるデータは、あなたのスマホ内にのみ安全に保存されます。
+</div>
+
+<button id="save-btn">設定</button>
+</div>
+
+<script>
+/**
+• NoriRun Ver.9 1-A logic
+• (C) 2026 Takehiro & つよぽん
+*/
+const state = {
+bpm: 130,
+targetBpm: 130,
+minBpm: 100,
+maxBpm: 220,
+isDragging: false,
+lastX: 0,
+audioCtx: null,
+clickBuffer: null,
+nextClickTime: 0,
+isPlaying: false
+};
+
+const canvas = document.getElementById('ruler-canvas');
+const ctx = canvas.getContext('2d', { alpha: false });
+const numberEl = document.getElementById('pitch-number');
+const labelEl = document.getElementById('pitch-label');
+const container = document.getElementById('ruler-container');
+
+// 第2.3章：メトロノーム音の準備（click.wav必須）
+async function initAudio() {
+if (state.audioCtx) return;
+try {
+state.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+const response = await fetch('click.wav');
+if (!response.ok) throw new Error("File not found");
+const arrayBuffer = await response.arrayBuffer();
+state.clickBuffer = await state.audioCtx.decodeAudioData(arrayBuffer);
+} catch (e) {
+console.warn("Audio loading failed. Check if click.wav exists.");
+}
+}
+
+function playClick(time) {
+if (!state.clickBuffer || !state.audioCtx) return;
+const source = state.audioCtx.createBufferSource();
+source.buffer = state.clickBuffer;
+source.connect(state.audioCtx.destination);
+source.start(time);
+}
+
+// 第4.2章：ラベル条件分岐
+function updateLabels(bpm) {
+const b = Math.round(bpm);
+numberEl.textContent = b;
+let label = "";
+if (b <= 120) label = "🚶‍♂️ ウォーキング";
+else if (b <= 135) label = "🥁 行進";
+else if (b <= 200) label = "🏃‍♂️ マラソン";
+else label = "🏎️ 全力ダッシュ！";
+labelEl.textContent = label;
+}
+
+// 第3章 & 第5章：描画エンジンと物理演算
+function render() {
+// 3.2 物理演算：吸い付く操作感
+state.bpm += (state.targetBpm - state.bpm) * 0.25;
+
+const dpr = window.devicePixelRatio || 1;
+const w = canvas.width;
+const h = canvas.height;
+const centerX = w / 2; // Canvas内の中心点
+
+// 5.1 背景消去（白塗りつぶし）
+ctx.fillStyle = '#ffffff';
+ctx.fillRect(0, 0, w, h);
+
+// 5.3 描画絶対ルール（目盛り間隔20px固定）
+const unitW = 20 * dpr;
+const start = Math.floor(state.bpm - (centerX / unitW)) - 1;
+const end = Math.ceil(state.bpm + (centerX / unitW)) + 1;
+
+// 中心点デグレード封印
+ctx.textAlign = 'center';
+ctx.textBaseline = 'middle';
+
+for (let i = start; i <= end; i++) {
+if (i < state.minBpm - 5 || i > state.maxBpm + 5) continue;
+
+// 【重要】赤線の位置（centerX）と現在のBPMが一致するようにオフセット計算
+const x = centerX + (i - state.bpm) * unitW;
+
+let lineWidth = 1 * dpr;
+let lineHeight = 15 * dpr;
+
+if (i % 10 === 0) {
+lineWidth = 2 * dpr;
+lineHeight = 45 * dpr;
+ctx.fillStyle = '#1c1c1e';
+ctx.font = bold ${Math.floor(13 * dpr)}px -apple-system, BlinkMacSystemFont, sans-serif;
+// 5.3 目盛りテキスト: 線上端から65の位置に描画
+ctx.fillText(i, x, h - 65 * dpr);
+} else if (i % 5 === 0) {
+lineWidth = 1.5 * dpr;
+lineHeight = 30 * dpr;
+}
+
+ctx.beginPath();
+ctx.strokeStyle = '#c7c7cc';
+ctx.lineWidth = lineWidth;
+ctx.moveTo(x, h);
+ctx.lineTo(x, h - lineHeight);
+ctx.stroke();
+}
+
+updateLabels(state.bpm);
+
+// 音と描画の同期（currentTimeベース）
+if (state.isPlaying && state.audioCtx) {
+const interval = 60 / Math.round(state.bpm);
+const currentTime = state.audioCtx.currentTime;
+if (state.nextClickTime < currentTime) {
+if (state.nextClickTime === 0) state.nextClickTime = currentTime;
+playClick(state.nextClickTime);
+state.nextClickTime += interval;
+}
+}
+
+requestAnimationFrame(render);
+}
+
+// 第5章：相互作用（スワイプ体験）
+function handleStart(x) {
+if (state.audioCtx) {
+state.audioCtx.resume();
+} else {
+initAudio();
+}
+state.isPlaying = true;
+state.isDragging = true;
+state.lastX = x;
+state.nextClickTime = 0; // 再開時にテンポをリセット
+}
+
+function handleMove(x) {
+if (!state.isDragging) return;
+const deltaX = x - state.lastX;
+// 5.2 スワイプ方向：右スワイプで減少（逆転デグレード防止）
+state.targetBpm -= deltaX / 20;
+state.targetBpm = Math.max(state.minBpm, Math.min(state.maxBpm, state.targetBpm));
+state.lastX = x;
+}
+
+function handleEnd() {
+state.isDragging = false;
+// 5.5 整数値への収束（吸い付き挙動）
+state.targetBpm = Math.round(state.targetBpm);
+}
+
+// 5.4 イベント検知（操作の取りこぼし封印）
+canvas.addEventListener('touchstart', e => {
+e.preventDefault();
+handleStart(e.touches[0].clientX);
+}, {passive: false});
+
+window.addEventListener('touchmove', e => {
+if (state.isDragging) {
+e.preventDefault();
+handleMove(e.touches[0].clientX);
+}
+}, {passive: false});
+
+window.addEventListener('touchend', handleEnd);
+
+// マウス対応
+canvas.addEventListener('mousedown', e => handleStart(e.clientX));
+window.addEventListener('mousemove', e => handleMove(e.clientX));
+window.addEventListener('mouseup', handleEnd);
+
+// 第6章：設定の確定とストアの自動生成
+async function saveAndNext() {
+// 音楽再生を停止
+state.isPlaying = false;
+
+const request = indexedDB.open("NoriRunDB", 1);
+
+request.onupgradeneeded = e => {
+const db = e.target.result;
+// 6.1 settingsとmusic_libraryを同時生成
+if (!db.objectStoreNames.contains('settings')) {
+db.createObjectStore('settings');
+}
+if (!db.objectStoreNames.contains('music_library')) {
+db.createObjectStore('music_library', { keyPath: 'file_path' });
+}
+};
+
+request.onsuccess = e => {
+const db = e.target.result;
+const tx = db.transaction('settings', 'readwrite');
+const store = tx.objectStore('settings');
+
+// 6.2 フラグ書き込み
+store.put(Math.round(state.bpm), 'my_pitch');
+store.put(true, 'init_completed');
+
+tx.oncomplete = () => {
+// シームレス遷移の合図（UI表示）
+const notice = document.createElement('div');
+notice.style = "position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:rgba(0,0,0,0.85); color:white; padding:25px; border-radius:15px; z-index:100; font-weight:bold; box-shadow:0 10px 30px rgba(0,0,0,0.3);";
+notice.innerHTML = "🎉 初期設定完了！<br><span style='font-size:0.8rem; font-weight:normal;'>マイ・ピッチを保存しました。</span>";
+document.body.appendChild(notice);
+
+// 実際はここで次の工程（1-B）のURLへ飛ばしたり、画面を切り替えたりする
+setTimeout(() => { notice.style.opacity = '0'; }, 2000);
+};
+};
+}
+
+document.getElementById('save-btn').onclick = saveAndNext;
+
+// 第2.2章 & チェック項目：横画面対応
+function init() {
+const dpr = window.devicePixelRatio || 1;
+// 親要素（白い箱）のサイズを基準に解像度をセット
+canvas.width = container.clientWidth * dpr;
+canvas.height = container.clientHeight * dpr;
+// 画面回転時も描画ループは回っているので、サイズ更新だけで中心は維持される
+}
+
+window.onload = () => {
+init();
+render();
+};
+
+window.onresize = init; // 画面リサイズ・回転検知
+</script>
+</body>
+</html>
