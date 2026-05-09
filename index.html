@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>NoriRun Ver.9 STEP1-A Layout Test</title>
+<style>
+/* * 竹弘のCSS指示画面.pdf に基づく厳格なレイアウト定義
+* 1段目から8段目をパディング15pxでレイアウト維持
+*/
+:root {
+--bg-color: #F2F2F7;
+--white: #FFFFFF;
+--safety-bg: #F0F7FF;
+--accent-blue: #007AFF;
+--accent-red: #FF3B30;
+--text-main: #1C1C1E;
+--text-sub: #3A3A3C;
+--text-hint: #8E8E93;
+--ruler-line: #C7C7CC;
+}
+
+body, html {
+margin: 0; padding: 0;
+width: 100%; height: 100%;
+background-color: var(--bg-color);
+/* AndroidのRobotoフォントをベースとする */
+font-family: 'Roboto', 'Noto Sans JP', sans-serif;
+overflow: hidden;
+touch-action: none;
+}
+
+/* 全体をパディング15pxでレイアウト維持 */
+#container {
+width: 100%; height: 100%;
+padding: 15px;
+box-sizing: border-box;
+display: flex;
+flex-direction: column;
+text-align: center;
+}
+
+/* 【1】1段目: 初期設定 /
+h1 {
+font-size: 1.6rem;
+font-weight: 700; / Bold */
+color: var(--text-main);
+margin: 10px 0 0 0;
+}
+
+/* 【2】2段目: あなたの「マイ・ピッチ」を… /
+.instruction {
+font-size: 1.0rem;
+font-weight: 500; / Medium */
+color: var(--text-sub);
+margin: 5px 0 0 0;
+}
+
+/* 【3】3段目: (※次回以降は…) /
+.sub-instruction {
+font-size: 0.85rem;
+font-weight: 400; / Regular */
+color: var(--text-hint);
+margin: 2px 0 0 0;
+}
+
+/* 【4】4段目: マイ・ピッチ(旧BPM)表示 /
+.bpm-display {
+font-size: 4.0rem;
+font-weight: 900; / Black /
+color: var(--text-sub); / 指示書#3A3A3C */
+margin: 20px 0 0 0;
+line-height: 1;
+}
+
+/* 【5】5段目: ピッチ・ラベル /
+.pitch-label {
+font-size: 1.3rem;
+font-weight: 700; / Bold */
+color: var(--accent-blue);
+margin: 10px 0 15px 0;
+}
+
+/* 【6】6段目: スワイプ定規表示エリア /
+.ruler-container {
+width: 100%;
+height: 150px;
+background-color: var(--white);
+border-radius: 20px;
+position: relative;
+overflow: hidden; / 赤の縦線はみ出し防止 */
+margin-bottom: 20px;
+box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+}
+
+/* 赤の縦線 (z-indexで一番上) */
+.red-line {
+position: absolute;
+left: 50%; top: 0;
+width: 3px; height: 100%;
+background-color: var(--accent-red);
+z-index: 10;
+transform: translateX(-50%);
+}
+
+canvas {
+width: 100%; height: 100%;
+display: block;
+}
+
+/* 【7】7段目: 安心メッセージ表示エリア /
+.safety-container {
+background-color: var(--safety-blue); / #F0F7FF /
+border-radius: 12px;
+padding: 15px;
+text-align: left;
+margin-top: auto; / 下部に寄せる */
+margin-bottom: 15px;
+box-sizing: border-box;
+}
+
+.safety-title {
+font-size: 0.85rem;
+font-weight: 700; /* Bold */
+margin-bottom: 8px;
+display: block;
+}
+
+.safety-text {
+font-size: 0.85rem;
+font-weight: 400; /* Regular /
+color: var(--text-sub);
+line-height: 1.5; / 行間 1.5倍 */
+}
+
+/* 「設定」単語だけ極太 */
+strong {
+font-weight: 900;
+}
+
+/* 【8】8段目: ボタン表示エリア */
+.btn-area {
+width: 100%;
+margin-bottom: 10px;
+}
+
+#save-btn {
+width: 100%;
+height: 56px;
+background-color: var(--accent-blue);
+color: var(--white);
+border: none;
+border-radius: 28px;
+font-size: 1.1rem;
+font-weight: 700;
+cursor: pointer;
+}
+
+/* 横画面対応：高さが低い場合の微調整 */
+@media (max-height: 500px) {
+h1 { font-size: 1.2rem; margin-top: 0; }
+.bpm-display { font-size: 2.5rem; margin-top: 5px; }
+.ruler-container { height: 100px; margin-bottom: 10px; }
+.safety-container { padding: 10px; margin-bottom: 5px; }
+}
+</style>
+</head>
+<body>
+
+<div id="container">
+<!-- 【1】1段目 -->
+<h1>初期設定</h1>
+
+<!-- 【2】2段目 -->
+<p class="instruction">あなたの「マイ・ピッチ」を設定して下さい</p>
+
+<!-- 【3】3段目 -->
+<p class="sub-instruction">(※次回以降は、メニューから再設定出来ます)</p>
+
+<!-- 【4】4段目 -->
+<div class="bpm-display" id="bpm-val">170</div>
+
+<!-- 【5】5段目 -->
+<div class="pitch-label">🥁 マラソン</div>
+
+<!-- 【6】6段目 -->
+<div class="ruler-container">
+<div class="red-line"></div>
+<canvas id="ruler"></canvas>
+</div>
+
+<!-- 【7】7段目 -->
+<div class="safety-container">
+<span class="safety-title">🛡️ 安心・安全への取り組み</span>
+<div class="safety-text">
+下記<strong>「設定」</strong>ボタンを押すと<br>
+「このサイトにファイルの表示とコピーを許可しますか？」<br>
+と、ブラウザの確認画面が出ますが、あなたの個人情報が外部に漏れることは一切ありません。<br>
+NoriRunアプリで作成されるデータは、あなたのスマホ内にのみ安全に保存されます。
+</div>
+</div>
+
+<!-- 【8】8段目 -->
+<div class="btn-area">
+<button id="save-btn">設定</button>
+</div>
+</div>
+
+<script>
+/**
+* 6段目のCanvas描画ロジック
+* 1BPM=20px, 範囲50〜300を再現
+*/
+const canvas = document.getElementById('ruler');
+const ctx = canvas.getContext('2d');
+const bpmDisplay = document.getElementById('bpm-val');
+
+let currentBPM = 170;
+
+function draw() {
+const dpr = window.devicePixelRatio || 1;
+const rect = canvas.getBoundingClientRect();
+canvas.width = rect.width * dpr;
+canvas.height = rect.height * dpr;
+
+ctx.scale(dpr, dpr);
+const w = rect.width;
+const h = rect.height;
+const unitW = 20; // 1BPM = 20px
+
+ctx.clearRect(0, 0, w, h);
+ctx.textAlign = 'center';
+ctx.textBaseline = 'bottom';
+
+// 範囲 50 〜 300
+for (let i = 50; i <= 300; i++) {
+const x = (w / 2) + (i - currentBPM) * unitW;
+if (x < -50 || x > w + 50) continue;
+
+ctx.beginPath();
+ctx.strokeStyle = '#C7C7CC';
+
+if (i % 10 === 0) {
+// 10刻み：長い線と数字
+ctx.lineWidth = 2;
+ctx.moveTo(x, h);
+ctx.lineTo(x, h - 45);
+ctx.fillStyle = '#3A3A3C';
+ctx.font = 'bold 13px Roboto';
+ctx.fillText(i, x, h - 50);
+} else if (i % 5 === 0) {
+// 5刻み：中くらいの線
+ctx.lineWidth = 1.5;
+ctx.moveTo(x, h);
+ctx.lineTo(x, h - 30);
+} else {
+// 1刻み：短い線
+ctx.lineWidth = 1;
+ctx.moveTo(x, h);
+ctx.lineTo(x, h - 15);
+}
+ctx.stroke();
+}
+}
+
+// ダミーのスワイプ機能（動作確認用）
+let isDragging = false;
+let startX = 0;
+
+const start = (e) => { isDragging = true; startX = e.touches ? e.touches[0].clientX : e.clientX; };
+const move = (e) => {
+if (!isDragging) return;
+const x = e.touches ? e.touches[0].clientX : e.clientX;
+const diff = startX - x;
+// 20pxで1BPM変化
+currentBPM += diff / 20;
+if (currentBPM < 50) currentBPM = 50;
+if (currentBPM > 300) currentBPM = 300;
+bpmDisplay.innerText = Math.round(currentBPM);
+startX = x;
+draw();
+};
+const end = () => { isDragging = false; currentBPM = Math.round(currentBPM); draw(); };
+
+canvas.addEventListener('touchstart', start);
+window.addEventListener('touchmove', move);
+window.addEventListener('touchend', end);
+canvas.addEventListener('mousedown', start);
+window.addEventListener('mousemove', move);
+window.addEventListener('mouseup', end);
+
+window.onload = draw;
+window.onresize = draw;
+</script>
+
+</body>
+</html>
