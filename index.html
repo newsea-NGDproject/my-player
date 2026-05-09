@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>NoriRun Ver.9 Strict Color/Size Check</title>
+<style>
+/* =========================================================
+* 【CSS指示画面テキスト化.txt】から抽出した厳格な定義
+* コメント記法を修正し、全ての数値を指示通りに反映
+* ========================================================= */
+
+:root {
+/* 基本パレットの定義 */
+--bg-color: #f2f2f7;
+--main-blue: #007aff;
+--accent-red: #ff3b30;
+}
+
+body, html {
+margin: 0;
+padding: 0;
+width: 100%;
+height: 100%;
+/* 指示通り -apple-system を含む標準フォント指定 */
+font-family: -apple-system, "Helvetica Neue", "Helvetica", "Arial", sans-serif;
+background-color: var(--bg-color);
+overflow: hidden;
+touch-action: none;
+}
+
+/* 1段目〜8段目を維持するパディング15pxのコンテナ /
+#init-screen {
+display: flex;
+flex-direction: column;
+align-items: center;
+width: 100%;
+height: 100%;
+box-sizing: border-box;
+padding: 15px; / パディング:15px */
+text-align: center;
+}
+
+/* 【1】1段目: 初期設定
+Size:1.6rem / Weight:700 / Color:#1C1C1E */
+.row-1 {
+font-size: 1.6rem;
+font-weight: 700;
+color: #1C1C1E;
+margin-top: 10px;
+}
+
+/* 【2】2段目: あなたの「マイ・ピッチ」を設定して下さい
+Size:1.0rem / Weight:500 / Color:#3A3A3C */
+.row-2 {
+font-size: 1.0rem;
+font-weight: 500;
+color: #3A3A3C;
+margin-top: 5px;
+}
+
+/* 【3】3段目: (※次回以降は、メニューから再設定出来ます)
+Size:0.85rem / Weight:400 / Color:#8E8E93 */
+.row-3 {
+font-size: 0.85rem;
+font-weight: 400;
+color: #8E8E93;
+margin-top: 5px;
+}
+
+/* 【4】4段目: マイ・ピッチ(BPM)表示
+Size:4.0rem / Weight:900 / Color:#3A3A3C */
+.row-4 {
+font-size: 4.0rem;
+font-weight: 900;
+color: #3A3A3C;
+margin-top: 15px;
+line-height: 1;
+}
+
+/* 【5】5段目: ピッチ・ラベル
+Size:1.3rem / Weight:700 / Color:#007AFF */
+.row-5 {
+font-size: 1.3rem;
+font-weight: 700;
+color: var(--main-blue);
+margin-top: 10px;
+display: flex;
+align-items: center;
+justify-content: center;
+gap: 8px;
+}
+
+/* 5段目 補足のキャラクターコード /
+#pitch-icon::before {
+content: "\1F3C3\200D\2642\FE0F"; / マラソンのアイコン例 */
+display: inline-block;
+}
+
+/* 【6】6段目: スワイプ定規表示エリア
+配置:白い角丸コンテナ内上端 / Radius: 20px / Background:#F2F2F7 /
+.ruler-container {
+width: 100%;
+height: 150px;
+background-color: #FFFFFF; / 外側の白い角丸コンテナ /
+border-radius: 20px;
+margin-top: 20px;
+position: relative;
+overflow: hidden; / 赤線はみ出し防止 */
+box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+}
+
+/* 赤の縦線 (z-index:10 / left:50%) */
+.red-line {
+position: absolute;
+left: 50%;
+top: 0;
+width: 3px;
+height: 100%;
+background-color: var(--accent-red);
+z-index: 10;
+transform: translateX(-50%);
+}
+
+/* キャンバスサイズの背景指定 (Background:#F2F2F7) */
+.ruler-inner-dummy {
+width: 100%;
+height: 100%;
+background-color: #F2F2F7;
+display: flex;
+align-items: center;
+justify-content: center;
+color: #8E8E93;
+font-size: 0.9rem;
+}
+
+/* 【7】7段目: 安心・安全メッセージ表示エリア
+Background:#F0F7FF / Border:1px solid #D1E9FF / Radius:12px /
+.safety-box {
+background-color: #F0F7FF; / 水色背景 /
+border: 1px solid #D1E9FF; / 薄い青の枠線 /
+border-radius: 12px;
+padding: 15px;
+width: 100%;
+box-sizing: border-box;
+text-align: left; / text-align:left(左揃え) /
+margin-top: auto; / 8段目を押し下げる */
+margin-bottom: 20px;
+}
+
+/* 安心メッセージ タイトル
+Size:0.85rem / Weight:700 / Color:#000 */
+.safety-title {
+font-size: 0.85rem;
+font-weight: 700;
+color: #000;
+display: block;
+margin-bottom: 6px;
+}
+
+/* 安心・安全メッセージの盾アイコン (🛡️) */
+.safety-title::before {
+content: "\1F6E1\FE0F";
+margin-right: 6px;
+}
+
+/* 安心メッセージ 本文
+Size:0.85rem / Weight:400 / Color:#3A3A3C / Line-height:1.5 */
+.safety-text {
+font-size: 0.85rem;
+font-weight: 400;
+color: #3A3A3C;
+line-height: 1.5;
+}
+
+/* 本文内 強調テキスト (<strong>) */
+.safety-text strong {
+font-weight: 900;
+color: #1C1C1E;
+}
+
+/* 【8】8段目: 設定ボタン表示エリア
+Radius:35px / Color:#007AFF / margin-bottom:25px /
+.btn-container {
+width: 100%;
+display: flex;
+justify-content: center;
+margin-bottom: 25px; / 画面底からさらに25px浮かせる */
+}
+
+#save-btn {
+width: 220px;
+height: 55px;
+background-color: var(--main-blue); /* Color:#007AFF /
+color: #FFFFFF;
+border: none;
+border-radius: 35px; / Radius: 35px */
+font-size: 1.1rem;
+font-weight: 700;
+box-shadow: 0 4px 12px rgba(0, 122, 255, 0.3);
+cursor: pointer;
+}
+
+</style>
+</head>
+<body>
+
+<div id="init-screen">
+<!-- 1段目 -->
+<div class="row-1">初期設定</div>
+
+<!-- 2段目 -->
+<div class="row-2">あなたの「マイ・ピッチ」を設定して下さい</div>
+
+<!-- 3段目 -->
+<div class="row-3">(※次回以降は、メニューから再設定出来ます)</div>
+
+<!-- 4段目 -->
+<div class="row-4">175</div>
+
+<!-- 5段目 -->
+<div class="row-5">
+<span id="pitch-icon"></span>
+<span>マラソン</span>
+</div>
+
+<!-- 6段目 -->
+<div class="ruler-container">
+<div class="red-line"></div>
+<div class="ruler-inner-dummy">スワイプ定規 (描画エリア)</div>
+</div>
+
+<!-- 7段目 -->
+<div class="safety-box">
+<span class="safety-title">安心・安全への取り組み</span>
+<div class="safety-text">
+下記<strong>「設定」</strong>ボタンを押すと<br>
+「このサイトにファイルの表示とコピーを許可しますか？」<br>
+と、ブラウザの確認画面が出ますが、あなたの個人情報が外部に漏れることは一切ありません。<br>
+NoriRunアプリで作成されるデータは、あなたのスマホ内にのみ安全に保存されます。
+</div>
+</div>
+
+<!-- 8段目 -->
+<div class="btn-container">
+<button id="save-btn">設定</button>
+</div>
+</div>
+
+</body>
+</html>
