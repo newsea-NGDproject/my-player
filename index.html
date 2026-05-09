@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>NoriRun Ver.9 STEP1-A Verification</title>
+<style>
+/* * 【全般ルール】
+* キャンバスサイズ width:100% / height:100%
+* Background: #F2F2F7
+* パディング: 15px によってレイアウトを維持
+* フォント: AndroidのRobotoフォントをベース
+*/
+:root {
+--bg-color: #F2F2F7;
+--white: #FFFFFF;
+--safety-bg: #F0F7FF;
+--safety-border: #D1E9FF;
+--accent-blue: #007AFF;
+--accent-red: #FF3B30;
+--text-1c: #1C1C1E;
+--text-3a: #3A3A3C;
+--text-8e: #8E8E93;
+--text-c7: #C7C7CC;
+}
+
+body, html {
+margin: 0; padding: 0;
+width: 100%; height: 100%;
+background-color: var(--bg-color);
+font-family: 'Roboto', 'Noto Sans JP', sans-serif;
+overflow: hidden;
+touch-action: none;
+color: var(--text-1c);
+}
+
+/* 1段目から8段目をパディング15pxによってレイアウトを維持 */
+#viewport {
+width: 100%; height: 100%;
+padding: 15px;
+box-sizing: border-box;
+display: flex;
+flex-direction: column;
+align-items: center;
+text-align: center;
+}
+
+/* 【1】1段目 */
+.row-1 {
+font-size: 1.6rem;
+font-weight: 700;
+color: var(--text-1c);
+margin: 10px 0 0 0;
+}
+
+/* 【2】2段目 */
+.row-2 {
+font-size: 1.0rem;
+font-weight: 500;
+color: var(--text-3a);
+margin: 5px 0 0 0;
+}
+
+/* 【3】3段目 */
+.row-3 {
+font-size: 0.85rem;
+font-weight: 400;
+color: var(--text-8e);
+margin: 2px 0 0 0;
+}
+
+/* 【4】4段目 */
+.row-4 {
+font-size: 4.0rem;
+font-weight: 900;
+color: var(--text-3a);
+margin: 15px 0 0 0;
+line-height: 1;
+}
+
+/* 【5】5段目 */
+.row-5 {
+font-size: 1.3rem;
+font-weight: 700;
+color: var(--accent-blue);
+margin: 10px 0 15px 0;
+}
+
+/* 【6】6段目: スワイプ定規 /
+.ruler-outer {
+width: 100%;
+height: 150px;
+background-color: var(--white);
+border-radius: 20px;
+position: relative;
+overflow: hidden; / overflow: hiddenを設定 */
+margin-bottom: 20px;
+box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+}
+
+/* 赤の縦線 (z-index:10 / Top固定 / Size:3px) */
+.center-line {
+position: absolute;
+left: 50%; top: 0;
+width: 3px; height: 100%;
+background-color: var(--accent-red);
+z-index: 10;
+transform: translateX(-50%);
+}
+
+canvas {
+width: 100%; height: 100%;
+display: block;
+}
+
+/* 【7】7段目: 安心メッセージ /
+.safety-box {
+width: 100%;
+background-color: var(--safety-bg);
+border: 1px solid var(--safety-border);
+border-radius: 12px;
+padding: 15px;
+box-sizing: border-box;
+text-align: left; / text-align:left(左揃え) /
+margin-top: auto; / 下部に配置 */
+margin-bottom: 15px;
+}
+
+.safety-title {
+font-size: 0.85rem;
+font-weight: 700;
+margin-bottom: 8px;
+display: block;
+}
+
+.safety-body {
+font-size: 0.85rem;
+font-weight: 400;
+color: var(--text-3a);
+line-height: 1.5; /* Line-height:1.5 */
+}
+
+/* 設定のみ太字(Strong) */
+strong {
+font-weight: 900;
+color: var(--text-1c);
+}
+
+/* 【8】8段目: 設定ボタン /
+.button-area {
+width: 100%;
+display: flex;
+justify-content: center; / 配置: Center */
+margin-bottom: 10px;
+}
+
+#save-btn {
+width: 220px; height: 50px; /* Size: w220px x H50px /
+background-color: var(--accent-blue);
+color: var(--white);
+border: none;
+border-radius: 25px; / Radius: 25px */
+font-size: 1.1rem;
+font-weight: 700;
+cursor: pointer;
+box-shadow: 0 4px 12px rgba(0, 122, 255, 0.25);
+}
+
+/* 横画面時の緊急調整（高さ確保） */
+@media (max-height: 550px) {
+.row-4 { font-size: 3rem; margin-top: 5px; }
+.ruler-outer { height: 100px; margin-bottom: 10px; }
+.safety-box { padding: 10px; margin-bottom: 5px; }
+}
+</style>
+</head>
+<body>
+
+<div id="viewport">
+<!-- 【1】 -->
+<div class="row-1">初期設定</div>
+
+<!-- 【2】 -->
+<div class="row-2">あなたの「マイ・ピッチ」を設定して下さい</div>
+
+<!-- 【3】 -->
+<div class="row-3">(※次回以降は、メニューから再設定出来ます)</div>
+
+<!-- 【4】 -->
+<div class="row-4" id="bpm-val">175</div>
+
+<!-- 【5】 -->
+<div class="row-5" id="label-val">🏃‍♂️ マラソン</div>
+
+<!-- 【6】 -->
+<div class="ruler-outer" id="ruler-wrap">
+<div class="center-line"></div>
+<canvas id="ruler-canvas"></canvas>
+</div>
+
+<!-- 【7】 -->
+<div class="safety-box">
+<span class="safety-title">🛡️ 安心・安全への取り組み</span>
+<div class="safety-body">
+下記<strong>「設定」</strong>ボタンを押すと<br>
+「このサイトにファイルの表示とコピーを許可しますか？」<br>
+と、ブラウザの確認画面が出ますが、あなたの個人情報が外部に漏れることは一切ありません。<br>
+NoriRunアプリで作成されるデータは、あなたのスマホ内にのみ安全に保存されます。
+</div>
+</div>
+
+<!-- 【8】 -->
+<div class="button-area">
+<button id="save-btn">設定</button>
+</div>
+</div>
+
+<script>
+/**
+* 【6】スワイプ定規の詳細実装
+* 配置:コンテナ内上端(Top基準) / 1BPM:20px / 範囲:80-220
+*/
+const canvas = document.getElementById('ruler-canvas');
+const ctx = canvas.getContext('2d');
+const bpmDisplay = document.getElementById('bpm-val');
+const labelDisplay = document.getElementById('label-val');
+
+let currentBPM = 175;
+
+function getLabel(bpm) {
+if (bpm < 120) return "🚶 ウォーキング";
+if (bpm < 135) return "🚶‍♂️ 行進";
+if (bpm < 200) return "🏃‍♂️ マラソン";
+return "⚡ 全力ダッシュ！";
+}
+
+function draw() {
+const dpr = window.devicePixelRatio || 1;
+const rect = canvas.getBoundingClientRect();
+canvas.width = rect.width * dpr;
+canvas.height = rect.height * dpr;
+ctx.scale(dpr, dpr);
+
+const w = rect.width;
+const h = rect.height;
+const unitW = 20; // 1BPM = 20px
+const centerX = w / 2;
+
+ctx.clearRect(0, 0, w, h);
+
+// 描画基準をTopに設定
+ctx.textAlign = 'center';
+ctx.textBaseline = 'top';
+
+for (let i = 80; i <= 220; i++) {
+const x = centerX + (i - currentBPM) * unitW;
+if (x < -50 || x > w + 50) continue;
+
+ctx.beginPath();
+ctx.strokeStyle = '#C7C7CC'; // 目盛り / Color: #C7C7CC
+
+if (i % 10 === 0) {
+// 10刻み: 長さ50px
+ctx.lineWidth = 2;
+ctx.moveTo(x, 0);
+ctx.lineTo(x, 50);
+// 数字: 終点から5px下
+ctx.fillStyle = '#3A3A3C';
+ctx.font = 'bold 13px Roboto';
+ctx.fillText(i, x, 55);
+} else if (i % 5 === 0) {
+// 5刻み: 25px
+ctx.lineWidth = 1.5;
+ctx.moveTo(x, 0);
+ctx.lineTo(x, 25);
+} else {
+// 1刻み: 15px
+ctx.lineWidth = 1;
+ctx.moveTo(x, 0);
+ctx.lineTo(x, 15);
+}
+ctx.stroke();
+}
+}
+
+// ダミー・スワイプ・ロジック
+let isDragging = false;
+let lastX = 0;
+
+const onStart = (e) => {
+isDragging = true;
+lastX = e.touches ? e.touches[0].clientX : e.clientX;
+};
+const onMove = (e) => {
+if (!isDragging) return;
+const x = e.touches ? e.touches[0].clientX : e.clientX;
+const delta = lastX - x;
+// スワイプは右に動かしたら数値が減る方向
+currentBPM += delta / 20;
+if (currentBPM < 80) currentBPM = 80;
+if (currentBPM > 220) currentBPM = 220;
+
+bpmDisplay.innerText = Math.round(currentBPM);
+labelDisplay.innerText = getLabel(Math.round(currentBPM));
+lastX = x;
+draw();
+};
+const onEnd = () => {
+isDragging = false;
+currentBPM = Math.round(currentBPM); // 目盛りに吸い付く
+draw();
+};
+
+canvas.addEventListener('touchstart', onStart, {passive: false});
+window.addEventListener('touchmove', onMove, {passive: false});
+window.addEventListener('touchend', onEnd);
+canvas.addEventListener('mousedown', onStart);
+window.addEventListener('mousemove', onMove);
+window.addEventListener('mouseup', onEnd);
+
+window.onload = draw;
+window.onresize = draw;
+</script>
+</body>
+</html>
