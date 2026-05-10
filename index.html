@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NoriRun Ver.9 処理のながれ（フロー図）</title>
+<!-- Mermaidという図を描く魔法のツールを読み込むぜ！ -->
+<script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+<style>
+body {
+font-family: 'Hiragino Maru Gothic ProN', 'Rounded M+ 1c', 'Comic Sans MS', sans-serif;
+background-color: #f2f2f7;
+color: #333;
+padding: 20px;
+line-height: 1.6;
+}
+.container {
+max-width: 800px;
+margin: 0 auto;
+background: #fff;
+padding: 30px;
+border-radius: 20px;
+box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+}
+h1 {
+color: #007aff;
+text-align: center;
+font-size: 1.8rem;
+}
+.explanation {
+margin-top: 40px;
+padding: 20px;
+background-color: #F0F7FF;
+border-radius: 12px;
+border: 1px solid #D1E9FF;
+}
+h2 {
+color: #1c1c1e;
+font-size: 1.2rem;
+border-bottom: 2px solid #007aff;
+padding-bottom: 5px;
+}
+.step {
+margin-bottom: 20px;
+}
+.step h3 {
+color: #ff3b30;
+margin-bottom: 5px;
+font-size: 1.1rem;
+}
+.mermaid {
+display: flex;
+justify-content: center;
+margin: 30px 0;
+}
+</style>
+</head>
+<body>
+
+<div class="container">
+<h1>NoriRun Ver.9 処理のながれ（フロー図）</h1>
+<p style="text-align: center;">竹弘、完成品のプログラムが裏でどんなお仕事をしているか、図にしたぜ！</p>
+
+<!-- ここにMermaidの図が自動で描画される -->
+<div class="mermaid">
+graph TD
+%% 1. アプリを開いた時の準備
+subgraph 1. 最初の準備（アプリを開いたとき）
+Start([アプリをひらいた！]) --> Init[キャンバス（絵を描く画用紙）の大きさを決める]
+Init --> Loop[パラパラ漫画のスタート！<br>ずっと絵を描き直す準備をする]
+end
+
+%% 2. ずっとやっているお仕事（パラパラ漫画）
+subgraph 2. ずっとやっているお仕事（えかきさん）
+Loop --> Draw1[前の絵を消して、画用紙を真っ白にする]
+Draw1 --> Draw2[今の数字に合わせて、定規の「線」と「数字」を描く]
+Draw2 --> Draw3[画面の大きな数字と、「🏃‍♂️マラソン」などの文字を新しくする]
+Draw3 -.->|少し休んですぐまた繰り返す| Loop
+end
+
+%% 3. ユーザーが画面をさわった時のお仕事
+subgraph 3. 画面をさわった時のお仕事（タッチ操作）
+TouchStart([画面をタッチした！]) --> Audio[カチカチ音を鳴らす準備をして、音を出し始める]
+Audio --> DragStart[「今、指でさわっているよ」というスイッチをONにする]
+
+TouchMove([指を横にスワイプした！]) --> Calc[動かした距離を計算して、行きたい目標の数字（BPM）を変える]
+
+TouchEnd([指をはなした！]) --> DragEnd[「さわり終わったよ」というスイッチをOFFにして、数字をキレイな整数にする]
+end
+
+%% 4. 最後に設定ボタンを押した時のお仕事
+subgraph 4. 設定ボタンを押した時のお仕事（セーブ）
+BtnClick([「設定」ボタンを押した！]) --> StopAudio[カチカチ音を止める]
+StopAudio --> OpenDB[スマホの中の「ヒミツの金庫（データベース）」を開ける]
+OpenDB --> SaveData[決まった数字（BPM）を金庫に大事にしまう]
+SaveData --> Finish([「設定が完了しました！」とメッセージを出す])
+end
+
+%% お仕事同士のつながり
+DragStart -.->|目標の数字が変わるから| Loop
+Calc -.->|絵を動かして！とお願いする| Loop
+</div>
+
+<!-- つよぽんのやさしい解説エリア -->
+<div class="explanation">
+<h2>つよぽんの「やさしいプログラム解説」</h2>
+
+<div class="step">
+<h3>① 最初の準備（アプリを開いたとき）</h3>
+<p>まず最初に、絵を描くための「画用紙（キャンバス）」の大きさを決めます。そして、アニメーションを動かすための「パラパラ漫画」をスタートさせます。</p>
+</div>
+
+<div class="step">
+<h3>② ずっとやっているお仕事（えかきさん）</h3>
+<p>プログラムの中の「えかきさん」は、ものすごいスピードで画用紙を真っ白にしては、新しい定規の絵を描く…というのをずっと繰り返しています。これで「ヌルヌル動く」アニメーションができます。</p>
+</div>
+
+<div class="step">
+<h3>③ 画面をさわった時のお仕事（タッチ操作）</h3>
+<p>竹弘が画面を触ると、プログラムは「おっ、触られた！」と気づいて、カチカチ音を鳴らし始めます。指を横に動かすと、その動かした分だけ「えかきさん」に「もっと右の絵を描いて！」とお願いします。指を離すと、数字がピタッと止まります。</p>
+</div>
+
+<div class="step">
+<h3>④ 設定ボタンを押した時のお仕事（セーブ）</h3>
+<p>最後に「設定」ボタンを押すと、音を止めて、スマホの中にある「ヒミツの金庫（IndexedDB）」を開けます。そこに竹弘が決めたマイ・ピッチ（BPMの数字）をしまって、完了メッセージを出します。</p>
+</div>
+</div>
+</div>
+
+<script>
+// Mermaidを起動するおまじない
+mermaid.initialize({ startOnLoad: true, theme: 'neutral' });
+</script>
+
+</body>
+</html>
