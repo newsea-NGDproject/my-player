@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>NoriRun Ver.9.2 - メインメニュー極上実験場</title>
+    <style>
+        body {
+            font-family: -apple-system, sans-serif;
+            background-color: #f2f2f7;
+            margin: 0; padding: 15px;
+            color: #1c1c1e;
+            -webkit-user-select: none; user-select: none;
+        }
+        .container {
+            max-width: 500px; margin: 0 auto;
+            background: #fff; padding: 15px;
+            border-radius: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+        }
+        h2 { font-size: 1.3rem; margin-top: 0; text-align: center; margin-bottom: 15px; }
+
+        /* --- 📋 曲一覧リストのコンテナ --- */
+        .music-list {
+            display: flex; flex-direction: column; gap: 8px;
+        }
+
+        /* --- 📐 押しやすさと美しさを両立した1行のFlexboxレイアウト --- */
+        .music-row {
+            display: flex; align-items: center;
+            background: #f8f8f8; border-radius: 12px;
+            padding: 6px; box-sizing: border-box;
+            border: 1px solid #e5e5ea;
+            height: 56px; /* 行の高さを一定にして安定感を出すぜ */
+        }
+
+        /* 🛡️ 【左右ボタンの絶対防御】完全正方形を最優先で死守する共通スタイル */
+        .square-btn {
+            display: flex; align-items: center; justify-content: center;
+            background: #ffffff; border: 1px solid #d1d1d6;
+            border-radius: 10px; font-size: 1.2rem; cursor: pointer;
+            box-sizing: border-box; flex-shrink: 0; /* 画面が狭くても絶対に潰さないプロの鉄則 */
+        }
+        .square-btn:active { background: #e5e5ea; }
+
+        /* ノリノリ設定ボタン（44pxの完璧な正方形） */
+        .norinori-btn {
+            width: 44px; height: 44px;
+        }
+
+        /* 上下並び替えボタン（40pxの扱いやすい正方形） */
+        .sort-btn {
+            width: 40px; height: 40px;
+            color: #007aff; font-weight: bold;
+        }
+        .up-btn { margin-left: 4px; margin-right: 4px; }
+
+        /* 🌟 【中央スペース】ボタン以外の残りを竹弘指定の「3 : 2」で美しく分け合う聖域 */
+        .title-area {
+            flex: 3; min-width: 0;
+            padding: 0 8px; overflow: hidden;
+            white-space: nowrap; cursor: pointer;
+        }
+        .artist-area {
+            flex: 2; min-width: 0;
+            padding: 0 4px; overflow: hidden;
+            white-space: nowrap; cursor: pointer;
+        }
+
+        /* --- 📜 電光掲示板（パターンB：一律左スクロール1周ストップ）の仕掛け --- */
+        .scroll-text {
+            display: inline-block; font-size: 0.95rem; font-weight: 600;
+            color: #1c1c1e; pointer-events: none; /* 親のタップイベントを邪魔しない */
+        }
+        .artist-text {
+            display: inline-block; font-size: 0.75rem; font-weight: normal;
+            color: #8e8e93; pointer-events: none;
+        }
+
+        /* JavaScriptから文字の長さに応じた移動距離（--scroll-x）と時間を受け取って1周するぜ */
+        @keyframes marquee-pattern-b {
+            0% { transform: translateX(0); }
+            75% { transform: translateX(var(--scroll-x)); opacity: 1; }   /* 一定速度でお尻まで流れる */
+            80% { transform: translateX(var(--scroll-x)); opacity: 0; }   /* 端っこでフッと消える */
+            81% { transform: translateX(30px); opacity: 0; }              /* 一瞬で右側にワープ（戻る準備） */
+            100% { transform: translateX(0); opacity: 1; }                /* 元の位置に滑らかに戻ってくる */
+        }
+        .scroll-active {
+            animation: marquee-pattern-b var(--scroll-duration) linear 1;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>メインメニュー（Ver.9.2 改善版）</h2>
+    <div id="menu-list" class="music-list">
+        </div>
+</div>
+
+<script>
+/**
+ * NoriRun Ver.9.2 - メインメニュー進化版エンジン
+ * (C) 2026 Takehiro & つよぽん
+ */
+
+let dbInstance = null;
+let currentOrderList = []; 
+
+// 1. データベース（Ver 2）に接続。無ければその場でplaylistsストアを作成
+window.addEventListener('DOMContentLoaded', () => {
+    const request = indexedDB.open("NoriRunDB", 2);
+    
+    request.onupgradeneeded = (e) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains('playlists')) {
+            db.createObjectStore('playlists', { keyPath: 'playlist_id' });
+        }
+        if (!db.objectStoreNames.contains('music_library')) {
+            db.createObjectStore('music_library', { keyPath: 'file_path' });
+        }
+    };
+    
+    request.onsuccess = (e) => {
+        dbInstance = e.target.result;
+        loadMenuData();
+    };
+
+    request.onerror = () => {
+        alert("データベースの読み込みに失敗しました。");
+    };
+});
+
+// 2. データを取得してメインメニューをレンダリング
+function loadMenuData() {
+    if (!dbInstance) return;
+
+    const tx = dbInstance.transaction(['music_library', 'playlists'], 'readonly');
+    const libraryStore = tx.objectStore('music_library');
+    const playlistStore = tx.objectStore('playlists');
+
+    let libraryMap = {};
+    
+    libraryStore.getAll().onsuccess = (e) => {
+        const allSongs = e.target.result;
+        allSongs.forEach(song => {
+            libraryMap[song.file_path] = song;
+        });
+
+        playlistStore.get("main_menu_default").onsuccess = (ev) => {
+            const playlistData = ev.target.result;
+            
+            if (playlistData && playlistData.file_path_list.length > 0) {
+                currentOrderList = playlistData.file_path_list.filter(path => libraryMap[path]);
+                allSongs.forEach(song => {
+                    if (!currentOrderList.includes(song.file_path)) {
+                        currentOrderList.push(song.file_path);
+                    }
+                });
+            } else {
+                currentOrderList = allSongs.map(song => song.file_path);
+            }
+
+            renderList(libraryMap);
+        };
+    };
+}
+
+// 3. 新しい 3 : 2 レイアウトのレンダリング
+function renderList(libraryMap) {
+    const listContainer = document.getElementById('menu-list');
+    listContainer.innerHTML = ''; 
+
+    if (currentOrderList.length === 0) {
+        listContainer.innerHTML = '<div style="text-align:center;color:#8e8e93;padding:20px;">曲がありません。先に音楽スキャンをしてね！</div>';
+        return;
+    }
+
+    currentOrderList.forEach((filePath, index) => {
+        const song = libraryMap[filePath];
+        if (!song) return;
+
+        // 【実験用テストロジック】1番目の曲名とアーティスト名をわざと長くしてスクロールを検証
+        let displayName = song.title || song.file_path;
+        let displayArtist = song.artist || "";
+        
+        if (index === 0) {
+            if (displayName.length < 15) displayName = "【ロングテスト】明日への鼓動 - Falcom Sound Team jdk";
+            if (displayArtist === "") displayArtist = "Falcom Sound Team jdk Special Running Club";
+        } else {
+            if (displayArtist === "") displayArtist = "Falcom"; // 短い文字のテスト用
+        }
+
+        const icon = song.is_analyzed ? "🕺" : "🛌";
+
+        const row = document.createElement('div');
+        row.className = 'music-row';
+        row.dataset.filePath = filePath;
+
+        row.innerHTML = `
+            <button class="square-btn norinori-btn" onclick="openNoriNori('${filePath}', '${displayName}', this)">${icon}</button>
+            
+            <div class="title-area" onclick="triggerPatternBMarquee(this)">
+                <span class="scroll-text">${displayName}</span>
+            </div>
+            
+            <div class="artist-area" onclick="triggerPatternBMarquee(this)">
+                <span class="artist-text">${displayArtist}</span>
+            </div>
+            
+            <button class="square-btn sort-btn up-btn" onclick="moveOrder(${index}, -1)">↑</button>
+            
+            <button class="square-btn sort-btn down-btn" onclick="moveOrder(${index}, 1)">↓</button>
+        `;
+        listContainer.appendChild(row);
+    });
+}
+
+// 4. 🕺 【リアルタイムお目覚め連動】ポップアップ後にその場でフラグを書き換える神関数
+function openNoriNori(filePath, songName, buttonElement) {
+    alert(`[ノリノリ設定] ${songName} のタップ補正画面を開発中だぜ！`);
+    
+    // ポップアップの「OK」が押されたら、裏のIndexedDBのフラグを即座に書き換え！
+    if (!dbInstance) return;
+    
+    const tx = dbInstance.transaction('music_library', 'readwrite');
+    const store = tx.objectStore('music_library');
+    
+    store.get(filePath).onsuccess = (e) => {
+        const songData = e.target.result;
+        if (songData) {
+            songData.is_analyzed = true; // 眠りから目覚めさせるぜ！
+            store.put(songData);
+        }
+    };
+    
+    // 書き換えが完了した瞬間、画面をリロードせずにボタンのアイコンをその場で 🕺 に進化！
+    tx.oncomplete = () => {
+        buttonElement.textContent = "🕺";
+    };
+}
+
+// 5. 📜 【パターンB専用】短い文字も長い文字も、一律左へ美しく1周させるスクロールエンジン
+function triggerPatternBMarquee(areaElement) {
+    const textElement = areaElement.firstElementChild; // 中にあるspan要素（文字）を取得
+    
+    // 二重発動を防ぐためにクラスを一旦剥がす
+    textElement.classList.remove('scroll-active');
+    void textElement.offsetWidth; // リフロー発生でアニメーションを完全リセット
+    
+    // 枠の横幅（見えている部分）と、文字本来の横幅をピクセル単位で測定
+    const areaWidth = areaElement.offsetWidth;
+    const textWidth = textElement.scrollWidth;
+    
+    // 【速度固定ロジック】1秒間に50ピクセル進むスピードに固定するぜ
+    const speed = 50; 
+    
+    // 文字が枠より長いか短いかで、左にすり抜ける距離（--scroll-x）を賢く自動計算！
+    let scrollDistance = 0;
+    if (textWidth > areaWidth) {
+        // 長い文字：文字の右端が完全に枠を通り抜けるまで左に動かす
+        scrollDistance = textWidth - areaWidth + 20; // 20pxの余白付き
+    } else {
+        // 短い文字（竹弘指定のギミック）：枠の幅の半分くらい左にスーッと流して1周感を演出！
+        scrollDistance = textWidth * 0.6; 
+    }
+    
+    // 計算した時間と距離をCSSカスタムプロパティへデリバリー！
+    const duration = (scrollDistance + areaWidth) / speed; // 綺麗に1周して戻る時間を計算
+    textElement.style.setProperty('--scroll-x', `-${scrollDistance}px`);
+    textElement.style.setProperty('--scroll-duration', `${duration}s`);
+    
+    // クラスを貼り付けて、電光掲示板スタート！
+    textElement.classList.add('scroll-active');
+    
+    // 1周まわり終わったら、自動的にクラスを回収して元の位置でカチッと静止（超軽量設計）
+    textElement.addEventListener('animationend', () => {
+        textElement.classList.remove('scroll-active');
+    }, { once: true });
+}
+
+// 6. 曲順の上下入れ替え＆永続保存
+function moveOrder(currentIndex, direction) {
+    const targetIndex = currentIndex + direction;
+    if (targetIndex < 0 || targetIndex >= currentOrderList.length) return;
+
+    const temp = currentOrderList[currentIndex];
+    currentOrderList[currentIndex] = currentOrderList[targetIndex];
+    currentOrderList[targetIndex] = temp;
+
+    const tx = dbInstance.transaction('playlists', 'readwrite');
+    const store = tx.objectStore('playlists');
+
+    const playlistData = {
+        playlist_id: "main_menu_default",
+        playlist_name: "メイン全曲リスト",
+        file_path_list: currentOrderList
+    };
+
+    store.put(playlistData);
+
+    tx.oncomplete = () => {
+        loadMenuData();
+    };
+}
+</script>
+</body>
+</html>
