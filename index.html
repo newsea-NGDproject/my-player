@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>NoriRun Ver.9.4 - メインメニュー極上オートスクロール実験場</title>
+    <style>
+        body {
+            font-family: -apple-system, sans-serif;
+            background-color: #f2f2f7;
+            margin: 0; padding: 15px;
+            color: #1c1c1e;
+            -webkit-user-select: none; user-select: none;
+            overflow-y: scroll; /* リスト移動中も画面が安定する防壁 */
+        }
+        .container {
+            max-width: 500px; margin: 0 auto;
+            background: #fff; padding: 15px;
+            border-radius: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+            position: relative;
+        }
+        h2 { font-size: 1.3rem; margin-top: 0; text-align: center; margin-bottom: 15px; }
+
+        /* --- 📋 曲一覧リストのコンテナ --- */
+        .music-list {
+            display: flex; flex-direction: column; gap: 8px;
+            position: relative;
+        }
+
+        /* --- 📐 1つのボタン集約によって極限まで広がった1行のレイアウト --- */
+        .music-row {
+            display: flex; align-items: center;
+            background: #f8f8f8; border-radius: 12px;
+            padding: 6px; box-sizing: border-box;
+            border: 1px solid #e5e5ea;
+            height: 56px;
+            transition: transform 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+            touch-action: none; /* スマホブラウザの標準スクロールやジェスチャーを完全に封じ、JS制御を最優先 */
+        }
+
+        /* 🔳 左右ボタン共通の正方形ベース（44px × 44px） */
+        .square-btn {
+            display: flex; align-items: center; justify-content: center;
+            background: #ffffff; border: 1px solid #d1d1d6;
+            border-radius: 10px; cursor: pointer;
+            box-sizing: border-box; flex-shrink: 0;
+            width: 44px; height: 44px;
+        }
+        .norinori-btn { font-size: 1.2rem; }
+        .norinori-btn:active { background: #e5e5ea; }
+
+        /* 🎨 【右端：並び替え専用ボタン】通常時はスタイリッシュ・シルバーグレー */
+        .sort-handle {
+            color: #b1b1b6; /* 上品なシルバーグレー */
+            background: #ffffff;
+            cursor: grab;
+        }
+
+        /* 🌊 【竹弘指定：アクティブ演出】掴んだ瞬間に美しい海ブルーへフラッシュ！ */
+        .sort-handle.active-blue {
+            color: #00a2ff !important; /* 鮮烈なコバルトブルー */
+            border-color: #00a2ff !important;
+            background: #e6f6ff;
+            cursor: grabbing;
+        }
+
+        /* 🚀 【竹弘指定：空中浮遊エフェクト】1.03倍に拡大し、海ブルーの影を纏う */
+        .music-row.dragging {
+            transform: scale(1.03);
+            box-shadow: 0 10px 25px rgba(0, 162, 255, 0.25);
+            background: #ffffff;
+            border-color: #00a2ff;
+            z-index: 999;
+            opacity: 0.9;
+        }
+
+        /* 🌟 【中央スペース】ボタン削減により、竹弘指定の「3 : 2」で広々と分け合う聖域 */
+        .title-area {
+            flex: 3; min-width: 0;
+            padding: 0 10px; overflow: hidden;
+            white-space: nowrap; cursor: pointer;
+        }
+        .artist-area {
+            flex: 2; min-width: 0;
+            padding: 0 6px; overflow: hidden;
+            white-space: nowrap; cursor: pointer;
+        }
+
+        /* --- 📜 電光掲示板（パターンB：一律左スクロール1周ストップ） --- */
+        .scroll-text {
+            display: inline-block; font-size: 0.95rem; font-weight: 600;
+            color: #1c1c1e; pointer-events: none;
+        }
+        .artist-text {
+            display: inline-block; font-size: 0.75rem; font-weight: normal;
+            color: #8e8e93; pointer-events: none;
+        }
+
+        @keyframes marquee-pattern-b {
+            0% { transform: translateX(0); }
+            75% { transform: translateX(var(--scroll-x)); opacity: 1; }
+            80% { transform: translateX(var(--scroll-x)); opacity: 0; }
+            81% { transform: translateX(30px); opacity: 0; }
+            100% { transform: translateX(0); opacity: 1; }
+        }
+        .scroll-active {
+            animation: marquee-pattern-b var(--scroll-duration) linear 1;
+        }
+
+        /* 🌊 【オートスクロール発動時の画面端エフェクト】ほんのり海ブルーに光る */
+        .glow-indicator {
+            position: fixed; left: 0; width: 100%; height: 40px;
+            pointer-events: none; z-index: 10000; opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        .glow-top { top: 0; background: linear-gradient(to bottom, rgba(0, 162, 255, 0.3), transparent); }
+        .glow-bottom { bottom: 0; background: linear-gradient(to top, rgba(0, 162, 255, 0.3), transparent); }
+        .glow-active { opacity: 1; }
+    </style>
+</head>
+<body>
+
+<div id="glow-top" class="glow-indicator glow-top"></div>
+<div id="glow-bottom" class="glow-indicator glow-bottom"></div>
+
+<div class="container">
+    <h2>メインメニュー（Ver.9.4 可変速スクロール版）</h2>
+    <div id="menu-list" class="music-list">
+        </div>
+</div>
+
+<script>
+/**
+ * NoriRun Ver.9.4 - メインメニュー極上オートスクロール＆ゾンビ撲滅エンジン
+ * (C) 2026 Takehiro & つよぽん
+ */
+
+let dbInstance = null;
+let currentOrderList = []; 
+let draggingRow = null;     // 現在ドラッグ中の行要素
+let currentClientY = 0;     // ドラッグ中の現在の指のY座標（画面基準）
+let autoScrollActive = false; // オートスクロールが走っているかどうかのフラグ
+
+// 1. 🚀 データベース（Ver 2）に安全接続
+window.addEventListener('DOMContentLoaded', () => {
+    const request = indexedDB.open("NoriRunDB", 2);
+    
+    request.onupgradeneeded = (e) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains('playlists')) {
+            db.createObjectStore('playlists', { keyPath: 'playlist_id' });
+        }
+        if (!db.objectStoreNames.contains('music_library')) {
+            db.createObjectStore('music_library', { keyPath: 'file_path' });
+        }
+    };
+    
+    request.onsuccess = (e) => {
+        dbInstance = e.target.result;
+        loadMenuData();
+    };
+
+    request.onerror = () => {
+        alert("データベースの読み込みに失敗しました。");
+    };
+
+    // 🛡️ 【ゾンビ現象完全撲滅のための大掃除網】
+    // ボタンの外や画面外、あるいは予期せぬキャンセルが発生しても、画面全体で検知して一括お片付け！
+    window.addEventListener('pointerup', clearAllDraggingStates);
+    window.addEventListener('pointercancel', clearAllDraggingStates);
+});
+
+// 2. データを取得してメインメニューを組み立て
+function loadMenuData() {
+    if (!dbInstance) return;
+
+    const tx = dbInstance.transaction(['music_library', 'playlists'], 'readonly');
+    const libraryStore = tx.objectStore('music_library');
+    const playlistStore = tx.objectStore('playlists');
+
+    let libraryMap = {};
+    
+    libraryStore.getAll().onsuccess = (e) => {
+        const allSongs = e.target.result;
+        allSongs.forEach(song => {
+            libraryMap[song.file_path] = song;
+        });
+
+        playlistStore.get("main_menu_default").onsuccess = (ev) => {
+            const playlistData = ev.target.result;
+            
+            if (playlistData && playlistData.file_path_list.length > 0) {
+                currentOrderList = playlistData.file_path_list.filter(path => libraryMap[path]);
+                allSongs.forEach(song => {
+                    if (!currentOrderList.includes(song.file_path)) {
+                        currentOrderList.push(song.file_path);
+                    }
+                });
+            } else {
+                currentOrderList = allSongs.map(song => song.file_path);
+            }
+
+            renderList(libraryMap);
+        };
+    };
+}
+
+// 3. 画面のレンダリング ＆ ドラッグソートイベントの組み込み
+function renderList(libraryMap) {
+    const listContainer = document.getElementById('menu-list');
+    listContainer.innerHTML = ''; 
+
+    if (currentOrderList.length === 0) {
+        listContainer.innerHTML = '<div style="text-align:center;color:#8e8e93;padding:20px;">曲がありません。音楽スキャンをしてね！</div>';
+        return;
+    }
+
+    currentOrderList.forEach((filePath, index) => {
+        const song = libraryMap[filePath];
+        if (!song) return;
+
+        let displayName = song.title || song.file_path;
+        let displayArtist = song.artist || "";
+        
+        // 検証用ダミーデータ（1番目だけ超ロング化、他はスクロール検証用にアーティスト補完）
+        if (index === 0) {
+            if (displayName.length < 15) displayName = "【ロングテスト】明日への鼓動 - Falcom Sound Team jdk";
+            if (displayArtist === "") displayArtist = "Falcom Sound Team jdk Special Running Club";
+        } else {
+            if (displayArtist === "") displayArtist = "Falcom " + (index + 1); 
+        }
+
+        const icon = song.is_analyzed ? "🕺" : "🛌";
+
+        const row = document.createElement('div');
+        row.className = 'music-row';
+        row.dataset.filePath = filePath;
+
+        row.innerHTML = `
+            <button class="square-btn norinori-btn" onclick="openNoriNori('${filePath}', '${displayName}', this)">${icon}</button>
+            
+            <div class="title-area" onclick="triggerPatternBMarquee(this)">
+                <span class="scroll-text">${displayName}</span>
+            </div>
+            
+            <div class="artist-area" onclick="triggerPatternBMarquee(this)">
+                <span class="artist-text">${displayArtist}</span>
+            </div>
+            
+            <button class="square-btn sort-handle">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="12" y1="2" x2="12" y2="22"></line>
+                    <polyline points="7 7 12 2 17 7"></polyline>
+                    <polyline points="7 17 12 22 17 17"></polyline>
+                </svg>
+            </button>
+        `;
+
+        const sortHandle = row.querySelector('.sort-handle');
+        bindDragAndDropEvents(row, sortHandle);
+
+        listContainer.appendChild(row);
+    });
+}
+
+// 4. 🕺 【リアルタイムお目覚め連動】
+function openNoriNori(filePath, songName, buttonElement) {
+    alert(`[ノリノリ設定] ${songName} のタップ補正画面を開発中だぜ！`);
+    if (!dbInstance) return;
+    
+    const tx = dbInstance.transaction('music_library', 'readwrite');
+    const store = tx.objectStore('music_library');
+    
+    store.get(filePath).onsuccess = (e) => {
+        const songData = e.target.result;
+        if (songData) {
+            songData.is_analyzed = true; 
+            store.put(songData);
+        }
+    };
+    
+    tx.oncomplete = () => {
+        buttonElement.textContent = "🕺";
+    };
+}
+
+// 5. 📜 【パターンB】一律左スクロール1周ストップエンジン
+function triggerPatternBMarquee(areaElement) {
+    const textElement = areaElement.firstElementChild;
+    textElement.classList.remove('scroll-active');
+    void textElement.offsetWidth; 
+    
+    const areaWidth = areaElement.offsetWidth;
+    const textWidth = textElement.scrollWidth;
+    const speed = 50; 
+    
+    let scrollDistance = 0;
+    if (textWidth > areaWidth) {
+        scrollDistance = textWidth - areaWidth + 20;
+    } else {
+        scrollDistance = textWidth * 0.6; 
+    }
+    
+    const duration = (scrollDistance + areaWidth) / speed;
+    textElement.style.setProperty('--scroll-x', `-${scrollDistance}px`);
+    textElement.style.setProperty('--scroll-duration', `${duration}s`);
+    
+    textElement.classList.add('scroll-active');
+    
+    textElement.addEventListener('animationend', () => {
+        textElement.classList.remove('scroll-active');
+    }, { once: true });
+}
+
+// 6. 🌊 【ドラッグソート ＆ 可変速オートスクローラー】コアエンジン
+function bindDragAndDropEvents(row, handle) {
+    handle.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        draggingRow = row;
+        currentClientY = e.clientY;
+        
+        // 竹弘指定の浮遊演出 ＆ 海ブルーへフラッシュ！
+        row.classList.add('dragging');          
+        handle.classList.add('active-blue');     
+
+        // 指がハミ出ても確実に追跡するキャプチャロック
+        handle.setPointerCapture(e.pointerId);
+
+        if (navigator.vibrate) {
+            navigator.vibrate(15); 
+        }
+
+        // オートスクロール監視ループを起動！
+        startAutoScrollLoop();
+    });
+
+    handle.addEventListener('pointermove', (e) => {
+        if (!draggingRow) return;
+        e.preventDefault();
+        
+        // 常に最新の指のY座標をグローバルにデリバリー
+        currentClientY = e.clientY;
+
+        // 位置の入れ替え処理を実行
+        updateInsertPosition(currentClientY);
+    });
+
+    handle.addEventListener('pointerup', (e) => {
+        if (!draggingRow) return;
+        handle.releasePointerCapture(e.pointerId);
+        
+        // 安全にすべてをお片付けしてIndexedDBに保存
+        clearAllDraggingStates();
+    });
+}
+
+// 📐 指の現在位置から、他メンバーの間に入り込むリアルタイム並び替えロジック
+function updateInsertPosition(clientY) {
+    if (!draggingRow) return;
+    const container = document.getElementById('menu-list');
+    const siblings = [...container.querySelectorAll('.music-row:not(.dragging)')];
+
+    const nextSibling = siblings.find(sibling => {
+        const box = sibling.getBoundingClientRect();
+        return clientY <= box.top + box.height / 2;
+    });
+
+    container.insertBefore(draggingRow, nextSibling);
+}
+
+// 🚀 【竹弘指定】画面端に近づくほど超加速する「可変スピード式オートスクローラー」
+function startAutoScrollLoop() {
+    if (autoScrollActive) return;
+    autoScrollActive = true;
+
+    function scrollLoop() {
+        if (!draggingRow) {
+            stopAutoScroll();
+            return;
+        }
+
+        const threshold = 90; // 上下端から90pxの「検知ゾーン」
+        const windowHeight = window.innerHeight;
+        
+        let speed = 0;
+        const glowTop = document.getElementById('glow-top');
+        const glowBottom = document.getElementById('glow-bottom');
+
+        // 一旦光を消す
+        glowTop.classList.remove('glow-active');
+        glowBottom.classList.remove('glow-active');
+
+        // 1. 上端検知（上にスクロール）
+        if (currentClientY < threshold && window.scrollY > 0) {
+            // 端に近づくほど比率（0.0 〜 1.0）が大きくなる
+            const ratio = (threshold - currentClientY) / threshold;
+            // 最大速度20pxで可変加速だぜ！
+            speed = -Math.ceil(ratio * 20); 
+            glowTop.classList.add('glow-active'); // 上端を海ブルーに発光！
+        } 
+        // 2. 下端検知（下にスクロール）
+        else if (currentClientY > windowHeight - threshold) {
+            const currentScrollMax = document.documentElement.scrollHeight - windowHeight;
+            if (window.scrollY < currentScrollMax) {
+                const ratio = (currentClientY - (windowHeight - threshold)) / threshold;
+                speed = Math.ceil(ratio * 20); 
+                glowBottom.classList.add('glow-active'); // 下端を海ブルーに発光！
+            }
+        }
+
+        if (speed !== 0) {
+            window.scrollBy(0, speed);
+            // 画面がスクロールした結果、曲の相対位置が変わるので入れ替えロジックも毎フレーム再計算！
+            updateInsertPosition(currentClientY);
+            requestAnimationFrame(scrollLoop);
+        } else {
+            // ゾーンから抜けたらループを一時待機
+            autoScrollActive = false;
+            stopAutoScroll();
+        }
+    }
+    requestAnimationFrame(scrollLoop);
+}
+
+// オートスクロール停止と光の消灯
+function stopAutoScroll() {
+    document.getElementById('glow-top').classList.remove('glow-active');
+    document.getElementById('glow-bottom').classList.remove('glow-active');
+}
+
+// 🛡️ 【ゾンビ現象完全撲滅】全状態を1ミリの狂いもなく初期化する大掃除関数
+function clearAllDraggingStates() {
+    const container = document.getElementById('menu-list');
+    if (!container) return;
+
+    let needSave = false;
+    if (draggingRow) {
+        needSave = true; // 実際にドラッグ中だった場合のみ保存フラグを立てる
+    }
+
+    // 画面上の全行、全ハンドルからアクティブクラスを徹底的に剥ぎ取る！
+    container.querySelectorAll('.music-row').forEach(row => {
+        row.classList.remove('dragging');
+    });
+    container.querySelectorAll('.sort-handle').forEach(h => {
+        h.classList.remove('active-blue');
+    });
+
+    draggingRow = null;
+    autoScrollActive = false;
+    stopAutoScroll();
+
+    // 最後に安全にIndexedDBへ現在の並び順を永続保存
+    if (needSave) {
+        saveNewOrderFromDOM();
+    }
+}
+
+// 7. 決定したDOMの並び順を引っこ抜いて、IndexedDBへ美しく永続保存
+function saveNewOrderFromDOM() {
+    const container = document.getElementById('menu-list');
+    const rows = [...container.querySelectorAll('.music-row')];
+    currentOrderList = rows.map(row => row.dataset.filePath);
+
+    if (!dbInstance) return;
+    const tx = dbInstance.transaction('playlists', 'readwrite');
+    const store = tx.objectStore('playlists');
+
+    const playlistData = {
+        playlist_id: "main_menu_default",
+        playlist_name: "メイン全曲リスト",
+        file_path_list: currentOrderList
+    };
+
+    store.put(playlistData);
+    console.log("[NoriRun] 最新 of 最新の曲順を100%安全にIndexedDBへ記憶したぜ！");
+}
+</script>
+</body>
+</html>
