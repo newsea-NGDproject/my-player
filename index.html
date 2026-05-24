@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NoriRun Ver.9 - STEP 2 独立実験場</title>
+    <!-- 音楽解析の新兵器：jsmediatags (MITライブラリ) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --surface-color: #1e1e1e;
+            --text-color: #ffffff;
+            --text-muted: #b3b3b3;
+            --primary-color: #00e5ff;
+            --accent-red: #ff3333;
+            --accent-green: #33ff33;
+            --accent-blue: #3333ff;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            overflow-x: hidden;
+            padding-bottom: 20px;
+        }
+
+        /* 🛠️ 開発者専用テスト扉 */
+        #test-gate {
+            background-color: #2c2c2c;
+            border-bottom: 2px solid #444;
+            padding: 15px;
+            text-align: center;
+            z-index: 9999;
+            position: relative;
+        }
+        #test-gate p {
+            font-size: 13px;
+            color: #ffcc00;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+        .test-btn {
+            background-color: #444;
+            color: #fff;
+            border: 1px solid #666;
+            padding: 8px 16px;
+            margin: 5px;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        .test-btn:active {
+            background-color: #555;
+        }
+
+        /* 画面制御 */
+        .screen {
+            display: none;
+            max-width: 500px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .screen.active {
+            display: block;
+        }
+
+        /* ① 初期設定画面（ヌルヌル定規） */
+        .setup-title {
+            text-align: center;
+            font-size: 20px;
+            margin-top: 20px;
+            margin-bottom: 30px;
+            letter-spacing: 1px;
+        }
+
+        /* 定規UIコンテナ */
+        .ruler-container {
+            position: relative;
+            width: 100%;
+            height: 80px;
+            background: #1a1a1a;
+            border-radius: 8px;
+            margin-bottom: 35px;
+            overflow-x: scroll;
+            overflow-y: hidden;
+            white-space: nowrap;
+            cursor: grab;
+            border: 1px solid #333;
+        }
+        .ruler-container::-webkit-scrollbar {
+            display: none; /* 定規のスクロールバーは隠す */
+        }
+        .ruler-tracks {
+            display: inline-block;
+            padding-left: 50%;
+            padding-right: 50%;
+            height: 100%;
+            vertical-align: top;
+        }
+        .ruler-mark {
+            display: inline-block;
+            width: 2px;
+            height: 20px;
+            background-color: #555;
+            margin-right: 8px;
+            vertical-align: top;
+            margin-top: 10px;
+        }
+        .ruler-mark.long {
+            height: 40px;
+            background-color: var(--primary-color);
+        }
+        .ruler-mark.long::after {
+            content: attr(data-val);
+            display: block;
+            font-size: 10px;
+            color: var(--text-muted);
+            text-align: center;
+            margin-top: 45px;
+            transform: translateX(-40%);
+        }
+        .ruler-center-line {
+            position: absolute;
+            left: 50%;
+            top: 0;
+            width: 2px;
+            height: 60px;
+            background-color: #ff3366;
+            transform: translateX(-50%);
+            pointer-events: none;
+        }
+        .pitch-display {
+            text-align: center;
+            font-size: 28px;
+            font-weight: bold;
+            color: var(--primary-color);
+            margin-bottom: 30px;
+        }
+
+        /* おもてなし案内文＆設定ボタン */
+        .welcome-box {
+            background-color: var(--surface-color);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 30px;
+            border: 1px solid #2a2a2a;
+        }
+        .welcome-text {
+            font-size: 14px;
+            line-height: 1.6;
+            color: #dddddd;
+        }
+        .welcome-text strong {
+            color: var(--primary-color);
+        }
+        .btn-main {
+            display: block;
+            width: 100%;
+            background: linear-gradient(135deg, #00e5ff, #00a5ff);
+            color: #000;
+            border: none;
+            padding: 16px;
+            border-radius: 25px;
+            font-size: 16px;
+            font-weight: bold;
+            text-align: center;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(0,229,255,0.3);
+        }
+        .btn-main:active {
+            transform: scale(0.98);
+        }
+
+        /* ② メメインメニュー画面（OFS画面） */
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background-color: var(--surface-color);
+            padding: 15px 20px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            border-bottom: 1px solid #2a2a2a;
+        }
+        .header-left {
+            width: 40px; /* バランス用 */
+        }
+        .header-center {
+            font-size: 18px;
+            font-weight: bold;
+            letter-spacing: 1px;
+        }
+        
+        /* 🛑 一番長い文字列に合わせた「左詰め固定幅」の取込状況エリア */
+        .header-right-area {
+            min-width: 150px;
+            text-align: left;
+            font-size: 11px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end; /* エリア内では右側に寄せる */
+            position: relative;
+        }
+        .status-text {
+            margin-right: 6px;
+            display: inline-block;
+        }
+        .status-lamp {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        /* 点滅アニメーション定義 */
+        @keyframes pulse-fast {
+            0% { opacity: 1; } 50% { opacity: 0.2; } 100% { opacity: 1; }
+        }
+        @keyframes pulse-normal {
+            0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; }
+        }
+        .lamp-red { background-color: var(--accent-red); animation: pulse-fast 0.4s infinite; }
+        .lamp-green { background-color: var(--accent-green); animation: pulse-normal 1.0s infinite; }
+        .lamp-blue { background-color: var(--primary-color); opacity: 1; }
+
+        /* 曲リストOFS表示 */
+        .song-list {
+            margin-top: 15px;
+            padding: 0 10px;
+        }
+        .song-item {
+            background-color: var(--surface-color);
+            border-radius: 8px;
+            padding: 12px 15px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between; /* 左右に引き離す */
+            border: 1px solid #252525;
+        }
+        .song-info {
+            flex: 1;
+            padding-right: 15px;
+            overflow: hidden;
+        }
+        .song-title {
+            font-size: 15px;
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-bottom: 4px;
+        }
+        .song-artist {
+            font-size: 12px;
+            color: var(--text-muted);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        /* ★曲名の右詰めにリアルタイム上書きされるジャケ写 */
+        .song-jacket {
+            width: 42px;
+            height: 42px;
+            border-radius: 4px;
+            background-color: #333;
+            object-fit: cover;
+            display: none; /* 初期状態（文字フェーズ）では完全に非表示 */
+        }
+
+        /* ❌ 0件専用・親切カスタムダイアログ */
+        .dialog-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0,0,0,0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+            visibility: hidden;
+            opacity: 0;
+            transition: all 0.3s;
+            padding: 20px;
+        }
+        .dialog-overlay.active {
+            visibility: visible;
+            opacity: 1;
+        }
+        .dialog-box {
+            background-color: var(--surface-color);
+            border: 1px solid #333;
+            border-radius: 16px;
+            padding: 25px;
+            max-width: 400px;
+            width: 100%;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+        }
+        .dialog-text {
+            font-size: 14px;
+            line-height: 1.6;
+            margin-bottom: 25px;
+            color: #eee;
+        }
+        .dialog-buttons {
+            display: flex;
+            gap: 12px;
+        }
+        .dialog-btn {
+            flex: 1;
+            padding: 12px;
+            border-radius: 8px;
+            border: none;
+            font-weight: bold;
+            font-size: 14px;
+            cursor: pointer;
+        }
+        .dialog-btn-ok {
+            background-color: var(--primary-color);
+            color: #000;
+        }
+        .dialog-btn-ng {
+            background-color: #333;
+            color: #fff;
+            border: 1px solid #444;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 🛠️ 開発者専用テスト扉 -->
+    <div id="test-gate">
+        <p>【つよぽん＆竹弘 開発用テストゲート】</p>
+        <button class="test-btn" onclick="triggerTestA()">テストA：DBをクリアして初回起動</button>
+        <button class="test-btn" onclick="triggerTestB()">テストB：DBを維持して次回起動テスト</button>
+    </div>
+
+    <!-- 🟥 【画面①】初期設定画面（ルートA） -->
+    <div id="screen-setup" class="screen">
+        <h2 class="setup-title">INITIAL SETTING</h2>
+        
+        <div class="pitch-display"><span id="pitch-val">120</span> BPM</div>
+        
+        <!-- ヌルヌル定規UI -->
+        <div class="ruler-container" id="ruler">
+            <div class="ruler-tracks" id="ruler-tracks"></div>
+            <div class="ruler-center-line"></div>
+        </div>
+
+        <!-- おもてなし案内文 -->
+        <div class="welcome-box">
+            <div class="welcome-text">
+                下記<strong>「設定」</strong>ボタンを押すと、スマホのフォルダ選択画面が開きます。このフォルダの曲をアプリに登録でよければ、最下部の<strong>『このフォルダを使用』</strong>をタップし、フォルダのアクセスを「許可」して下さい。<br>
+                <strong>あなたのスマホ内の</strong>NoriRun曲データベースに曲情報をアップロードします。
+            </div>
+        </div>
+
+        <button class="btn-main" onclick="handleSetupButtonClick()">設定</button>
+    </div>
+
+    <!-- 🟦 【画面②】メインメニュー画面（OFS表示） -->
+    <div id="screen-main" class="screen">
+        <div class="header">
+            <div class="header-left"></div>
+            <div class="header-center">メインメニュー</div>
+            <!-- 右端位置固定の取込インジケーター -->
+            <div class="header-right-area" id="import-indicator" style="display: none;">
+                <span class="status-text" id="status-text">曲データ取込中</span>
+                <span class="status-lamp" id="status-lamp"></span>
+            </div>
+        </div>
+
+        <!-- OFS 曲リスト表示エリア -->
+        <div class="song-list" id="ofs-song-list"></div>
+    </div>
+
+    <!-- ❌ 0件専用・親切カスタムダイアログ -->
+    <div class="dialog-overlay" id="zero-dialog">
+        <div class="dialog-box">
+            <div class="dialog-text">
+                登録曲が0件でした。<br><br>
+                <span style="color: #ff5555; font-weight: bold;">（※SpotifyやAmazon Music等のサブスク曲は、暗号化されているため登録できません）</span><br><br>
+                CDからの取込み音楽データ、または購入した音楽データのあるフォルダを再設定しますか？
+            </div>
+            <div class="dialog-buttons">
+                <button class="dialog-btn dialog-btn-ok" onclick="closeZeroDialog('OK')">OK(フォルダ設定に戻る)</button>
+                <button class="dialog-btn dialog-btn-ng" onclick="closeZeroDialog('NG')">NG(アプリを起動する)</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- データベース(IndexedDB)＆設定まわりの処理 ---
+        const DB_NAME = 'NoriRunDB_Ver9_Step2';
+        const DB_VERSION = 1;
+        let db = null;
+        let selectedPitch = 120;
+        let scannedFiles = []; // 一時ファイル保持用
+
+        // DBの初期化
+        function initDB() {
+            return new Promise((resolve) => {
+                const request = indexedDB.open(DB_NAME, DB_VERSION);
+                request.onupgradeneeded = function(e) {
+                    const database = e.target.result;
+                    if (!database.objectStoreNames.contains('songs')) {
+                        database.createObjectStore('songs', { keyPath: 'id', autoIncrement: true });
+                    }
+                    if (!database.objectStoreNames.contains('config')) {
+                        database.createObjectStore('config', { keyPath: 'key' });
+                    }
+                };
+                request.onsuccess = function(e) {
+                    db = e.target.result;
+                    resolve();
+                };
+            });
+        }
+
+        // 🛠️ テストA：DBを完全破壊して初回起動を再現
+        async function triggerTestA() {
+            localStorage.removeItem('NoriRun_Setup_Done');
+            if (db) db.close();
+            const req = indexedDB.deleteDatabase(DB_NAME);
+            req.onsuccess = async function() {
+                alert('データベースを完全クリアしたぜ！初回起動（ルートA）テストスタート！');
+                await initDB();
+                showScreen('screen-setup');
+            };
+        }
+
+        // 🛠️ テストB：DBを維持して起動（次回起動テスト用）
+        async function triggerTestB() {
+            await initDB();
+            const isSetupDone = localStorage.getItem('NoriRun_Setup_Done');
+            if (isSetupDone === 'true') {
+                alert('過去データを維持して次回起動（ルートB）テストスタート！OFSへ直撃するぜ！');
+                showScreen('screen-main');
+                loadAndRenderOFS();
+            } else {
+                alert('セットアップ完了フラグがないから、自動的に初回起動（ルートA）に行くぜ！');
+                showScreen('screen-setup');
+            }
+        }
+
+        // 画面切り替え
+        function showScreen(screenId) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById(screenId).classList.add('active');
+        }
+
+        // --- 画面①：ヌルヌル定規のUI生成＆制御 ---
+        function createRuler() {
+            const tracks = document.getElementById('ruler-tracks');
+            tracks.innerHTML = '';
+            // BPM 60 から 240 までの目盛りを生成
+            for (let i = 60; i <= 240; i++) {
+                const mark = document.createElement('div');
+                mark.className = 'ruler-mark';
+                if (i % 10 === 0) {
+                    mark.classList.add('long');
+                    mark.setAttribute('data-val', i);
+                }
+                tracks.appendChild(mark);
+            }
+
+            const ruler = document.getElementById('ruler');
+            ruler.addEventListener('scroll', () => {
+                // スクロール位置から簡易的にBPMを計算
+                const scrollLeft = ruler.scrollLeft;
+                const calculatedBPM = 60 + Math.floor(scrollLeft / 10);
+                if (calculatedBPM >= 60 && calculatedBPM <= 240) {
+                    selectedPitch = calculatedBPM;
+                    document.getElementById('pitch-val').innerText = selectedPitch;
+                }
+            });
+            // 初期位置を120BPM付近にする
+            setTimeout(() => { ruler.scrollLeft = 600; }, 100);
+        }
+
+        // 設定ボタンタップ時の処理
+        async function handleSetupButtonClick() {
+            // ピッチ（BPM）をconfigストアに裏保存
+            const tx = db.transaction('config', 'readwrite');
+            tx.objectStore('config').put({ key: 'pitch', value: selectedPitch });
+
+            // 📂 【音楽フォルダへの自動アプローチ】起動！
+            try {
+                // Galaxy S20 Chromeでスクショ通りの挙動を走らせる近代API
+                const dirHandle = await window.showDirectoryPicker();
+                scannedFiles = [];
+                await scanDirectory(dirHandle);
+
+                // ファイル件数のチェック分岐
+                if (scannedFiles.length === 0) {
+                    // ❌ ［条件A］0件の場合
+                    document.getElementById('zero-dialog').classList.add('active');
+                } else {
+                    // ⭕ ［条件B］1件以上あった場合 ➡️ てへぺろ突込発動！
+                    localStorage.setItem('NoriRun_Setup_Done', 'true');
+                    showScreen('screen-main');
+                    startTehePeroImport();
+                }
+            } catch (err) {
+                console.log('ユーザーがキャンセル、またはブラウザ非対応：', err);
+            }
+        }
+
+        // ディレクトリを再帰的にスキャンしてオーディオファイルを抽出
+        async function scanDirectory(dirHandle) {
+            for await (const entry of dirHandle.values()) {
+                if (entry.kind === 'file') {
+                    const ext = entry.name.split('.').pop().toLowerCase();
+                    if (['mp3', 'm4a', 'wav', 'flac', 'ogg'].includes(ext)) {
+                        const file = await entry.getFile();
+                        scannedFiles.push(file);
+                    }
+                } else if (entry.kind === 'directory') {
+                    // サブフォルダも丸ごと読み込む
+                    await scanDirectory(entry);
+                }
+            }
+        }
+
+        // 0件ダイアログのボタン処理
+        function closeZeroDialog(choice) {
+            document.getElementById('zero-dialog').classList.remove('active');
+            if (choice === 'OK') {
+                handleSetupButtonClick(); // フォルダ設定に再チャレンジ！
+            } else {
+                // 曲ゼロのままメインメニュー（OFS）へ強行突入
+                localStorage.setItem('NoriRun_Setup_Done', 'true');
+                showScreen('screen-main');
+                document.getElementById('ofs-song-list').innerHTML = '<div style="text-align:center;color:#666;padding:40px;">登録された曲がありません。</div>';
+            }
+        }
+
+        // --- ⭕ 正常系：てへぺろ取込＆3色ランプ連動コアロジック ---
+        async function startTehePeroImport() {
+            const indicator = document.getElementById('import-indicator');
+            const statusText = document.getElementById('status-text');
+            const statusLamp = document.getElementById('status-lamp');
+            const listContainer = document.getElementById('ofs-song-list');
+            
+            listContainer.innerHTML = '';
+            indicator.style.display = 'flex';
+
+            // ==========================================
+            // ✨ 🔴 フェーズ1: 文字書き込み優先 (超高速点滅)
+            // ==========================================
+            statusText.innerText = '曲データ取込中';
+            statusLamp.className = 'status-lamp lamp-red';
+
+            const songRecords = [];
+
+            for (let i = 0; i < scannedFiles.length; i++) {
+                const file = scannedFiles[i];
+                // 暫定としてファイル名をタイトルとして最優先で超高速DB保存！
+                const record = {
+                    title: file.name.replace(/\.[^/.]+$/, ""), // 拡張子除く
+                    artist: 'Unknown Artist',
+                    fileIndex: i,
+                    hasJacket: false,
+                    jacketData: null
+                };
+
+                const tx = db.transaction('songs', 'readwrite');
+                const request = tx.objectStore('songs').add(record);
+                
+                await new Promise(res => {
+                    request.onsuccess = function(e) {
+                        record.id = e.target.result;
+                        songRecords.push(record);
+                        
+                        // 表の画面：テキストだけをツラツラッと超高速でリアルタイム降臨表示！
+                        const itemHtml = `
+                            <div class="song-item" id="song-${record.id}">
+                                <div class="song-info">
+                                    <div class="song-title">${record.title}</div>
+                                    <div class="song-artist">${record.artist}</div>
+                                </div>
+                                <img class="song-jacket" id="jacket-${record.id}" src="" alt="Jacket">
+                            </div>
+                        `;
+                        listContainer.insertAdjacentHTML('beforeend', itemHtml);
+                        res();
+                    };
+                });
+            }
+
+            // ==========================================
+            // ✨ 🟢 フェーズ2: ジャケ写右詰め上書き (普通点滅)
+            // ==========================================
+            // 左詰め幅固定のため、文字が変わっても右端のランプ位置（🟢）は完全キープ！
+            statusText.innerText = 'ジャケ写取得中';
+            statusLamp.className = 'status-lamp lamp-green';
+
+            for (let record of songRecords) {
+                const file = scannedFiles[record.fileIndex];
+
+                await new Promise(res => {
+                    // MITライブラリ「jsmediatags」で本物のタグ情報とジャケ写の抽出を試みる
+                    jsmediatags.read(file, {
+                        onSuccess: function(tag) {
+                            const tags = tag.tags;
+                            let updateNeeded = false;
+
+                            // 本物の曲名・アーティストがあれば上書き用データにする
+                            if (tags.title) record.title = tags.title;
+                            if (tags.artist) record.artist = tags.artist;
+
+                            // ジャケット写真の抽出
+                            if (tags.picture) {
+                                const image = tags.picture;
+                                let base64String = "";
+                                for (let i = 0; i < image.data.length; i++) {
+                                    base64String += String.fromCharCode(image.data[i]);
+                                }
+                                const base64 = "data:" + image.format + ";base64," + window.btoa(base64String);
+                                
+                                record.hasJacket = true;
+                                record.jacketData = base64;
+                                updateNeeded = true;
+                            }
+
+                            // 本物の情報（曲名・アーティスト・ジャケ写）でIndexedDBを裏で更新！
+                            const tx = db.transaction('songs', 'readwrite');
+                            tx.objectStore('songs').put(record);
+
+                            // 表の画面：本物の文字情報へ更新し、ジャケ写があれば右詰めでパッと出現進化！
+                            const itemNode = document.getElementById(`song-${record.id}`);
+                            if (itemNode) {
+                                itemNode.querySelector('.song-title').innerText = record.title;
+                                itemNode.querySelector('.song-artist').innerText = record.artist;
+                                
+                                if (record.hasJacket) {
+                                    const imgNode = document.getElementById(`jacket-${record.id}`);
+                                    imgNode.src = record.jacketData;
+                                    imgNode.style.display = 'block'; // ★右詰めでパッと出現！
+                                }
+                            }
+                            res();
+                        },
+                        onError: function(error) {
+                            // タグ解析エラー（サブスクの暗号化や、メタデータなし）の場合も次へ進む
+                            res();
+                        }
+                    });
+                });
+            }
+
+            // ==========================================
+            // ✨ 🔵 フェーズ3: 全工程完了 (青点灯・5秒間表示)
+            // ==========================================
+            statusText.innerText = '全工程完了';
+            statusLamp.className = 'status-lamp lamp-blue';
+
+            setTimeout(() => {
+                // 5秒経ったらフワッと非表示になり、完全なOFSメニューが完成！
+                indicator.style.transition = 'opacity 0.8s';
+                indicator.style.opacity = '0';
+                setTimeout(() => { indicator.style.display = 'none'; indicator.style.opacity = '1'; }, 800);
+            }, 5000);
+        }
+
+        // ルートB用：すでにDBに入っている曲を読み込んで描画する処理
+        function loadAndRenderOFS() {
+            const listContainer = document.getElementById('ofs-song-list');
+            listContainer.innerHTML = '';
+
+            const tx = db.transaction('songs', 'readonly');
+            const store = tx.objectStore('songs');
+            const request = store.getAll();
+
+            request.onsuccess = function(e) {
+                const songs = e.target.result;
+                if (songs.length === 0) {
+                    listContainer.innerHTML = '<div style="text-align:center;color:#666;padding:40px;">登録された曲がありません。</div>';
+                    return;
+                }
+                songs.forEach(song => {
+                    const itemHtml = `
+                        <div class="song-item">
+                            <div class="song-info">
+                                <div class="song-title">${song.title}</div>
+                                <div class="song-artist">${song.artist}</div>
+                            </div>
+                            <img class="song-jacket" src="${song.jacketData || ''}" style="display: ${song.hasJacket ? 'block' : 'none'};" alt="Jacket">
+                        </div>
+                    `;
+                    listContainer.insertAdjacentHTML('beforeend', itemHtml);
+                });
+            };
+        }
+
+        // ページ読み込み時の初期動作
+        window.onload = async function() {
+            createRuler();
+            await initDB();
+            
+            // 初回はテストがしやすいように、デフォルトで定規画面（ルートA）を出しておくぜ！
+            showScreen('screen-setup');
+        };
+    </script>
+</body>
+</html>
