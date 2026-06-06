@@ -302,8 +302,8 @@ async function saveAndNext() {
         tx.objectStore('settings').put(true, 'init_completed');
         
         tx.oncomplete = () => {
-        // 成功したら次の画面(C013.html)へ自動で切り替える
-        window.location.href = "C013.html";
+        // 成功したら次の画面(c013.html)へ自動で切り替える
+        window.location.href = "c013.html";
 };
     };
 }
@@ -366,8 +366,8 @@ function startRouteA() {
 }
 
 function startRouteB() {
-    // 2回目以降は、初期設定画面をスキップして即座にスキャン画面(C013.html)へ飛ぶ！
-    window.location.href = "C013.html";
+    // 2回目以降は、初期設定画面をスキップして即座にスキャン画面(c013.html)へ飛ぶ！
+    window.location.href = "c013.html";
 }
 
 // サービスワーカーの登録スクリプト（PWA化用）
