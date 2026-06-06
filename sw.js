@@ -1,7 +1,7 @@
 const CACHE_NAME = 'norirun-v1';
 const ASSETS = [
   'index.html',
-  'C013.html',
+  'c013.html',
   'click.wav'
 ];
 
