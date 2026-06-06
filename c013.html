@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>C013 スキャン準備</title>
+</head>
+<body>
+    <div id="debug-area" style="padding:50px; text-align:center;">
+        <button id="start-btn" style="font-size:2rem; padding:20px;">スキャンを開始する</button>
+    </div>
+
+    <input type="file" id="norirun-folder-picker" webkitdirectory directory multiple style="display: none;">
+
+    <script>
+        // ボタンを押した瞬間に、全てを処理する！
+        document.getElementById('start-btn').addEventListener('click', async () => {
+            alert("タップしたね。DBに接続するよ");
+            
+            // 1. ここで初めてDBを開く（確実にここから！）
+            const db = await new Promise((resolve) => {
+                const req = indexedDB.open("NoriRunDB", 2);
+                req.onsuccess = (e) => resolve(e.target.result);
+                req.onerror = () => alert("DBエラー！");
+            });
+
+            // 2. フォルダ選択を起動
+            document.getElementById('norirun-folder-picker').click();
+        });
+
+        // フォルダ選択後の処理
+        document.getElementById('norirun-folder-picker').addEventListener('change', (e) => {
+            alert("フォルダが選ばれた！スキャンするよ");
+            // handleFolderScan(e.target.files); // 後で戻す
+        });
+    </script>
+</body>
+</html>
