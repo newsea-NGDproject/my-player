@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ノリRun - Opening</title>
+    <style>
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #f2f2f7; overflow: hidden; }
+        
+        #opening-screen {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: #ffffff; z-index: 10000;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            opacity: 1; transition: opacity 1.0s ease-out;
+        }
+        
+        .logo-image { width: 60%; max-width: 300px; height: auto; margin-bottom: 30px; }
+        
+        .title-text { font-size: 2.2rem; font-weight: 900; color: #1c1c1e; margin: 0; }
+        .emoji-box { font-size: 3rem; margin-top: 10px; }
+        
+        .fade-out { opacity: 0; pointer-events: none; }
+    </style>
+</head>
+<body>
+
+<div id="opening-screen">
+    <img src="1000012080.jpg" alt="Logo" class="logo-image">
+    <h1 class="title-text">ノリRun</h1>
+    <div class="emoji-box">🏃‍♂️💨🎶</div>
+</div>
+
+<script>
+    // 起動の儀式：2秒後に自動でフェードアウト
+    window.addEventListener('load', () => {
+        setTimeout(() => {
+            const screen = document.getElementById('opening-screen');
+            screen.classList.add('fade-out');
+            
+            // フェードアウト完了後に画面から除去
+            setTimeout(() => { screen.style.display = 'none'; }, 1000);
+        }, 2000);
+    });
+</script>
+
+</body>
+</html>
