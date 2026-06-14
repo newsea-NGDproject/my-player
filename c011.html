@@ -9,7 +9,7 @@
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#007aff">
 
-<title>NoriRun c011-v01.2-bs01 起動OP</title>
+<title>NoriRun c011-v01.3-bs01 起動OP</title>
 
 <style>
 /* 全体設定 */
@@ -283,12 +283,25 @@ window.addEventListener("load", function () {
 /*
     起動オープニングが終わった後、
     テスト用DBクリア画面へ移動します。
+*/
 setTimeout(function () {
 
     location.href = "dbclr.html";
 
 }, 5000);
+
+/*
+    将来、本番で初期設定へ直接進めたい場合、
+　　起動オープニングが終わった後、
+    c012へ移動する為の差し替えコードです。
+　　dbclr.htmlをc012.htmlに修正します。
+setTimeout(function () {
+
+    location.href = "c012.html";
+
+}, 5000);
 */
+
 });
 </script>
 </body>
