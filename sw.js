@@ -1,4 +1,4 @@
-const CACHE_NAME = 'norirun-v4';
+const CACHE_NAME = 'norirun-v5';
 const ASSETS = [
   'index.html',
   'click.wav'
