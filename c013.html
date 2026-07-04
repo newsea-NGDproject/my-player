@@ -1,622 +1,430 @@
-<!-- c013-v01.0-bs01-メインメニュー -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-
-    <!-- PWA設定：c012と同じくmanifestを読み込みます -->
-    <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#007aff">
-
-    <title>ノリRun - メインメニュー</title>
-
-    <style>
-        :root {
-            --main-blue: #007aff;
-            --bg-color: #f2f2f7;
-            --card-bg: #ffffff;
-            --text-main: #1c1c1e;
-            --text-sub: #8e8e93;
-            --border-color: #d1d1d6;
-        }
-
-        body, html {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            min-height: 100%;
-            font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
-            background-color: var(--bg-color);
-            color: var(--text-main);
-        }
-
-        #app {
-            width: 100%;
-            min-height: 100vh;
-            box-sizing: border-box;
-            padding: 16px;
-        }
-
-        header {
-            margin-bottom: 16px;
-        }
-
-        h1 {
-            margin: 0 0 4px;
-            font-size: 1.7rem;
-        }
-
-        .sub-title {
-            margin: 0;
-            font-size: 0.9rem;
-            color: var(--text-sub);
-        }
-
-        .card {
-            background: var(--card-bg);
-            border-radius: 18px;
-            padding: 14px;
-            margin-bottom: 14px;
-            box-shadow: 0 8px 20px rgba(0,0,0,0.06);
-        }
-
-        .setting-row {
-            display: flex;
-            justify-content: space-between;
-            gap: 10px;
-            font-size: 0.95rem;
-            padding: 4px 0;
-        }
-
-        .setting-label {
-            color: var(--text-sub);
-        }
-
-        .setting-value {
-            font-weight: bold;
-        }
-
-        #add-music-btn {
-            width: 100%;
-            border: none;
-            border-radius: 16px;
-            background: var(--main-blue);
-            color: white;
-            padding: 16px;
-            font-size: 1.05rem;
-            font-weight: bold;
-            cursor: pointer;
-            box-shadow: 0 6px 18px rgba(0,122,255,0.35);
-        }
-
-        #add-music-btn:active {
-            transform: scale(0.98);
-        }
-
-        #message {
-            margin-top: 10px;
-            font-size: 0.88rem;
-            color: var(--text-sub);
-            line-height: 1.5;
-        }
-
-        .section-title {
-            margin: 0 0 10px;
-            font-size: 1.05rem;
-        }
-
-        #track-list {
-            list-style: none;
-            margin: 0;
-            padding: 0;
-        }
-
-        .track-item {
-            border: 1px solid var(--border-color);
-            border-radius: 14px;
-            padding: 12px;
-            margin-bottom: 10px;
-            background: #fff;
-            cursor: pointer;
-        }
-
-        .track-item:active {
-            background: #f2f2f7;
-        }
-
-        .track-title {
-            font-weight: bold;
-            font-size: 0.98rem;
-            word-break: break-all;
-        }
-
-        .track-meta {
-            margin-top: 4px;
-            font-size: 0.78rem;
-            color: var(--text-sub);
-        }
-
-        .empty-message {
-            color: var(--text-sub);
-            font-size: 0.95rem;
-            line-height: 1.6;
-            text-align: center;
-            padding: 20px 6px;
-        }
-
-        #player-box {
-            display: none;
-        }
-
-        #now-playing {
-            margin: 0 0 10px;
-            font-size: 0.95rem;
-            font-weight: bold;
-            word-break: break-all;
-        }
-
-        audio {
-            width: 100%;
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>NoriRun c013 権限実験</title>
+<style>
+    body {
+        margin: 0;
+        padding: 16px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #f2f2f7;
+        color: #1c1c1e;
+    }
+    h1 {
+        font-size: 1.35rem;
+        margin: 0 0 12px;
+        text-align: center;
+    }
+    .card {
+        background: #fff;
+        border-radius: 18px;
+        padding: 16px;
+        margin-bottom: 14px;
+        box-shadow: 0 4px 14px rgba(0,0,0,0.08);
+    }
+    button {
+        width: 100%;
+        box-sizing: border-box;
+        border: none;
+        border-radius: 14px;
+        padding: 15px 12px;
+        margin: 8px 0;
+        font-size: 1rem;
+        font-weight: bold;
+        color: #fff;
+        background: #007aff;
+    }
+    button.gray { background: #8e8e93; }
+    button.green { background: #34c759; }
+    button.red { background: #ff3b30; }
+    .status {
+        white-space: pre-wrap;
+        font-size: 0.9rem;
+        line-height: 1.5;
+        background: #f7f7f7;
+        border-radius: 12px;
+        padding: 12px;
+        min-height: 80px;
+    }
+    .track {
+        border: 1px solid #d1d1d6;
+        border-radius: 12px;
+        padding: 12px;
+        margin-top: 10px;
+        background: #fafafa;
+    }
+    .track-title {
+        font-weight: bold;
+        word-break: break-all;
+    }
+    .small {
+        font-size: 0.82rem;
+        color: #666;
+        line-height: 1.5;
+    }
+    audio {
+        width: 100%;
+        margin-top: 8px;
+    }
+</style>
 </head>
 <body>
 
-<div id="app">
-    <header>
-        <h1>ノリRun メインメニュー</h1>
-        <p class="sub-title">c013 第1版：曲追加・保存・一覧表示・再生</p>
-    </header>
+<h1>NoriRun c013 権限実験</h1>
 
-    <!-- c012で保存した初期設定を表示するカード -->
-    <section class="card">
-        <div class="setting-row">
-            <span class="setting-label">マイ・ピッチ</span>
-            <span class="setting-value" id="my-pitch-display">---</span>
-        </div>
-        <div class="setting-row">
-            <span class="setting-label">音量</span>
-            <span class="setting-value" id="volume-display">---</span>
-        </div>
-    </section>
+<div class="card">
+    <p class="small">
+        目的：曲ごとの file_handle ではなく、Musicフォルダの root_folder_handle から、
+        ファイル名で曲を再取得できるか確認します。<br>
+        まず「Musicフォルダを登録」→「曲を1曲登録」→再生確認→アプリ終了→再起動→「保存済み曲を再生」で確認してください。
+    </p>
+</div>
 
-    <!-- 曲追加ボタン -->
-    <section class="card">
-        <button id="add-music-btn">🎵 曲を追加する</button>
-        <div id="message">まだ曲がない場合は、ここから音楽ファイルを選んでください。</div>
-    </section>
+<div class="card">
+    <button id="select-folder-btn">① Musicフォルダを登録する</button>
+    <button id="select-track-btn" class="green">② 登録済みフォルダ内の曲を1曲登録する</button>
+    <button id="play-saved-btn">③ 保存済み曲を再生する</button>
+    <button id="check-permission-btn" class="gray">④ フォルダ権限状態を確認する</button>
+    <button id="clear-test-db-btn" class="red">実験DBをクリア</button>
+</div>
 
-    <!-- 再生エリア。曲をクリックした時だけ表示します -->
-    <section class="card" id="player-box">
-        <p id="now-playing">再生中：</p>
-        <audio id="audio-player" controls></audio>
-    </section>
+<div class="card">
+    <div class="status" id="status">準備中...</div>
+</div>
 
-    <!-- music_libraryに保存済みの曲一覧 -->
-    <section class="card">
-        <h2 class="section-title">保存済みの曲</h2>
-        <ul id="track-list"></ul>
-    </section>
+<div class="card">
+    <h2 style="font-size:1.05rem; margin:0 0 8px;">保存済み曲</h2>
+    <div id="track-box" class="small">まだ曲は登録されていません。</div>
+    <audio id="audio" controls></audio>
 </div>
 
 <script>
-/**
- * c013-v01.0-bs01
- *
- * このファイルの目的
- * 1. c012で作成した NoriRunDB を開く
- * 2. c012で保存した初期設定を読む
- * 3. ユーザーが選んだ曲を music_library に保存する
- * 4. 保存済みの曲を一覧表示する
- * 5. 一覧の曲をタップしたら再生する
- *
- * 今回まだ入れない機能
- * - BPM解析
- * - ノリRunモード
- * - プレイリスト作成
- * - フォルダ一括スキャン
- * - ジャケット画像取得
- */
+// ====================================================== 
+// NoriRun c013 権限実験コード
+// ------------------------------------------------------
+// 実験の狙い：
+// 1. Musicフォルダのハンドルを IndexedDB に保存する
+// 2. 曲は file_handle ではなく file_name だけ保存する
+// 3. 再生時に root_folder_handle.getFileHandle(file_name) で
+//    ファイルハンドルを毎回取り直す
+// 4. アプリ再起動後も、この方式で再生できるか確認する
+// ======================================================
 
-// ============================================================
-// 0. DB名・ストア名を定数にする
-// ============================================================
-// c012と必ず同じ名前・同じバージョンにします。
-// 今回の IndexedDB 実バージョンは 1 です。
-// 「NoriRunDB v2」は設計書の世代名として扱います。
-const DB_NAME = "NoriRunDB";
+const DB_NAME = "NoriRunPermissionTestDB";
 const DB_VERSION = 1;
 
-const STORE_SETTINGS = "settings";
-const STORE_MUSIC = "music_library";
-const STORE_PLAYLISTS = "playlists";
-const STORE_FOLDER_ROOTS = "folder_roots";
+const ROOT_ID = "music_root_001";
+const TRACK_ID = "test_track_001";
 
-// 画面部品を取得しておきます。
-const addMusicBtn = document.getElementById("add-music-btn");
-const messageEl = document.getElementById("message");
-const trackListEl = document.getElementById("track-list");
-const audioPlayer = document.getElementById("audio-player");
-const playerBox = document.getElementById("player-box");
-const nowPlayingEl = document.getElementById("now-playing");
-const myPitchDisplay = document.getElementById("my-pitch-display");
-const volumeDisplay = document.getElementById("volume-display");
-
-// 音楽再生時に作成した一時URLを覚えておく場所です。
-// 別の曲を再生する時、古いURLを破棄するために使います。
+let db = null;
 let currentObjectUrl = null;
 
+const statusEl = document.getElementById("status");
+const trackBox = document.getElementById("track-box");
+const audioEl = document.getElementById("audio");
 
-// ============================================================
-// 1. IndexedDBを開く関数
-// ============================================================
-function openNoriRunDB() {
+// 画面にログを出す関数です。
+function log(message) {
+    const now = new Date().toLocaleTimeString();
+    statusEl.textContent = `[${now}] ${message}\n\n` + statusEl.textContent;
+}
 
-    return new Promise(function (resolve, reject) {
-
+// IndexedDBを開きます。
+// この実験専用DBなので、本体の NoriRunDB は触りません。
+function openTestDB() {
+    return new Promise(function(resolve, reject) {
         const request = indexedDB.open(DB_NAME, DB_VERSION);
 
-        // onupgradeneeded は、DBが初作成された時やバージョンアップ時に動きます。
-        // 基本的にはc012で作成済みですが、保険としてc013にも同じストア作成処理を置きます。
-        request.onupgradeneeded = function (e) {
+        request.onupgradeneeded = function(event) {
+            const openedDb = event.target.result;
 
-            const db = e.target.result;
-
-            if (!db.objectStoreNames.contains(STORE_SETTINGS)) {
-                db.createObjectStore(STORE_SETTINGS);
+            // フォルダハンドル保存用ストア
+            if (!openedDb.objectStoreNames.contains("folder_roots")) {
+                openedDb.createObjectStore("folder_roots", { keyPath: "folder_roots_id" });
             }
 
-            if (!db.objectStoreNames.contains(STORE_MUSIC)) {
-                db.createObjectStore(STORE_MUSIC, { keyPath: "track_id" });
-            }
-
-            if (!db.objectStoreNames.contains(STORE_PLAYLISTS)) {
-                db.createObjectStore(STORE_PLAYLISTS, { keyPath: "playlist_id" });
-            }
-
-            if (!db.objectStoreNames.contains(STORE_FOLDER_ROOTS)) {
-                db.createObjectStore(STORE_FOLDER_ROOTS, { keyPath: "folder_roots_id" });
+            // 曲情報保存用ストア
+            if (!openedDb.objectStoreNames.contains("music_library")) {
+                openedDb.createObjectStore("music_library", { keyPath: "track_id" });
             }
         };
 
-        request.onsuccess = function (e) {
-            resolve(e.target.result);
+        request.onsuccess = function(event) {
+            db = event.target.result;
+            resolve(db);
         };
 
-        request.onerror = function () {
-            reject("NoriRunDBを開けませんでした。");
+        request.onerror = function() {
+            reject(request.error);
         };
     });
 }
 
-
-// ============================================================
-// 2. DB共通関数
-// ============================================================
-// ここから下は、DBを使いやすくするための小さな部品です。
-// 毎回 transaction を直接書くと長くなるので、関数化しています。
-
-function idbGet(storeName, key) {
-
-    return new Promise(async function (resolve, reject) {
-
-        try {
-            const db = await openNoriRunDB();
-            const tx = db.transaction(storeName, "readonly");
-            const store = tx.objectStore(storeName);
-            const request = store.get(key);
-
-            request.onsuccess = function () {
-                db.close();
-                resolve(request.result);
-            };
-
-            request.onerror = function () {
-                db.close();
-                reject("DB読込に失敗しました。store=" + storeName);
-            };
-
-        } catch (error) {
-            reject(error);
-        }
+function putRecord(storeName, value) {
+    return new Promise(function(resolve, reject) {
+        const tx = db.transaction(storeName, "readwrite");
+        tx.objectStore(storeName).put(value);
+        tx.oncomplete = function() { resolve(); };
+        tx.onerror = function() { reject(tx.error); };
     });
 }
 
-function idbPut(storeName, value, key) {
-
-    return new Promise(async function (resolve, reject) {
-
-        try {
-            const db = await openNoriRunDB();
-            const tx = db.transaction(storeName, "readwrite");
-            const store = tx.objectStore(storeName);
-
-            // settingsストアはキー指定あり、music_libraryはtrack_idがキーなのでキー指定なし。
-            if (key === undefined) {
-                store.put(value);
-            } else {
-                store.put(value, key);
-            }
-
-            tx.oncomplete = function () {
-                db.close();
-                resolve();
-            };
-
-            tx.onerror = function () {
-                db.close();
-                reject("DB保存に失敗しました。store=" + storeName);
-            };
-
-        } catch (error) {
-            reject(error);
-        }
+function getRecord(storeName, key) {
+    return new Promise(function(resolve, reject) {
+        const tx = db.transaction(storeName, "readonly");
+        const request = tx.objectStore(storeName).get(key);
+        request.onsuccess = function() { resolve(request.result); };
+        request.onerror = function() { reject(request.error); };
     });
 }
 
-function idbGetAll(storeName) {
+// フォルダ権限を確認します。
+// granted ならそのまま使えます。
+// prompt ならユーザー操作後に requestPermission() で再許可を求めます。
+async function verifyDirectoryPermission(directoryHandle) {
+    const options = { mode: "read" };
 
-    return new Promise(async function (resolve, reject) {
-
-        try {
-            const db = await openNoriRunDB();
-            const tx = db.transaction(storeName, "readonly");
-            const store = tx.objectStore(storeName);
-            const request = store.getAll();
-
-            request.onsuccess = function () {
-                db.close();
-                resolve(request.result || []);
-            };
-
-            request.onerror = function () {
-                db.close();
-                reject("DB一覧読込に失敗しました。store=" + storeName);
-            };
-
-        } catch (error) {
-            reject(error);
-        }
-    });
-}
-
-
-// settings専用の読込関数です。
-// 値が未設定なら defaultValue を返します。
-async function getSetting(key, defaultValue) {
-
-    const value = await idbGet(STORE_SETTINGS, key);
-
-    if (value === undefined) {
-        return defaultValue;
+    if (!directoryHandle) {
+        return false;
     }
 
-    return value;
-}
+    const current = await directoryHandle.queryPermission(options);
+    log("現在のフォルダ権限: " + current);
 
-
-// ============================================================
-// 3. track_idを作る関数
-// ============================================================
-// 同じファイル名でも複数登録できるように、ファイル名を主キーにしません。
-// 現在時刻 + 乱数で、ほぼ重複しないIDを作ります。
-function createTrackId() {
-
-    const now = Date.now();
-    const random = Math.floor(Math.random() * 1000000);
-
-    return "tr_" + now + "_" + random;
-}
-
-
-// ============================================================
-// 4. 画面起動時の初期処理
-// ============================================================
-async function initC013() {
-
-    try {
-        // DBが開けるか確認します。
-        await openNoriRunDB();
-
-        // c012で保存した初期設定を読み込みます。
-        const myPitch = await getSetting("my_pitch", 170);
-        const volume = await getSetting("volume", 0.8);
-
-        // 画面に設定値を表示します。
-        myPitchDisplay.textContent = myPitch + " BPM";
-        volumeDisplay.textContent = Math.round(volume * 100) + "%";
-
-        // audioタグにも音量を反映します。
-        audioPlayer.volume = volume;
-
-        // 保存済みの曲一覧を表示します。
-        await renderTrackList();
-
-    } catch (error) {
-        console.error(error);
-        messageEl.textContent = "初期化に失敗しました。c012で初期設定が完了しているか確認してください。";
+    if (current === "granted") {
+        return true;
     }
+
+    // 重要：requestPermission はユーザー操作の直後に呼ぶのが安全です。
+    const requested = await directoryHandle.requestPermission(options);
+    log("再要求後のフォルダ権限: " + requested);
+
+    return requested === "granted";
 }
 
-
-// ============================================================
-// 5. 曲を追加する処理
-// ============================================================
-async function addMusicFiles() {
-
+// Musicフォルダを登録します。
+async function selectMusicFolder() {
     try {
-        // showOpenFilePicker は、ユーザーがファイルを選ぶための機能です。
-        // FileSystemFileHandle を取得できるため、IndexedDBに保存しやすいです。
-        if (!window.showOpenFilePicker) {
-            alert("このブラウザでは曲追加機能に対応していません。Chrome系ブラウザで確認してください。");
+        if (!window.showDirectoryPicker) {
+            alert("このブラウザでは showDirectoryPicker が使えません。");
             return;
         }
 
-        const fileHandles = await window.showOpenFilePicker({
-            multiple: true,
-            types: [
-                {
-                    description: "音楽ファイル",
-                    accept: {
-                        "audio/*": [".mp3", ".m4a", ".wav", ".aac", ".ogg", ".flac"]
-                    }
-                }
-            ],
-            excludeAcceptAllOption: false
+        // ユーザーにフォルダを選んでもらいます。
+        // Androidではここでシステムのフォルダ選択画面が出るかを確認します。
+        const dirHandle = await window.showDirectoryPicker({
+            mode: "read"
         });
 
-        if (!fileHandles || fileHandles.length === 0) {
-            return;
-        }
-
-        messageEl.textContent = "曲を保存しています...";
-
-        for (const fileHandle of fileHandles) {
-
-            const file = await fileHandle.getFile();
-
-            // music_library に保存する1曲分のデータです。
-            // BPM解析などはまだ未実施なので null や false で保存します。
-            const track = {
-                track_id: createTrackId(),
-                file_name: file.name,
-                file_handle: fileHandle,
-                registered_at: new Date().toISOString(),
-
-                title: file.name,
-                artist: "",
-                duration: null,
-                mix_duration: null,
-
-                is_analyzed: false,
-                tag_bpm: null,
-                baseBPM: null,
-                userBPM: null,
-                manualBPM: null,
-
-                startTS: null,
-                endTS: null,
-                tick13TS: null,
-
-                cover_art: null
-            };
-
-            await idbPut(STORE_MUSIC, track);
-        }
-
-        messageEl.textContent = fileHandles.length + "曲を追加しました。";
-
-        // 保存後、一覧を再表示します。
-        await renderTrackList();
-
-    } catch (error) {
-        // ユーザーがキャンセルした場合もここに来ることがあります。
-        console.error(error);
-        messageEl.textContent = "曲追加を中止しました。";
-    }
-}
-
-
-// ============================================================
-// 6. 保存済み曲一覧を表示する処理
-// ============================================================
-async function renderTrackList() {
-
-    const tracks = await idbGetAll(STORE_MUSIC);
-
-    // 一覧をいったん空にします。
-    trackListEl.innerHTML = "";
-
-    if (tracks.length === 0) {
-        trackListEl.innerHTML = "<li class='empty-message'>まだ曲が登録されていません。<br>「曲を追加する」から音楽ファイルを選んでください。</li>";
-        return;
-    }
-
-    // 登録日時の新しい順に並べます。
-    tracks.sort(function (a, b) {
-        return new Date(b.registered_at) - new Date(a.registered_at);
-    });
-
-    tracks.forEach(function (track) {
-
-        const li = document.createElement("li");
-        li.className = "track-item";
-
-        const titleDiv = document.createElement("div");
-        titleDiv.className = "track-title";
-        titleDiv.textContent = track.title || track.file_name;
-
-        const metaDiv = document.createElement("div");
-        metaDiv.className = "track-meta";
-        metaDiv.textContent = "未解析 / track_id: " + track.track_id;
-
-        li.appendChild(titleDiv);
-        li.appendChild(metaDiv);
-
-        // 曲をタップしたら再生します。
-        li.onclick = function () {
-            playTrack(track.track_id);
+        const rootRecord = {
+            folder_roots_id: ROOT_ID,
+            root_name: dirHandle.name,
+            root_folder_handle: dirHandle,
+            saved_at: Date.now()
         };
 
-        trackListEl.appendChild(li);
-    });
-}
+        await putRecord("folder_roots", rootRecord);
+        log("Musicフォルダを保存しました: " + dirHandle.name);
 
-
-// ============================================================
-// 7. 曲を再生する処理
-// ============================================================
-async function playTrack(trackId) {
-
-    try {
-        const track = await idbGet(STORE_MUSIC, trackId);
-
-        if (!track) {
-            alert("曲データが見つかりませんでした。再登録してください。 ");
-            return;
-        }
-
-        if (!track.file_handle) {
-            alert("ファイル情報が見つかりませんでした。再登録してください。 ");
-            return;
-        }
-
-        // 保存していた FileSystemFileHandle から、実際のFileを取り出します。
-        const file = await track.file_handle.getFile();
-
-        // 前の曲で作った一時URLがあれば解放します。
-        if (currentObjectUrl) {
-            URL.revokeObjectURL(currentObjectUrl);
-        }
-
-        // audioタグで再生できるように、一時URLを作ります。
-        currentObjectUrl = URL.createObjectURL(file);
-
-        audioPlayer.src = currentObjectUrl;
-        nowPlayingEl.textContent = "再生中：" + (track.title || track.file_name);
-        playerBox.style.display = "block";
-
-        await audioPlayer.play();
-
+        await refreshSavedTrackView();
     } catch (error) {
-        console.error(error);
-        alert("再生に失敗しました。ブラウザのファイル権限が切れている可能性があります。");
+        if (error && error.name === "AbortError") {
+            log("フォルダ選択がキャンセルされました。");
+        } else {
+            console.error(error);
+            alert("フォルダ登録でエラーが発生しました: " + error);
+        }
     }
 }
 
+// 登録済みフォルダ内から、曲を1曲選んで登録します。
+// ここでは曲の file_handle は保存せず、file_name だけ保存します。
+async function selectOneTrackFromFolder() {
+    try {
+        const rootRecord = await getRecord("folder_roots", ROOT_ID);
 
-// ============================================================
-// 8. ボタンに処理をつなげる
-// ============================================================
-addMusicBtn.onclick = addMusicFiles;
+        if (!rootRecord || !rootRecord.root_folder_handle) {
+            alert("先に Musicフォルダを登録してください。");
+            return;
+        }
 
+        const ok = await verifyDirectoryPermission(rootRecord.root_folder_handle);
+        if (!ok) {
+            alert("Musicフォルダの許可が必要です。");
+            return;
+        }
 
-// ============================================================
-// 9. c013を起動する
-// ============================================================
-initC013();
+        // フォルダ内の音楽ファイルを探します。
+        const candidates = [];
+
+        for await (const entry of rootRecord.root_folder_handle.values()) {
+            if (entry.kind !== "file") continue;
+
+            const lower = entry.name.toLowerCase();
+            if (
+                lower.endsWith(".mp3") ||
+                lower.endsWith(".m4a") ||
+                lower.endsWith(".mp4") ||
+                lower.endsWith(".wav") ||
+                lower.endsWith(".flac")
+            ) {
+                candidates.push(entry.name);
+            }
+        }
+
+        if (candidates.length === 0) {
+            alert("このフォルダ直下に音楽ファイルが見つかりませんでした。まずは直下にある曲で実験してください。");
+            return;
+        }
+
+        // 実験を単純にするため、最初に見つかった曲を登録します。
+        const fileName = candidates[0];
+
+        const trackRecord = {
+            track_id: TRACK_ID,
+            file_name: fileName,
+            folder_roots_id: ROOT_ID,
+            registered_at: Date.now()
+        };
+
+        await putRecord("music_library", trackRecord);
+        log("曲を保存しました: " + fileName);
+
+        await refreshSavedTrackView();
+    } catch (error) {
+        console.error(error);
+        alert("曲登録でエラーが発生しました: " + error);
+    }
+}
+
+// 保存済みの曲を、フォルダハンドル経由で再生します。
+async function playSavedTrack() {
+    try {
+        const rootRecord = await getRecord("folder_roots", ROOT_ID);
+        const trackRecord = await getRecord("music_library", TRACK_ID);
+
+        if (!rootRecord || !rootRecord.root_folder_handle) {
+            alert("Musicフォルダが登録されていません。");
+            return;
+        }
+
+        if (!trackRecord || !trackRecord.file_name) {
+            alert("保存済み曲がありません。先に曲を1曲登録してください。");
+            return;
+        }
+
+        const ok = await verifyDirectoryPermission(rootRecord.root_folder_handle);
+        if (!ok) {
+            alert("Musicフォルダの再許可が必要です。");
+            return;
+        }
+
+        // ここが今回の最重要実験ポイントです。
+        // 保存済み file_handle は使わず、フォルダからファイル名で取り直します。
+        const fileHandle = await rootRecord.root_folder_handle.getFileHandle(trackRecord.file_name);
+        const file = await fileHandle.getFile();
+
+        if (currentObjectUrl) {
+            URL.revokeObjectURL(currentObjectUrl);
+            currentObjectUrl = null;
+        }
+
+        currentObjectUrl = URL.createObjectURL(file);
+        audioEl.src = currentObjectUrl;
+        audioEl.volume = 0.8;
+        await audioEl.play();
+
+        log("再生成功: " + trackRecord.file_name);
+    } catch (error) {
+        console.error(error);
+        alert("再生失敗: " + error.name + " / " + error.message);
+        log("再生失敗: " + error.name + " / " + error.message);
+    }
+}
+
+// 現在のフォルダ権限状態だけ確認します。
+async function checkPermissionOnly() {
+    try {
+        const rootRecord = await getRecord("folder_roots", ROOT_ID);
+
+        if (!rootRecord || !rootRecord.root_folder_handle) {
+            alert("Musicフォルダが登録されていません。");
+            return;
+        }
+
+        const state = await rootRecord.root_folder_handle.queryPermission({ mode: "read" });
+        log("フォルダ権限状態: " + state);
+        alert("フォルダ権限状態: " + state);
+    } catch (error) {
+        console.error(error);
+        alert("権限確認でエラー: " + error);
+    }
+}
+
+// 実験DBを消します。
+function clearTestDB() {
+    const ok = confirm("実験用DBだけ削除します。NoriRunDB本体は削除しません。よろしいですか？");
+    if (!ok) return;
+
+    if (db) {
+        db.close();
+        db = null;
+    }
+
+    const request = indexedDB.deleteDatabase(DB_NAME);
+
+    request.onsuccess = function() {
+        alert("実験DBを削除しました。ページを再読み込みします。");
+        location.reload();
+    };
+
+    request.onerror = function() {
+        alert("実験DB削除に失敗しました。");
+    };
+}
+
+async function refreshSavedTrackView() {
+    const rootRecord = await getRecord("folder_roots", ROOT_ID);
+    const trackRecord = await getRecord("music_library", TRACK_ID);
+
+    let html = "";
+
+    if (rootRecord) {
+        html += "登録フォルダ: " + rootRecord.root_name + "<br>";
+    } else {
+        html += "登録フォルダ: なし<br>";
+    }
+
+    if (trackRecord) {
+        html += "保存済み曲: " + trackRecord.file_name + "<br>";
+        html += "保存日時: " + new Date(trackRecord.registered_at).toLocaleString();
+    } else {
+        html += "保存済み曲: なし";
+    }
+
+    trackBox.innerHTML = html;
+}
+
+async function init() {
+    try {
+        await openTestDB();
+        log("実験DBを開きました。NoriRunDB本体は触っていません。");
+        await refreshSavedTrackView();
+    } catch (error) {
+        console.error(error);
+        alert("初期化エラー: " + error);
+    }
+}
+
+document.getElementById("select-folder-btn").addEventListener("click", selectMusicFolder);
+document.getElementById("select-track-btn").addEventListener("click", selectOneTrackFromFolder);
+document.getElementById("play-saved-btn").addEventListener("click", playSavedTrack);
+document.getElementById("check-permission-btn").addEventListener("click", checkPermissionOnly);
+document.getElementById("clear-test-db-btn").addEventListener("click", clearTestDB);
+
+init();
 </script>
 </body>
 </html>
-<!-- c013-v01.0-be01-メインメニュー -->
