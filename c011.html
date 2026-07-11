@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport"
+      content="width=device-width, initial-scale=1.0">
+
+<!-- PWA設定 -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#007aff">
+
+<title>NoriRun c011-v01.6-bs01 起動OP</title>
+
+<style>
+/* 全体設定 */
+html,
+body{
+    margin:0;
+    padding:0;
+    width:100%;
+    height:100%;
+    background:#000;
+    color:#ffffff;
+    font-family:
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        sans-serif;
+}
+
+/* 画面中央配置 */
+body{
+    display:flex;
+    justify-content:center;
+    align-items:center;
+}
+
+/* コンテンツ全体 */
+.splash{
+    text-align:center;
+    width:100%;
+}
+
+/* ==============================
+   アニメーション共通設定
+   ============================== */
+
+/*
+    最初はすべて透明にしておきます。
+    JavaScriptで show クラスが付くと表示されます。
+*/
+.fade-item{
+    opacity:0;
+
+    /* 下から動かさず、透明から見えるようにする */
+    transition:opacity 1s ease;
+}
+
+/*
+    表示状態です。
+    opacity:1 で見えるようになります。
+*/
+.fade-item.show{
+    opacity:1;
+}
+
+/* ==============================
+   メインタイトル部分
+   ============================== */
+
+/*
+    ノッて・走る・プレイヤーを横並びにします。
+*/
+.main-title{
+    display:flex;
+    justify-content:center;   /* 👈 全体を画面の真ん中に集めます */
+    align-items:flex-start;
+
+    gap: 1.2em;                /* 👈 3つの文字の間隔をちょうど1文字分に引き締めます */
+    font-size: 1.6rem;         /* 👈 文字サイズ*/
+    font-weight:900;           /* 👈 文字の太さも（900）*/
+    letter-spacing:0.06em;
+
+    white-space:nowrap;
+    margin-bottom:80px;
+}
+
+/*
+    文字と絵文字を縦並びにします。
+
+    例：
+    ノッて
+     🕺
+*/
+.title-block{
+    display:flex;
+    flex-direction:column;
+    align-items: center;       /* 👈 文字と絵文字を縦に真っ直ぐ揃えます */
+    width: 5.5rem;             /* 👈 一番長い「プレイヤー」の幅に全員を固定します。これにより段差が消え、左右対称になります */
+    gap: 60px;                 /* 👈 文字と絵文字の縦の隙間を縮めます */}
+
+/*
+    文字部分です。
+*/
+.title-word{
+    display:block;
+}
+
+/*
+    絵文字部分です。
+    letter-spacing の影響を受けないようにしています。
+*/
+.emoji{
+    font-size:2rem;       /* 👈 絵文字のサイズ */
+    letter-spacing:0;
+
+    /* Androidでもカラー絵文字を優先して表示するための指定 */
+    font-family:
+        "Noto Color Emoji",
+        "Apple Color Emoji",
+        "Segoe UI Emoji",
+        sans-serif;
+}
+
+/* ==============================
+   ロゴ部分
+   ============================== */
+
+/*
+    ノリRunを中央に配置します。
+*/
+.logo{
+    display:flex;
+    justify-content:center;
+    align-items:center;
+
+    font-size:3.2rem;
+    margin-bottom:80px;
+}
+
+/*
+    ノリとRunの間隔です。
+*/
+.logo-nori{
+    font-weight:700;
+    margin-right:0.08em;
+}
+
+/*
+    Runだけ太字にします。
+*/
+.logo-run{
+    font-weight:700;
+}
+
+
+/* ==============================
+   下部テキスト
+   ============================== */
+
+/*
+    下部テキストは見えない文字が見えてくる感じの表示
+*/
+.soft-fade{
+    transition: opacity 0.5s ease;
+}
+
+/* サブタイトル */
+.sub-title{
+    font-size:clamp(1.6rem,6vw,3rem);
+    font-weight:700;
+    margin-bottom:15px;
+}
+
+/* フッター */
+.footer{
+    font-size:clamp(1.4rem,5vw,2.5rem);
+    font-weight:300;
+    letter-spacing:0.05em;
+}
+
+.splash{
+    transform:translateY(-5%);
+}
+</style>
+
+</head>
+<body>
+
+<div class="splash">
+
+    <!--
+        メインタイトル部分です。
+        文字と絵文字を1セットにしてあります。
+
+        step1：ノッて + 🕺
+        step2：走る + 🏃
+        step3：プレイヤー + 📱
+
+        JavaScriptで順番に show クラスを付けて表示します。
+    -->
+
+    <div class="main-title">
+        <div class="title-block fade-item" id="step1">
+            <span class="title-word">ノッて</span>
+            <span class="emoji">🕺</span>
+        </div>
+        <div class="title-block fade-item" id="step2">
+            <span class="title-word">走る</span>
+            <span class="emoji">🏃‍♂️</span>
+        </div>
+        <div class="title-block fade-item" id="step3">
+            <span class="title-word">プレイヤー</span>
+            <span class="emoji">📱</span>
+        </div>
+    </div>
+
+    <!--
+        ロゴ部分です。
+        「ノリ」と「Run」を分けることで、
+        ノリ → Run の順番で表示できます。
+    -->
+    <div class="logo">
+        <span id="logo-nori" class="fade-item logo-nori">ノリ</span>
+        <b id="logo-run" class="fade-item logo-run">Run</b>
+    </div>
+
+    <!--
+        下部テキストです。
+        2行まとめて最後にふわっと表示します。
+    -->
+    <div id="bottom-text" class="fade-item soft-fade">
+        <div class="sub-title">
+            Music Player NoriRun
+        </div>
+
+        <div class="footer">
+            TOKYO JAPAN since 2026
+        </div>
+    </div>
+
+</div>
+<script>
+/*
+    ページの読み込みが完了してから処理を始めます。
+*/
+window.addEventListener("load", function () {
+
+    /*
+        表示する順番とタイミングを配列で管理します。
+
+        delay はミリ秒です。
+        1000 = 1秒
+        500  = 0.5秒
+    */
+
+    const steps = [
+        { id: "step1", delay: 300 },       // 0.3秒後：ノッて + 🕺
+        { id: "step2", delay: 1000 },      // 1.0秒後：走る + 🏃
+        { id: "step3", delay: 1700 },      // 1.7秒後：プレイヤー + 📱
+        { id: "logo-nori", delay: 2400 },  // 2.4秒後：ノリ
+        { id: "logo-run", delay: 2700 },   // 2.7秒後：Run
+        { id: "bottom-text", delay: 3400 } // 3.4秒後：下部2行
+    ];
+
+    /*
+        steps の内容を順番に処理します。
+        指定した時間が来たら、その要素に show クラスを追加します。
+    */
+    steps.forEach(function (step) {
+        setTimeout(function () {
+            const element = document.getElementById(step.id);
+
+            if (element) {
+                element.classList.add("show");
+            }
+        }, step.delay);
+    });
+/*
+    起動オープニングが終わった後、
+    テスト用DBクリア画面へ移動します。
+*/
+setTimeout(function () {
+
+    location.href = "dbclr.html";
+
+}, 5000);
+
+/*
+    将来、本番で初期設定へ直接進めたい場合、
+　　起動オープニングが終わった後、
+    c012へ移動する為の差し替えコードです。
+　　dbclr.htmlをc012.htmlに修正します。
+setTimeout(function () {
+
+    location.href = "c012.html";
+
+}, 5000);
+*/
+
+});
+</script>
+</body>
+</html>
