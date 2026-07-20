@@ -1,4 +1,4 @@
-const CACHE_NAME = 'norirun-v52';
+const CACHE_NAME = 'norirun-v53';
 
 const ASSETS = [
   'index.html',
