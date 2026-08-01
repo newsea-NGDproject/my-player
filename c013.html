@@ -127,7 +127,7 @@ bs02
     <!-- ブラウザタイトル -->
     <title>
 
-        (v57)ノリRun
+        (v58)ノリRun
         Musicフォルダ データ登録
 
     </title>
@@ -508,6 +508,7 @@ document.getElementById("start-button");
 
 // ============================================================
 // 実行中だけ使用するMap
+// （曲のFileHandle保存用Map）
 // ============================================================
 
 /*
@@ -523,15 +524,16 @@ Map（マップ）
 
 track_id
 
-↓
+　↓
 
 FileHandle
 
 を保存するために使用します。
 
-※IndexedDBへは保存しません。
+※ IndexedDBには保存しません。
 
-アプリを終了すると中身は消えます。
+アプリを終了すると、
+Mapの中身は自動で消えます。
 */
 const runtimeFileHandleMap = new Map();
 
@@ -1271,11 +1273,8 @@ async function getMusicFolderHandle(){
  * 「Musicフォルダ確認」ボタンが押された時に実行します。
  *
  * この段階では
- * Musicフォルダの中はまだ読み込みません。
- *
- * c012で保存した
- * Musicフォルダの鍵が
- * 正しく取得できるかだけ確認します。
+ * Musicフォルダの中を読み込み、
+ * FileHandleをMapへ保存できるか確認します。
  */
 async function checkMusicFolder(){
 
@@ -1299,8 +1298,16 @@ async function checkMusicFolder(){
             folderHandle
 
         );
+
         // 開発確認用（正式版では削除）
-        alert("取得したフォルダ : " + folderHandle.name);
+        alert(
+
+            "取得したフォルダ : " +
+
+            folderHandle.name
+
+        );
+
         /*
         ======================================================
 
@@ -1321,6 +1328,8 @@ async function checkMusicFolder(){
 
         console.log("Musicフォルダ内");
 
+        alert("values()実行前");
+
         for await(
 
             const entry
@@ -1336,8 +1345,16 @@ async function checkMusicFolder(){
 
             は
 
+            Musicフォルダ内の
+
             1件分のデータです。
 
+            entryには
+
+            ・ファイル
+            ・フォルダ
+
+            のどちらかが入っています。
             */
 
             console.log(
@@ -1383,24 +1400,80 @@ async function checkMusicFolder(){
             if(entry.kind !== "file"){
 
                 /*
-                フォルダなら次のデータへ進みます。
+                フォルダなら
+                次のデータへ進みます。
                 */
+
                 continue;
 
             }
 
             /*
-            開発確認用
-            （正式版では削除予定）
+            ======================================================
+            Mapへ登録します。
+            ======================================================
 
-            曲ファイルを見つけたことを表示します。
+            entry は
+
+            FileSystemFileHandle
+
+            なので、
+
+            そのままMapへ保存できます。
+
+            Key   ：ファイル名
+
+            Value ：FileHandle
+
+            ※ 今は動作確認のため
+               ファイル名をキーにしています。
+
+            将来は
+
+            track_id
+
+            をキーへ変更します。
+
+            ここでは
+
+            Mapへ保存するだけです。
+
+            まだIndexedDBへの登録は行いません。
             */
 
-            alert("Musicフォルダ読込成功");
+            runtimeFileHandleMap.set(
+
+                entry.name,
+
+                entry
+
+            );
+
+            console.log(
+
+                "Map登録 :",
+
+                entry.name
+
+            );
 
             console.log("----------");
 
         }
+
+        /*
+        ======================================================
+
+        ここまで来たということは、
+
+        Musicフォルダ内を
+
+        最後まで読み終わった
+
+        ということです。
+
+        ======================================================
+        */
 
         alert(
 
