@@ -1,0 +1,1071 @@
+<!--
+======================================================================
+ c014(メインメニュー・曲一覧・再生・並び替え)
+
+ NoriRun Phase2
+
+ 【画面名】
+ メインメニュー
+
+----------------------------------------------------------------------
+
+【この画面の役割】
+
+① c013までに登録したmusic_libraryの曲を一覧表示する
+
+② 曲をタップして再生する
+
+③ 曲順をドラッグ&ドロップで並び替え、playlistsへ保存する
+
+----------------------------------------------------------------------
+
+【このSTEPで実装する内容】
+
+STEP01
+    曲一覧表示(music_libraryから取得)
+
+STEP02
+    再生ボタンで曲を再生する
+
+STEP03
+    並び替え(OFS: On-Demand Floating Sort)を移植し、
+    playlistsへ並び順を保存する
+
+----------------------------------------------------------------------
+
+【使用するIndexedDB】
+
+music_library(読み取りのみ)
+playlists(読み書き、main_menu_defaultキー)
+
+----------------------------------------------------------------------
+
+【今回は範囲外の機能】
+
+・タップ補正(ノリノリ設定)は別モジュールのため、今回は再生ボタンに置き換える
+・ビートマッチング(設定BPMに合わせた再生・接続)は未実装。
+  今回は曲を普通の速さで再生するだけ
+
+----------------------------------------------------------------------
+
+【並び替えエンジンについて】
+
+legacy/ver8.5-gemini の「OFS(On-Demand Floating Sort)」モジュールを
+移植したもの。ただし、OFSは元々 music_library の file_path をキーに
+していたが、現行スキーマ(docs/db-schema.md)は track_id が主キーのため、
+track_id 基準に置き換えている。playlistsストアの保存フィールドも
+file_path_list ではなく track_id_list(現行スキーマ通り)を使用する。
+
+----------------------------------------------------------------------
+
+【更新履歴】
+
+2026-08-03
+    新規作成。曲一覧表示・再生・OFS移植による並び替えを実装(v66)
+
+======================================================================
+-->
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+
+    <meta charset="UTF-8">
+    <meta
+        name="viewport"
+        content="width=device-width,
+                 initial-scale=1.0,
+                 maximum-scale=1.0,
+                 user-scalable=no">
+
+    <!-- PWA設定 -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#007aff">
+
+    <!-- ブラウザタイトル -->
+    <title>
+
+        (v66)ノリRun
+        メインメニュー
+
+    </title>
+
+    <style>
+
+        /* ======================================================
+           NoriRun 共通デザイン(c013と同じ配色・カード style)
+        ====================================================== */
+
+        :root{
+            --main-blue:#007aff;
+            --bg-color:#f2f2f7;
+            --card-bg:#ffffff;
+            --text-main:#1c1c1e;
+            --text-sub:#8e8e93;
+            --border-color:#d1d1d6;
+        }
+
+        html,
+        body{
+            margin:0;
+            padding:0;
+            width:100%;
+            min-height:100%;
+            background:var(--bg-color);
+            color:var(--text-main);
+            font-family:
+                -apple-system,
+                BlinkMacSystemFont,
+                "Helvetica Neue",
+                sans-serif;
+
+            /*
+            並び替え操作中に文字が選択されてしまうと
+            誤動作の原因になるため、選択を禁止します。
+            */
+            -webkit-user-select:none;
+            user-select:none;
+        }
+
+        #app{
+            max-width:480px;
+            margin:0 auto;
+            padding:20px;
+            box-sizing:border-box;
+        }
+
+        .card{
+            background:var(--card-bg);
+            border-radius:18px;
+            padding:20px;
+            margin-bottom:14px;
+            box-shadow:0 6px 16px rgba(0,0,0,0.08);
+        }
+
+        h1{
+            margin:0 0 4px;
+            text-align:center;
+        }
+
+        .sub-title{
+            margin:0;
+            text-align:center;
+            color:var(--text-sub);
+            font-size:0.9rem;
+        }
+
+        .section-title{
+            margin:0 0 12px;
+            font-size:1.05rem;
+        }
+
+        /* ======================================================
+           曲一覧(OFS: On-Demand Floating Sort より移植)
+        ====================================================== */
+
+        .music-list{
+            display:flex;
+            flex-direction:column;
+            gap:8px;
+            position:relative;
+        }
+
+        /* 通常時：縦スワイプ(スクロール)を100%許可します */
+        .music-row{
+            display:flex;
+            align-items:center;
+            background:#f8f8f8;
+            border-radius:12px;
+            padding:6px;
+            box-sizing:border-box;
+            border:1px solid var(--border-color);
+            height:56px;
+            touch-action:pan-y;
+            transition:background-color 0.15s ease;
+        }
+
+        .square-btn{
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            background:#ffffff;
+            border:1px solid var(--border-color);
+            border-radius:10px;
+            cursor:pointer;
+            box-sizing:border-box;
+            flex-shrink:0;
+            width:44px;
+            height:44px;
+            font-size:1.2rem;
+        }
+
+        .play-btn:active{
+            background:#e5e5ea;
+        }
+
+        /* 右端の並び替えボタンだけ、スクロール操作を完全ブロックします */
+        .sort-handle{
+            color:#b1b1b6;
+            background:#ffffff;
+            cursor:grab;
+            touch-action:none;
+        }
+
+        .sort-handle.active-blue{
+            color:#00a2ff !important;
+            border-color:#00a2ff !important;
+            background:#e6f6ff;
+        }
+
+        /* 空中浮遊モード(ドラッグ中の行) */
+        .music-row.dragging{
+            position:fixed;
+            box-shadow:0 15px 35px rgba(0,162,255,0.35);
+            background:#ffffff;
+            border-color:#00a2ff;
+            z-index:10000;
+            opacity:0.95;
+            transform:scale(1.02);
+            pointer-events:none;
+            transition:none !important;
+        }
+
+        /* 差し込みスロット(指を離した時の着地位置) */
+        .drag-placeholder{
+            height:56px;
+            background:rgba(0,162,255,0.03);
+            border:2px dashed #00a2ff;
+            border-radius:12px;
+            box-shadow:0 0 15px rgba(0,162,255,0.2);
+            box-sizing:border-box;
+            transition:transform 0.2s ease;
+        }
+
+        .title-area{
+            flex:3;
+            min-width:0;
+            padding:0 10px;
+            overflow:hidden;
+            white-space:nowrap;
+        }
+
+        .artist-area{
+            flex:2;
+            min-width:0;
+            padding:0 6px;
+            overflow:hidden;
+            white-space:nowrap;
+        }
+
+        .scroll-text{
+            display:inline-block;
+            font-size:0.95rem;
+            font-weight:600;
+            color:var(--text-main);
+            pointer-events:none;
+        }
+
+        .artist-text{
+            display:inline-block;
+            font-size:0.75rem;
+            color:var(--text-sub);
+            pointer-events:none;
+        }
+
+        /* 長いタイトルをタップした時に横スクロールで見せる演出 */
+        @keyframes marquee-pattern-b{
+            0%{transform:translateX(0);}
+            75%{transform:translateX(var(--scroll-x));opacity:1;}
+            80%{transform:translateX(var(--scroll-x));opacity:0;}
+            81%{transform:translateX(30px);opacity:0;}
+            100%{transform:translateX(0);opacity:1;}
+        }
+        .scroll-active{
+            animation:marquee-pattern-b var(--scroll-duration) linear 1;
+        }
+
+        /* 画面の上下端が光って、自動スクロール中であることを知らせます */
+        .glow-indicator{
+            position:fixed;
+            left:0;
+            width:100%;
+            height:40px;
+            pointer-events:none;
+            z-index:10000;
+            opacity:0;
+            transition:opacity 0.3s ease;
+        }
+        .glow-top{
+            top:0;
+            background:linear-gradient(to bottom,rgba(0,162,255,0.3),transparent);
+        }
+        .glow-bottom{
+            bottom:0;
+            background:linear-gradient(to top,rgba(0,162,255,0.3),transparent);
+        }
+        .glow-active{
+            opacity:1;
+        }
+
+        .empty-message{
+            color:var(--text-sub);
+            font-size:0.95rem;
+            line-height:1.6;
+            text-align:center;
+            padding:20px 6px;
+        }
+
+        /* ======================================================
+           再生エリア
+        ====================================================== */
+
+        #player-box{
+            display:none;
+        }
+
+        #now-playing{
+            margin:0 0 10px;
+            font-size:0.95rem;
+            font-weight:bold;
+            word-break:break-all;
+        }
+
+        audio{
+            width:100%;
+        }
+
+    </style>
+
+</head>
+<body>
+
+<!-- 自動スクロール中に画面の上下端を光らせる要素(OFSより移植) -->
+<div id="glow-top" class="glow-indicator glow-top"></div>
+<div id="glow-bottom" class="glow-indicator glow-bottom"></div>
+
+<div id="app">
+
+    <div class="card">
+        <h1>ノリRun</h1>
+        <p class="sub-title">メインメニュー</p>
+    </div>
+
+    <!-- 再生エリア。曲を再生した時だけ表示します -->
+    <div class="card" id="player-box">
+        <p id="now-playing">再生中：</p>
+        <audio id="audio-player" controls></audio>
+    </div>
+
+    <div class="card">
+        <h2 class="section-title">曲一覧</h2>
+        <div id="menu-list" class="music-list"></div>
+    </div>
+
+</div>
+
+<!-- ================================================================
+     【開発用デバッグログパネル】ここから
+     実機確認が終わったら、この範囲をまるごと削除してよい。
+================================================================ -->
+<style>
+    #debug-log-panel{
+        position:fixed; left:0; right:0; bottom:0;
+        height:30vh;
+        background:rgba(0,0,0,0.85);
+        color:#0f0;
+        font-family:monospace;
+        font-size:0.75rem;
+        z-index:20000;
+        display:flex;
+        flex-direction:column;
+    }
+    #debug-log-header{
+        display:flex; justify-content:space-between; align-items:center;
+        padding:6px 10px;
+        background:rgba(255,255,255,0.1);
+        color:#fff;
+    }
+    #debug-log-clear{
+        width:auto; margin-top:0; padding:4px 12px; font-size:0.75rem;
+    }
+    #debug-log-body{
+        flex:1; overflow-y:auto; padding:6px 10px;
+        white-space:pre-wrap; word-break:break-all;
+    }
+</style>
+<div id="debug-log-panel">
+    <div id="debug-log-header">
+        <span>開発用デバッグログ</span>
+        <button id="debug-log-clear">クリア</button>
+    </div>
+    <div id="debug-log-body"></div>
+</div>
+<script>
+(function(){
+    const logBody = document.getElementById("debug-log-body");
+
+    function formatArgs(args){
+        return Array.prototype.map.call(args,function(value){
+            if(typeof value === "object" && value !== null){
+                try{ return JSON.stringify(value); }
+                catch(e){ return String(value); }
+            }
+            return String(value);
+        }).join(" ");
+    }
+
+    function appendLine(text,isError){
+        const line = document.createElement("div");
+        if(isError){ line.style.color = "#ff453a"; }
+        line.textContent = text;
+        logBody.appendChild(line);
+        logBody.scrollTop = logBody.scrollHeight;
+    }
+
+    const originalConsoleLog = console.log;
+    console.log = function(){
+        originalConsoleLog.apply(console,arguments);
+        appendLine(formatArgs(arguments),false);
+    };
+
+    const originalConsoleError = console.error;
+    console.error = function(){
+        originalConsoleError.apply(console,arguments);
+        appendLine("[ERROR] " + formatArgs(arguments),true);
+    };
+
+    document.getElementById("debug-log-clear").onclick = function(){
+        logBody.innerHTML = "";
+    };
+})();
+</script>
+<!-- ================================================================
+     【開発用デバッグログパネル】ここまで
+================================================================ -->
+
+<script>
+
+/* ==========================================================
+   JavaScript
+
+   c013と同じく
+   「画面」「DB」「フォルダ」「曲情報」
+   の順番でプログラムを並べます。
+========================================================== */
+
+// ==========================================================
+// 0. 定数定義
+// ==========================================================
+
+const DB_NAME = "NoriRunDB";
+const DB_VERSION = 1;
+
+const STORE_SETTINGS = "settings";
+const STORE_MUSIC = "music_library";
+const STORE_PLAYLISTS = "playlists";
+const STORE_FOLDER_ROOTS = "folder_roots";
+
+// メインメニューの並び順を保存する、playlistsストアの固定キーです。
+const MAIN_MENU_PLAYLIST_ID = "main_menu_default";
+
+// 画面部品を取得しておきます。
+const menuListEl = document.getElementById("menu-list");
+const audioPlayer = document.getElementById("audio-player");
+const playerBox = document.getElementById("player-box");
+const nowPlayingEl = document.getElementById("now-playing");
+
+// 再生中の一時URL(曲を切り替える時に解放するため覚えておきます)
+let currentObjectUrl = null;
+
+// 現在の曲順(track_idの配列)
+let currentOrderList = [];
+
+// track_id をキーにした曲データの早見表
+let libraryMap = {};
+
+// ドラッグ&ドロップ操作用の状態(OFSより移植)
+let draggingRow = null;
+let placeholder = null;
+let startOffsetY = 0;
+let currentClientY = 0;
+let autoScrollActive = false;
+
+
+// ==========================================================
+// 1. IndexedDBを開く・共通関数(c013と同じ内容)
+// ==========================================================
+
+function openNoriRunDB(){
+
+    return new Promise(function(resolve,reject){
+
+        const request = indexedDB.open(DB_NAME,DB_VERSION);
+
+        request.onupgradeneeded = function(event){
+            console.log("NoriRunDB 新規作成");
+        };
+
+        request.onsuccess = function(event){
+            resolve(event.target.result);
+        };
+
+        request.onerror = function(){
+            reject("NoriRunDBを開けませんでした。");
+        };
+
+    });
+
+}
+
+function idbGet(storeName,key){
+
+    return new Promise(async function(resolve,reject){
+
+        try{
+            const db = await openNoriRunDB();
+            const tx = db.transaction(storeName,"readonly");
+            const store = tx.objectStore(storeName);
+            const request = store.get(key);
+
+            request.onsuccess = function(){
+                db.close();
+                resolve(request.result);
+            };
+
+            request.onerror = function(){
+                db.close();
+                reject("データ取得失敗");
+            };
+
+        }
+        catch(error){
+            reject(error);
+        }
+
+    });
+
+}
+
+function idbPut(storeName,value,key){
+
+    return new Promise(async function(resolve,reject){
+
+        try{
+            const db = await openNoriRunDB();
+            const tx = db.transaction(storeName,"readwrite");
+            const store = tx.objectStore(storeName);
+
+            if(key === undefined){
+                store.put(value);
+            }
+            else{
+                store.put(value,key);
+            }
+
+            tx.oncomplete = function(){
+                db.close();
+                resolve();
+            };
+
+            tx.onerror = function(){
+                db.close();
+                reject("保存失敗");
+            };
+
+        }
+        catch(error){
+            reject(error);
+        }
+
+    });
+
+}
+
+function idbGetAll(storeName){
+
+    return new Promise(async function(resolve,reject){
+
+        try{
+            const db = await openNoriRunDB();
+            const tx = db.transaction(storeName,"readonly");
+            const store = tx.objectStore(storeName);
+            const request = store.getAll();
+
+            request.onsuccess = function(){
+                db.close();
+                resolve(request.result || []);
+            };
+
+            request.onerror = function(){
+                db.close();
+                reject("全件取得失敗");
+            };
+
+        }
+        catch(error){
+            reject(error);
+        }
+
+    });
+
+}
+
+
+// ==========================================================
+// 2. 曲一覧の読み込み
+// ==========================================================
+/**
+ * music_libraryの全曲と、playlistsに保存済みの並び順を読み込みます。
+ *
+ * 並び順がまだ保存されていない場合は、
+ * music_libraryから取得した順番をそのまま使います。
+ *
+ * 並び順は保存されているが、その後に新しく登録された曲がある場合は、
+ * 保存されていた並び順の「後ろ」に追加します。
+ *
+ * 逆に、並び順には載っているが、
+ * すでにmusic_libraryから消えた曲(track_id)があれば、
+ * 一覧から除外します。
+ */
+async function loadMenuData(){
+
+    const allTracks = await idbGetAll(STORE_MUSIC);
+
+    libraryMap = {};
+    allTracks.forEach(function(track){
+        libraryMap[track.track_id] = track;
+    });
+
+    const playlistData = await idbGet(STORE_PLAYLISTS,MAIN_MENU_PLAYLIST_ID);
+
+    if(playlistData && playlistData.track_id_list && playlistData.track_id_list.length > 0){
+
+        // 保存済みの並び順のうち、今も存在する曲だけを残します。
+        currentOrderList = playlistData.track_id_list.filter(function(trackId){
+            return libraryMap[trackId] !== undefined;
+        });
+
+        // 並び順にまだ載っていない、新しく登録された曲を後ろに追加します。
+        allTracks.forEach(function(track){
+            if(currentOrderList.indexOf(track.track_id) === -1){
+                currentOrderList.push(track.track_id);
+            }
+        });
+
+    }
+    else{
+
+        // 並び順が未保存の場合は、登録されている順番をそのまま使います。
+        currentOrderList = allTracks.map(function(track){
+            return track.track_id;
+        });
+
+    }
+
+    console.log("曲一覧読み込み件数 :",currentOrderList.length);
+
+    renderList();
+
+}
+
+
+// ==========================================================
+// 3. 曲一覧の描画(OFSより移植、track_id基準に変更)
+// ==========================================================
+
+function renderList(){
+
+    menuListEl.innerHTML = "";
+
+    if(currentOrderList.length === 0){
+        menuListEl.innerHTML =
+            "<div class='empty-message'>まだ曲が登録されていません。<br>" +
+            "c013の「Musicフォルダ確認」から曲を登録してください。</div>";
+        return;
+    }
+
+    currentOrderList.forEach(function(trackId){
+
+        const track = libraryMap[trackId];
+        if(!track){ return; }
+
+        const displayTitle = track.title || track.file_name;
+        const displayArtist = track.artist || "";
+
+        const row = document.createElement("div");
+        row.className = "music-row";
+        row.dataset.trackId = trackId;
+
+        row.innerHTML =
+            "<button class='square-btn play-btn'>▶️</button>" +
+            "<div class='title-area'>" +
+                "<span class='scroll-text'>" + escapeHtml(displayTitle) + "</span>" +
+            "</div>" +
+            "<div class='artist-area'>" +
+                "<span class='artist-text'>" + escapeHtml(displayArtist) + "</span>" +
+            "</div>" +
+            "<button class='square-btn sort-handle'>" +
+                "<svg width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'>" +
+                    "<line x1='12' y1='2' x2='12' y2='22'></line>" +
+                    "<polyline points='7 7 12 2 17 7'></polyline>" +
+                    "<polyline points='7 17 12 22 17 17'></polyline>" +
+                "</svg>" +
+            "</button>";
+
+        const playBtn = row.querySelector(".play-btn");
+        playBtn.addEventListener("click",function(){
+            playTrack(trackId);
+        });
+
+        const titleArea = row.querySelector(".title-area");
+        const artistArea = row.querySelector(".artist-area");
+        titleArea.addEventListener("click",function(){ triggerMarquee(titleArea); });
+        artistArea.addEventListener("click",function(){ triggerMarquee(artistArea); });
+
+        const sortHandle = row.querySelector(".sort-handle");
+        bindDragAndDropEvents(row,sortHandle);
+
+        menuListEl.appendChild(row);
+
+    });
+
+}
+
+/*
+HTMLとして表示する文字に、曲名由来の記号(<や>など)が
+含まれていても崩れないようにする、簡易的なエスケープ関数です。
+*/
+function escapeHtml(text){
+    return String(text)
+        .replace(/&/g,"&amp;")
+        .replace(/</g,"&lt;")
+        .replace(/>/g,"&gt;");
+}
+
+// 長いタイトル/アーティスト名をタップした時、横スクロールで見せます。
+function triggerMarquee(areaElement){
+
+    const textElement = areaElement.firstElementChild;
+    textElement.classList.remove("scroll-active");
+    void textElement.offsetWidth;
+
+    const areaWidth = areaElement.offsetWidth;
+    const textWidth = textElement.scrollWidth;
+    const speed = 50;
+
+    let scrollDistance = textWidth > areaWidth ? textWidth - areaWidth + 20 : textWidth * 0.6;
+    const duration = (scrollDistance + areaWidth) / speed;
+
+    textElement.style.setProperty("--scroll-x","-" + scrollDistance + "px");
+    textElement.style.setProperty("--scroll-duration",duration + "s");
+    textElement.classList.add("scroll-active");
+
+    textElement.addEventListener("animationend",function(){
+        textElement.classList.remove("scroll-active");
+    },{once:true});
+
+}
+
+
+// ==========================================================
+// 4. 曲の再生
+// ==========================================================
+/**
+ * 指定したtrack_idの曲を再生します。
+ *
+ * track.file_handle は c013のスキャン時にMusicフォルダから
+ * 取得したFileSystemFileHandleです。
+ *
+ * c013の権限バグと同じ理由(ページ遷移でJSの実行コンテキストが
+ * リセットされるため)で、ここでも必ず権限を確認し直してから
+ * ファイルを読み込みます。
+ */
+async function playTrack(trackId){
+
+    try{
+
+        const track = libraryMap[trackId];
+
+        if(!track || !track.file_handle){
+            alert("曲データが見つかりませんでした。c013で再登録してください。");
+            return;
+        }
+
+        // --- 権限を確認し直します(c013と同じパターン) ---
+        let permission = await track.file_handle.queryPermission({mode:"read"});
+
+        if(permission !== "granted"){
+            permission = await track.file_handle.requestPermission({mode:"read"});
+        }
+
+        if(permission !== "granted"){
+            alert("この曲へのアクセスが許可されませんでした。");
+            return;
+        }
+
+        const file = await track.file_handle.getFile();
+
+        if(currentObjectUrl){
+            URL.revokeObjectURL(currentObjectUrl);
+        }
+
+        currentObjectUrl = URL.createObjectURL(file);
+
+        audioPlayer.src = currentObjectUrl;
+        nowPlayingEl.textContent = "再生中：" + (track.title || track.file_name);
+        playerBox.style.display = "block";
+
+        await audioPlayer.play();
+
+        console.log("再生開始 :",track.file_name);
+
+    }
+    catch(error){
+        console.error(error);
+        alert("再生に失敗しました。ブラウザのファイル権限が切れている可能性があります。");
+    }
+
+}
+
+
+// ==========================================================
+// 5. 並び替え(OFS: On-Demand Floating Sort を移植)
+// ==========================================================
+/*
+以下は legacy/ver8.5-gemini の OFSモジュールを移植したものです。
+処理の考え方は元のOFS仕様書の通りで、変えていません。
+
+・並び替えボタン(.sort-handle)を掴んだ時だけ反応する
+  (曲名エリアでの通常スクロールを邪魔しないため)
+・指を離した時だけ、並び順をplaylistsストアへ保存する
+  (ドラッグ中に毎回保存すると重くなるため)
+*/
+
+function bindDragAndDropEvents(row,handle){
+
+    handle.addEventListener("pointerdown",function(e){
+
+        e.preventDefault();
+        draggingRow = row;
+        currentClientY = e.clientY;
+
+        const rect = row.getBoundingClientRect();
+        startOffsetY = e.clientY - rect.top;
+
+        if(!placeholder){
+            placeholder = document.createElement("div");
+            placeholder.className = "drag-placeholder";
+        }
+
+        row.parentNode.insertBefore(placeholder,row);
+
+        row.style.width = rect.width + "px";
+        row.style.height = rect.height + "px";
+        row.style.left = rect.left + "px";
+        row.style.top = rect.top + "px";
+        row.classList.add("dragging");
+        handle.classList.add("active-blue");
+
+        handle.setPointerCapture(e.pointerId);
+
+        if(navigator.vibrate){ navigator.vibrate(15); }
+
+        // 掴んだ瞬間は自動スクロールを起動しません(端をうっかり掴んだ時の暴走防止)。
+
+    });
+
+    handle.addEventListener("pointermove",function(e){
+
+        if(!draggingRow){ return; }
+        e.preventDefault();
+
+        currentClientY = e.clientY;
+
+        draggingRow.style.top = (currentClientY - startOffsetY) + "px";
+
+        updatePlaceholderPosition(currentClientY);
+
+        // 指が動くたびにセンサーを起動します(端に入った時だけループが着火します)。
+        startAutoScrollLoop();
+
+    });
+
+    handle.addEventListener("pointerup",function(e){
+
+        if(!draggingRow){ return; }
+        handle.releasePointerCapture(e.pointerId);
+        clearAllDraggingStates();
+
+    });
+
+}
+
+function updatePlaceholderPosition(clientY){
+
+    if(!draggingRow || !placeholder){ return; }
+
+    const siblings = Array.prototype.slice.call(
+        menuListEl.querySelectorAll(".music-row:not(.dragging)")
+    );
+
+    const nextSibling = siblings.find(function(sibling){
+        const box = sibling.getBoundingClientRect();
+        return clientY <= box.top + box.height / 2;
+    });
+
+    if(nextSibling){
+        menuListEl.insertBefore(placeholder,nextSibling);
+    }
+    else{
+        menuListEl.appendChild(placeholder);
+    }
+
+}
+
+/*
+オンデマンド(指の動きに応じて)再着火する自動スクロールループです。
+
+一度ゾーンから出るとループを終了させ、
+次にゾーンへ入った時にまた新しく起動し直します。
+(こうしないと「一度止まると二度と動かない」バグになります)
+*/
+function startAutoScrollLoop(){
+
+    if(autoScrollActive){ return; }
+
+    const threshold = 100;
+    const windowHeight = window.innerHeight;
+
+    const isTopZone = (currentClientY < threshold && window.scrollY > 0);
+    const isBottomZone = (currentClientY > windowHeight - threshold);
+
+    if(!isTopZone && !isBottomZone){ return; }
+
+    autoScrollActive = true;
+
+    function scrollLoop(){
+
+        if(!draggingRow){ stopAutoScrollGlow(); return; }
+
+        let speed = 0;
+        const glowTop = document.getElementById("glow-top");
+        const glowBottom = document.getElementById("glow-bottom");
+
+        glowTop.classList.remove("glow-active");
+        glowBottom.classList.remove("glow-active");
+
+        if(currentClientY < threshold && window.scrollY > 0){
+            const ratio = (threshold - currentClientY) / threshold;
+            speed = -Math.ceil(ratio * 25);
+            glowTop.classList.add("glow-active");
+        }
+        else if(currentClientY > windowHeight - threshold){
+            const currentScrollMax = document.documentElement.scrollHeight - windowHeight;
+            if(window.scrollY < currentScrollMax){
+                const ratio = (currentClientY - (windowHeight - threshold)) / threshold;
+                speed = Math.ceil(ratio * 25);
+                glowBottom.classList.add("glow-active");
+            }
+        }
+
+        if(speed !== 0){
+            window.scrollBy(0,speed);
+            updatePlaceholderPosition(currentClientY);
+            requestAnimationFrame(scrollLoop);
+        }
+        else{
+            autoScrollActive = false;
+            stopAutoScrollGlow();
+        }
+
+    }
+
+    requestAnimationFrame(scrollLoop);
+
+}
+
+function stopAutoScrollGlow(){
+    document.getElementById("glow-top").classList.remove("glow-active");
+    document.getElementById("glow-bottom").classList.remove("glow-active");
+}
+
+function clearAllDraggingStates(){
+
+    let needSave = false;
+
+    if(draggingRow && placeholder && placeholder.parentNode){
+        placeholder.parentNode.insertBefore(draggingRow,placeholder);
+        needSave = true;
+    }
+
+    if(placeholder && placeholder.parentNode){
+        placeholder.parentNode.removeChild(placeholder);
+    }
+
+    menuListEl.querySelectorAll(".music-row").forEach(function(row){
+        row.classList.remove("dragging");
+        row.style.position = "";
+        row.style.width = "";
+        row.style.height = "";
+        row.style.left = "";
+        row.style.top = "";
+    });
+
+    menuListEl.querySelectorAll(".sort-handle").forEach(function(h){
+        h.classList.remove("active-blue");
+    });
+
+    draggingRow = null;
+    autoScrollActive = false;
+    stopAutoScrollGlow();
+
+    if(needSave){
+        saveNewOrderFromDOM();
+    }
+
+}
+
+/*
+指を離した時、実際のDOMの並び順を読み取って
+playlistsストアへ保存します。
+
+現行スキーマ(docs/db-schema.md)に合わせ、
+track_id_list という配列名で保存します。
+(OFSの元の実装はfile_path_listでしたが、
+ track_idを主キーとする現行スキーマに合わせて変更しています)
+*/
+async function saveNewOrderFromDOM(){
+
+    const rows = Array.prototype.slice.call(
+        menuListEl.querySelectorAll(".music-row")
+    );
+
+    currentOrderList = rows.map(function(row){
+        return row.dataset.trackId;
+    });
+
+    const playlistData = {
+        playlist_id: MAIN_MENU_PLAYLIST_ID,
+        playlist_name: "メイン全曲リスト",
+        track_id_list: currentOrderList,
+        norirun_track_id_list: []
+    };
+
+    await idbPut(STORE_PLAYLISTS,playlistData);
+
+    console.log("並び順を保存しました :",currentOrderList.length,"曲");
+
+}
+
+window.addEventListener("pointerup",clearAllDraggingStates);
+window.addEventListener("pointercancel",clearAllDraggingStates);
+
+
+// ==========================================================
+// 6. 画面起動
+// ==========================================================
+
+loadMenuData();
+
+</script>
+</body>
+</html>
