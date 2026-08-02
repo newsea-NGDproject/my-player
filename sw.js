@@ -1,4 +1,4 @@
-const CACHE_NAME = 'norirun-v64';
+const CACHE_NAME = 'norirun-v65';
 
 const ASSETS = [
   'index.html',
@@ -14,6 +14,11 @@ const ASSETS = [
 
 // インストール時にファイルをキャッシュに保存するぜ
 self.addEventListener('install', e => {
+  // 新しいService Workerを「待機」させず、すぐに有効化させる。
+  // これが無いと、古いタブが完全に閉じるまで新しいコードに
+  // 切り替わらず、CACHE_NAMEを繰り上げても更新が反映されない。
+  self.skipWaiting();
+
   e.waitUntil(
     caches.open(CACHE_NAME).then(cache => {
       console.log('アセットをキャッシュ中...');
@@ -25,8 +30,10 @@ self.addEventListener('install', e => {
 // 新しいService Workerが有効になった時、古いキャッシュを削除する
 self.addEventListener('activate', e => {
   e.waitUntil(
-    caches.keys().then(cacheNames => {
-      return Promise.all(
+    (async () => {
+      const cacheNames = await caches.keys();
+
+      await Promise.all(
         cacheNames.map(cacheName => {
           if (cacheName !== CACHE_NAME) {
             console.log('古いキャッシュ削除:', cacheName);
@@ -34,7 +41,13 @@ self.addEventListener('activate', e => {
           }
         })
       );
-    })
+
+      // 有効化した新しいService Workerに、
+      // 今すでに開いているページの制御もすぐ渡す。
+      // これが無いと、開いたままのタブは有効化後も
+      // 古いService Workerに操作され続けてしまう。
+      await self.clients.claim();
+    })()
   );
 });
 
