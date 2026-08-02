@@ -118,6 +118,12 @@ c014以降で実施する。
     STEP04(前回までの登録済みチェック)は未実装のため、
     複数回スキャンすると重複登録される既知の制限あり
 
+    STEP04実装(v64)
+    スキャン開始前に既存のmusic_libraryをidbGetAllで取得し、
+    file_nameの集合(existingFileNames)を作成。
+    スキャン中に登録済みファイル名を見つけたら読み飛ばすようにし、
+    複数回スキャンしても重複登録されない状態にした
+
 ======================================================================
 -->
 <!DOCTYPE html>
@@ -149,7 +155,7 @@ c014以降で実施する。
     <!-- ブラウザタイトル -->
     <title>
 
-        (v63)ノリRun
+        (v64)ノリRun
         Musicフォルダ データ登録
 
     </title>
@@ -1705,6 +1711,55 @@ async function checkMusicFolder(){
 
         /*
         ======================================================
+        STEP04 : 登録済みチェックの準備
+        ======================================================
+
+        前回までにmusic_libraryへ登録済みの曲は、
+
+        もう一度スキャンしても登録し直さないように
+
+        したいです。
+
+        そのために、登録済みの曲のファイル名を
+
+        スキャンを始める前に全部取得しておきます。
+
+        ※ file_nameで判定します
+          (竹弘の指示により、ファイル名の重複は
+           同じ曲として扱ってよいため)
+        */
+
+        const existingTracks =
+        await idbGetAll(STORE_MUSIC);
+
+        const existingFileNames = new Set(
+
+            existingTracks.map(
+
+                function(existingTrack){
+                    return existingTrack.file_name;
+                }
+
+            )
+
+        );
+
+        console.log(
+
+            "登録済みファイル数 :",
+
+            existingFileNames.size
+
+        );
+
+        /*
+        スキャン中に「登録済みのため読み飛ばした」件数を
+        数えておくための変数です。
+        */
+        let skippedExistingCount = 0;
+
+        /*
+        ======================================================
 
         Musicフォルダの中(サブフォルダ含む)を読み込みます。
 
@@ -1781,11 +1836,40 @@ async function checkMusicFolder(){
 
                 console.log(
 
-                    "重複のため読み飛ばし :",
+                    "重複のため読み飛ばし(今回のスキャン内) :",
 
                     fileEntry.name
 
                 );
+
+                continue;
+
+            }
+
+            /*
+            ======================================================
+            登録済みの曲を読み飛ばします(STEP04)
+            ======================================================
+
+            前回までのスキャンですでに
+
+            music_libraryへ登録済みのファイル名なら、
+
+            もう一度登録しないよう読み飛ばします。
+            */
+
+            if(existingFileNames.has(fileEntry.name)){
+
+                console.log(
+
+                    "登録済みのため読み飛ばし :",
+
+                    fileEntry.name
+
+                );
+
+                skippedExistingCount =
+                skippedExistingCount + 1;
 
                 continue;
 
@@ -1887,17 +1971,13 @@ async function checkMusicFolder(){
 
         docs/db-schema.md を参照してください。
 
-        ※ 今回はまだ「前回までに登録済みかどうか」の
+        ※ 登録済みの曲(existingFileNamesにあるもの)は
 
-        チェック(STEP04・重複登録チェック)は行いません。
+        スキャンの時点ですでに読み飛ばし済みのため、
 
-        そのため、同じMusicフォルダに対して
+        ここではruntimeFileHandleMapに残っている
 
-        「Musicフォルダ確認」を複数回押すと、
-
-        今は同じ曲が重複登録されます。
-
-        これはSTEP04で対応する予定の、既知の制限です。
+        「新規に見つかった曲」だけを登録します。
         */
 
         let registeredCount = 0;
@@ -1954,6 +2034,8 @@ async function checkMusicFolder(){
 
         console.log("music_library登録件数 :",registeredCount);
 
+        console.log("登録済みのため読み飛ばした件数 :",skippedExistingCount);
+
         /*
         ======================================================
         STEP05 : 登録結果表示
@@ -1967,7 +2049,8 @@ async function checkMusicFolder(){
         alert(
 
             "Musicフォルダ読込成功\n" +
-            registeredCount + "曲をmusic_libraryへ登録しました。"
+            registeredCount + "曲を新規登録しました。\n" +
+            skippedExistingCount + "曲は登録済みのため読み飛ばしました。"
 
         );
 
