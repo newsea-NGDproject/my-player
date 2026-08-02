@@ -94,7 +94,15 @@ c014以降で実施する。
     STEP02実装(Musicフォルダスキャン、Mapへの一時保存)
     フォルダアクセス権限の再確認処理を追加
     (c012で許可した権限が時間経過で切れる問題への対応。
-     詳細はcheckMusicFolder()内のコメント参照)
+     詳細はcheckMusicFolder()内のコメント参照。
+     実機テストで解決を確認済み)
+
+2026-08-03
+    サブフォルダを再帰的にスキャンする処理を追加
+    (scanFolderRecursively()。root権限はサブフォルダにも
+     自動的に有効なため、権限の取り直しは不要)
+    同名ファイルが複数見つかった場合は、後から見つかった方を
+    読み飛ばす処理を追加(重複登録の防止)
 
 ======================================================================
 -->
@@ -127,7 +135,7 @@ c014以降で実施する。
     <!-- ブラウザタイトル -->
     <title>
 
-        (v60)ノリRun
+        (v61)ノリRun
         Musicフォルダ データ登録
 
     </title>
@@ -1267,13 +1275,82 @@ async function getMusicFolderHandle(){
 }
 /**
  * ===========================================================
+ * Musicフォルダを再帰的にスキャンする関数
+ * ===========================================================
+ *
+ * 指定したフォルダの中を調べて、
+ * ファイルを1つ見つけるたびに
+ * 呼び出し元へ順番に渡します。
+ *
+ * サブフォルダが見つかった場合は、
+ * その中も同じ処理で調べにいきます
+ * (自分自身をもう一度呼び出す＝再帰処理)。
+ *
+ * こうすることで、
+ *
+ * Musicフォルダ/
+ *   J-POP/
+ *     曲A.mp3
+ *   洋楽/
+ *     曲B.mp3
+ *
+ * のように、Musicフォルダの下に
+ * サブフォルダが何段あっても、
+ * 中の曲ファイルを全部見つけられます。
+ *
+ * ※ フォルダの権限(queryPermission)は
+ *    一番上のフォルダ(root)で確認すれば、
+ *    その中のサブフォルダにも同じ権限が
+ *    自動的に有効になります。
+ *    サブフォルダごとに権限を取り直す必要はありません。
+ *
+ * async function* は
+ * 「async generator(非同期ジェネレーター)」という書き方です。
+ * for await (const x of ...) と組み合わせて使うと、
+ * 見つかったファイルを1つずつ順番に受け取れます。
+ */
+async function* scanFolderRecursively(dirHandle){
+
+    for await(const entry of dirHandle.values()){
+
+        if(entry.kind === "file"){
+
+            /*
+            ファイルなら、
+            呼び出し元へそのまま渡します。
+            */
+
+            yield entry;
+
+        }
+        else if(entry.kind === "directory"){
+
+            /*
+            フォルダなら、
+            その中も同じ関数で調べます。
+
+            yield* は
+            「呼び出した先が渡してくるものを
+              そのまま全部中継する」という書き方です。
+            */
+
+            yield* scanFolderRecursively(entry);
+
+        }
+
+    }
+
+}
+
+/**
+ * ===========================================================
  * Musicフォルダ確認
  * ===========================================================
  *
  * 「Musicフォルダ確認」ボタンが押された時に実行します。
  *
  * この段階では
- * Musicフォルダの中を読み込み、
+ * Musicフォルダの中(サブフォルダ含む)を読み込み、
  * FileHandleをMapへ保存できるか確認します。
  */
 async function checkMusicFolder(){
@@ -1378,96 +1455,86 @@ async function checkMusicFolder(){
         /*
         ======================================================
 
-        Musicフォルダの中を読み込みます。
+        Musicフォルダの中(サブフォルダ含む)を読み込みます。
 
-        values()
+        scanFolderRecursively()
 
         は
 
-        フォルダ内の全データ
+        Musicフォルダの中と、
 
-        を順番に取り出します。
+        その中にあるサブフォルダの中も
+
+        全部まとめて、ファイルだけを
+
+        順番に取り出してくれます。
 
         ======================================================
         */
 
         console.log("----------");
 
-        console.log("Musicフォルダ内");
+        console.log("Musicフォルダ内(サブフォルダ含む)");
 
         for await(
 
-            const entry
+            const fileEntry
 
             of
 
-            folderHandle.values()
+            scanFolderRecursively(folderHandle)
 
         ){
 
             /*
-            entry
+            fileEntry
 
             は
 
-            Musicフォルダ内の
+            Musicフォルダ内(サブフォルダ含む)で見つかった
 
-            1件分のデータです。
+            1件分のファイルです。
 
-            entryには
+            scanFolderRecursively()の中で
 
-            ・ファイル
-            ・フォルダ
+            すでに「ファイルだけ」に絞っているので、
 
-            のどちらかが入っています。
+            ここでフォルダかどうかの判定は不要です。
             */
 
             console.log(
 
                 "名前 :",
 
-                entry.name
-
-            );
-
-            console.log(
-
-                "種類 :",
-
-                entry.kind
+                fileEntry.name
 
             );
 
             /*
             ======================================================
-            ファイルだけを対象にします。
+            同じファイル名の重複を読み飛ばします。
             ======================================================
 
-            Musicフォルダの中には
+            違うサブフォルダに
 
-            ・mp3
-            ・m4a
-            ・wav
+            同じ名前の曲ファイルがあった場合、
 
-            だけではなく、
+            竹弘の指示により
 
-            サブフォルダが入っている場合もあります。
+            「後から見つかった方」は登録せず
 
-            NoriRunは
-
-            「曲だけ」
-
-            を登録したいので、
-
-            kind が "file" のものだけ処理します。
+            読み飛ばします(最初に見つかった方を残します)。
             */
 
-            if(entry.kind !== "file"){
+            if(runtimeFileHandleMap.has(fileEntry.name)){
 
-                /*
-                フォルダなら
-                次のデータへ進みます。
-                */
+                console.log(
+
+                    "重複のため読み飛ばし :",
+
+                    fileEntry.name
+
+                );
 
                 continue;
 
@@ -1478,7 +1545,7 @@ async function checkMusicFolder(){
             Mapへ登録します。
             ======================================================
 
-            entry は
+            fileEntry は
 
             FileSystemFileHandle
 
@@ -1508,9 +1575,9 @@ async function checkMusicFolder(){
 
             runtimeFileHandleMap.set(
 
-                entry.name,
+                fileEntry.name,
 
-                entry
+                fileEntry
 
             );
 
@@ -1518,7 +1585,7 @@ async function checkMusicFolder(){
 
                 "Map登録 :",
 
-                entry.name
+                fileEntry.name
 
             );
 
