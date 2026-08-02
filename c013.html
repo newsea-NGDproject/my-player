@@ -104,6 +104,12 @@ c014以降で実施する。
     同名ファイルが複数見つかった場合は、後から見つかった方を
     読み飛ばす処理を追加(重複登録の防止)
 
+    【開発用デバッグログパネル】を追加(v62)
+    実機でPCなしにconsole.logの内容を画面上で確認できるようにする
+    一時的な機能。実機確認が終わったら削除してよい
+    (削除方法: 「ここから」〜「ここまで」のコメントで囲まれた
+     ブロックをまるごと削除するだけ)
+
 ======================================================================
 -->
 <!DOCTYPE html>
@@ -135,7 +141,7 @@ c014以降で実施する。
     <!-- ブラウザタイトル -->
     <title>
 
-        (v61)ノリRun
+        (v62)ノリRun
         Musicフォルダ データ登録
 
     </title>
@@ -380,6 +386,215 @@ c014以降で実施する。
     </div>
 
 </div>
+
+<!-- ================================================================
+     【開発用デバッグログパネル】ここから
+
+     実機(スマホ)でも console.log の内容を画面上で確認できるように
+     するための、一時的な開発用機能です。
+
+     PCを繋いでのリモートデバッグ(chrome://inspect)が使えない時に、
+     このパネルを見れば同じ内容がスマホの画面上でも確認できます。
+
+     実機確認が終わったら、この
+     「ここから」〜「ここまで」の間を
+     まるごと削除して構いません。
+     (本番コードには含めない想定です)
+================================================================ -->
+<style>
+
+    /*
+    画面の下側に固定表示するログパネルです。
+    アプリの操作を邪魔しないよう、
+    半透明の黒背景・小さめの文字にしています。
+    */
+    #debug-log-panel{
+
+        position:fixed;
+        left:0;
+        right:0;
+        bottom:0;
+
+        height:30vh;
+
+        background:rgba(0,0,0,0.85);
+        color:#0f0;
+
+        font-family:monospace;
+        font-size:0.75rem;
+
+        z-index:9999;
+
+        display:flex;
+        flex-direction:column;
+
+    }
+
+    #debug-log-header{
+
+        display:flex;
+        justify-content:space-between;
+        align-items:center;
+
+        padding:6px 10px;
+
+        background:rgba(255,255,255,0.1);
+        color:#fff;
+
+    }
+
+    #debug-log-clear{
+
+        /* 共通buttonスタイルを上書きして小さくします */
+        width:auto;
+        margin-top:0;
+        padding:4px 12px;
+        font-size:0.75rem;
+
+    }
+
+    #debug-log-body{
+
+        flex:1;
+        overflow-y:auto;
+
+        padding:6px 10px;
+
+        white-space:pre-wrap;
+        word-break:break-all;
+
+    }
+
+</style>
+
+<div id="debug-log-panel">
+
+    <div id="debug-log-header">
+
+        <span>開発用デバッグログ</span>
+
+        <button id="debug-log-clear">クリア</button>
+
+    </div>
+
+    <div id="debug-log-body"></div>
+
+</div>
+
+<script>
+
+/*
+------------------------------------------------------------
+console.log / console.error を上書きして、
+
+「元々の動き(PCのDevToolsに出す)」
+
+に加えて、
+
+「画面上のパネルにも表示する」
+
+処理を追加しています。
+
+こうすることで、既存のコードにある
+console.log(...) の呼び出しは
+一切変更しなくても、
+自動的に画面にも表示されるようになります。
+------------------------------------------------------------
+*/
+(function(){
+
+    const logBody =
+    document.getElementById("debug-log-body");
+
+    /*
+    複数の引数を、画面表示用の
+    1行の文字列にまとめる関数です。
+    */
+    function formatArgs(args){
+
+        return Array.prototype.map.call(
+
+            args,
+
+            function(value){
+
+                if(typeof value === "object" && value !== null){
+
+                    /*
+                    FileSystemHandleやErrorなどは
+                    中身が空に見えることがありますが、
+                    今回の確認用途(ファイル名の一覧確認)
+                    では文字列の引数がそのまま
+                    表示できれば十分です。
+                    */
+                    try{
+                        return JSON.stringify(value);
+                    }
+                    catch(e){
+                        return String(value);
+                    }
+
+                }
+
+                return String(value);
+
+            }
+
+        ).join(" ");
+
+    }
+
+    function appendLine(text,isError){
+
+        const line = document.createElement("div");
+
+        if(isError){
+            line.style.color = "#ff453a";
+        }
+
+        line.textContent = text;
+
+        logBody.appendChild(line);
+
+        // 常に最新行が見えるよう、一番下へスクロールします。
+        logBody.scrollTop = logBody.scrollHeight;
+
+    }
+
+    const originalConsoleLog = console.log;
+
+    console.log = function(){
+
+        originalConsoleLog.apply(console,arguments);
+
+        appendLine(formatArgs(arguments),false);
+
+    };
+
+    const originalConsoleError = console.error;
+
+    console.error = function(){
+
+        originalConsoleError.apply(console,arguments);
+
+        appendLine("[ERROR] " + formatArgs(arguments),true);
+
+    };
+
+    document.getElementById("debug-log-clear").onclick =
+
+    function(){
+
+        logBody.innerHTML = "";
+
+    };
+
+})();
+
+</script>
+<!-- ================================================================
+     【開発用デバッグログパネル】ここまで
+================================================================ -->
 
 <script>
 
