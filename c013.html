@@ -110,6 +110,14 @@ c014以降で実施する。
     (削除方法: 「ここから」〜「ここまで」のコメントで囲まれた
      ブロックをまるごと削除するだけ)
 
+    サブフォルダ含むスキャン(v61)、実機テストで動作確認済み
+
+    STEP03実装(v63)
+    スキャンで見つけた曲をmusic_libraryへ登録する処理を追加
+    (createTrackId()、track_idを主キーとして1曲ずつidbPutで保存)
+    STEP04(前回までの登録済みチェック)は未実装のため、
+    複数回スキャンすると重複登録される既知の制限あり
+
 ======================================================================
 -->
 <!DOCTYPE html>
@@ -141,7 +149,7 @@ c014以降で実施する。
     <!-- ブラウザタイトル -->
     <title>
 
-        (v62)ノリRun
+        (v63)ノリRun
         Musicフォルダ データ登録
 
     </title>
@@ -1559,6 +1567,34 @@ async function* scanFolderRecursively(dirHandle){
 
 /**
  * ===========================================================
+ * track_idを作る関数
+ * ===========================================================
+ *
+ * music_libraryへ曲を登録する時、
+ * 1曲ごとに必ず違うID(主キー)が必要です。
+ *
+ * ファイル名を主キーにしてしまうと、
+ * 同じ名前のファイルを別々の曲として
+ * 登録できなくなるため、
+ *
+ * 「現在時刻 + ランダムな数字」
+ *
+ * を組み合わせて、
+ * ほぼ重複しないIDを作ります。
+ */
+function createTrackId(){
+
+    const now = Date.now();
+
+    const random =
+    Math.floor(Math.random() * 1000000);
+
+    return "tr_" + now + "_" + random;
+
+}
+
+/**
+ * ===========================================================
  * Musicフォルダ確認
  * ===========================================================
  *
@@ -1822,9 +1858,116 @@ async function checkMusicFolder(){
         ======================================================
         */
 
+        console.log("Musicフォルダ読込成功");
+
+        /*
+        ======================================================
+        STEP03 : music_libraryへ曲情報を登録します
+        ======================================================
+
+        ここまでで、runtimeFileHandleMapの中に
+
+        Musicフォルダ内(サブフォルダ含む)の
+
+        音楽ファイルの「鍵(FileHandle)」が
+
+        全部集まっています。
+
+        ここからは、その1件ずつを
+
+        music_libraryストアへ保存していきます。
+
+        まだBPM解析などは行っていないので、
+
+        分かる情報だけを入れ、
+
+        残りはnullや初期値にしておきます。
+
+        ※ フィールドの意味は
+
+        docs/db-schema.md を参照してください。
+
+        ※ 今回はまだ「前回までに登録済みかどうか」の
+
+        チェック(STEP04・重複登録チェック)は行いません。
+
+        そのため、同じMusicフォルダに対して
+
+        「Musicフォルダ確認」を複数回押すと、
+
+        今は同じ曲が重複登録されます。
+
+        これはSTEP04で対応する予定の、既知の制限です。
+        */
+
+        let registeredCount = 0;
+
+        for(
+
+            const [fileName,fileHandleForRegister]
+
+            of
+
+            runtimeFileHandleMap
+
+        ){
+
+            const track = {
+
+                track_id: createTrackId(),
+
+                file_name: fileName,
+                file_handle: fileHandleForRegister,
+
+                folder_roots_id: ROOT_MUSIC_ID,
+
+                registered_at: Date.now(),
+
+                title: fileName,
+                artist: "",
+
+                duration: 0,
+                mix_duration: 0,
+
+                is_analyzed: false,
+
+                tag_bpm: null,
+                baseBPM: 120,
+                userBPM: null,
+                manualBPM: null,
+
+                startTS: 0,
+                endTS: 0,
+                tick13TS: 0,
+
+                cover_art: null
+
+            };
+
+            await idbPut(STORE_MUSIC,track);
+
+            registeredCount = registeredCount + 1;
+
+            console.log("登録完了 :",fileName);
+
+        }
+
+        console.log("music_library登録件数 :",registeredCount);
+
+        /*
+        ======================================================
+        STEP05 : 登録結果表示
+
+        今回は簡易的にalertで件数を表示します。
+        一覧表示など詳しい結果画面は、
+        必要になったタイミングで追加します。
+        ======================================================
+        */
+
         alert(
 
-            "Musicフォルダ読込成功"
+            "Musicフォルダ読込成功\n" +
+            registeredCount + "曲をmusic_libraryへ登録しました。"
 
         );
 
