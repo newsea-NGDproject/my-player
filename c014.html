@@ -160,6 +160,26 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     ※ 緑ランプ(フェーズ2)が出ずに黄→青になるのは現時点では仕様。
       ジャケット画像を実装するSTEP Bで有効化する。
 
+    (v72)【STEP B】ジャケット画像の取得・表示を追加。
+
+    ・タグから画像データを取り出し、96px角のJPEGに縮小してDBへ保存
+      (原寸だと1曲500KB〜1MBになり、369曲でDBが数百MBに膨らむため。
+       表示は44px角だが、高精細画面でぼやけないよう2倍超で保存する)
+    ・横長・縦長の画像は中央を正方形に切り取ってから縮小(歪み防止)
+    ・並び替えボタンの左隣に44px角で表示(竹弘の指示「割合1」)
+    ・ジャケットが無い曲は何も表示しない(竹弘の指示)
+    ・ランプのフェーズ2(緑・ジャケ写同期)をついに有効化
+
+    文字情報とジャケットを別工程にしたのは竹弘の選択(2026-08-08)。
+    1回の読み込みで両方取れば初回の解析時間は半分になるが、
+    「解析は裏で進むので再生の邪魔をせず、一度取得すれば次回は
+    読み込まない」ため、演出がはっきり分かれる2工程を選んだ。
+
+    メモリ対策:
+    ・画像の一時URL(createObjectURL)は表示完了後に必ず解放する。
+      369曲分を解放し忘れるとメモリを食いつぶすため
+    ・縮小に使ったImageBitmapもfinallyで必ずclose()する
+
 ======================================================================
 -->
 <!DOCTYPE html>
@@ -181,7 +201,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v71)ノリRun
+        (v72)ノリRun
         メインメニュー
 
     </title>
@@ -1344,10 +1364,62 @@ function createRowElement(trackId){
     lineTitle.addEventListener("click",function(){ triggerMarquee(lineTitle); });
     lineMeta.addEventListener("click",function(){ triggerMarquee(lineMeta); });
 
+    /*
+    ジャケット画像は、取得できている曲にだけ差し込みます。
+
+    上のinnerHTMLに混ぜず、あとから要素として追加しているのには
+    理由があります。画像を表示するには一時URLを作る必要があり、
+    そのURLは使い終わったら必ず解放しなければならないためです
+    (createJacketImage の解説を参照)。
+    */
+    if(track.cover_art){
+        const infoArea = row.querySelector(".info-area");
+        infoArea.appendChild(createJacketImage(track.cover_art));
+    }
+
     const sortHandle = row.querySelector(".sort-handle");
     bindDragAndDropEvents(row,sortHandle);
 
     return row;
+
+}
+
+/**
+ * ジャケット画像の<img>要素を作ります。
+ *
+ * 【一時URLと、その後始末について】
+ *
+ * DBに保存されているのはBlob(ファイルの実体)で、そのままでは
+ * <img>のsrcに指定できません。URL.createObjectURL() を使うと
+ * 「このブラウザの中だけで通用する一時的なURL」が発行され、
+ * それを指定することで画像として表示できます。
+ *
+ * ただしこの一時URLは、作った分だけブラウザがメモリを確保し続け、
+ * 明示的に解放するまで居座ります。竹弘のライブラリは369曲あるので、
+ * 解放を忘れると画面を開くたびにメモリを食いつぶしていきます。
+ *
+ * そこで、画像の表示が終わった瞬間(onload)に解放しています。
+ * 表示に使い終わった後なので、解放しても画像は消えません。
+ * 読み込みに失敗した時(onerror)も同様に解放します。
+ */
+function createJacketImage(blob){
+
+    const img = document.createElement("img");
+    img.className = "jacket-img";
+
+    const objectUrl = URL.createObjectURL(blob);
+
+    img.onload = function(){
+        URL.revokeObjectURL(objectUrl);
+    };
+
+    img.onerror = function(){
+        URL.revokeObjectURL(objectUrl);
+    };
+
+    img.src = objectUrl;
+
+    return img;
 
 }
 
@@ -1944,6 +2016,31 @@ v70で 2 に上げたので、v69で解析済みの曲も再解析される。
 const META_ANALYZER_VERSION = 2;
 
 /*
+ジャケット画像の取得ロジックのバージョン番号。
+考え方は META_ANALYZER_VERSION と全く同じで、
+画像の取り出し方や縮小サイズを変更した時にこの数字を上げると、
+取得済みの曲も自動でジャケットを取り直す。
+*/
+const COVER_ANALYZER_VERSION = 1;
+
+/*
+DBに保存するジャケット画像の一辺の長さ(ピクセル)。
+
+画面上の表示は44px角だが、その2倍を超える96pxで保存している。
+スマホの画面は「1ピクセル」を実際には2〜3個の点で表示する
+高精細なもの(高DPI)が主流で、44pxのまま保存すると
+輪郭がぼやけて見えてしまうため。
+
+原寸のまま保存しない理由は、1曲あたり500KB〜1MBになり、
+数百曲でDBが数百MBに膨れ上がるから(竹弘の判断、2026-08-08)。
+96px角のJPEGなら1曲あたり数KBで収まる。
+*/
+const COVER_ART_SIZE = 96;
+
+// 保存するJPEGの画質(0〜1)。0.8は画質とサイズのバランスが良い定番の値。
+const COVER_ART_QUALITY = 0.8;
+
+/*
 ============================================================
 外部ライブラリが本当に読み込めているかを確認します。
 
@@ -2001,7 +2098,7 @@ async function startMetadataEngine(){
     解析された曲には meta_analyzer_version が入っていないため、
     その場合は「バージョン1で解析された」とみなすためです。
     */
-    const targets = currentOrderList.filter(function(trackId){
+    const metaTargets = currentOrderList.filter(function(trackId){
 
         const track = libraryMap[trackId];
         if(!track){ return false; }
@@ -2012,40 +2109,99 @@ async function startMetadataEngine(){
 
     });
 
-    if(targets.length === 0){
-        console.log("メタデータは全曲解析済み(ランプは表示しません)");
+    /*
+    ジャケット画像がまだ取得できていない曲を集めます。
+    判定の考え方は上の文字情報と同じです。
+
+    is_cover_analyzed は「画像が入っていたかどうか」ではなく
+    「調べ終わったかどうか」を表します。ジャケットが入っていない
+    ファイルも調べ終われば true になるので、毎回無駄に調べ直しません。
+    */
+    const coverTargets = currentOrderList.filter(function(trackId){
+
+        const track = libraryMap[trackId];
+        if(!track){ return false; }
+
+        if(!track.is_cover_analyzed){ return true; }
+
+        return (track.cover_analyzer_version || 1) < COVER_ANALYZER_VERSION;
+
+    });
+
+    /*
+    やることが何も無ければ、ランプを出さずに終了します。
+    竹弘の「曲再生機能を妨げない最速起動」の方針により、
+    2回目以降の起動は一覧が完成形で一瞬で出ます。
+    */
+    if(metaTargets.length === 0 && coverTargets.length === 0){
+        console.log("メタデータ・ジャケットとも全曲解析済み(ランプは表示しません)");
         return;
     }
 
-    console.log("メタデータ未解析 :",targets.length,"曲");
+    // ============ フェーズ1:文字情報(タイトル・アーティスト・曲長) ============
 
-    let doneCount = 0;
-    setLampPhase(1,doneCount,targets.length);
+    if(metaTargets.length > 0){
 
-    /*
-    for...of で1曲ずつ順番に処理します。
+        console.log("メタデータ未解析 :",metaTargets.length,"曲");
 
-    あえて同時並行(Promise.all)にしていないのは、
-    ・何十曲も同時にファイルを開くと端末のメモリを圧迫する
-    ・1曲ずつ順に表示が変わっていく方が、竹弘の狙った演出になる
-    という2つの理由からです。
-    */
-    for(const trackId of targets){
+        let metaDone = 0;
+        setLampPhase(1,metaDone,metaTargets.length);
 
-        await analyzeOneTrack(trackId);
+        /*
+        for...of で1曲ずつ順番に処理します。
 
-        doneCount = doneCount + 1;
-        setLampPhase(1,doneCount,targets.length);
+        あえて同時並行(Promise.all)にしていないのは、
+        ・何十曲も同時にファイルを開くと端末のメモリを圧迫する
+        ・1曲ずつ順に表示が変わっていく方が、竹弘の狙った演出になる
+        という2つの理由からです。
+        */
+        for(const trackId of metaTargets){
+
+            await analyzeOneTrack(trackId);
+
+            metaDone = metaDone + 1;
+            setLampPhase(1,metaDone,metaTargets.length);
+
+        }
+
+        console.log("メタデータ解析完了 :",metaDone,"曲");
 
     }
 
-    console.log("メタデータ解析完了 :",doneCount,"曲");
+    // ============ フェーズ2:ジャケット画像 ============
 
     /*
-    STEP B(次のバージョン)では、この位置にフェーズ2
-    (ジャケット画像の取得・緑ランプ)を挟みます。
-    現時点では文字情報の取得だけなので、そのまま完了へ進みます。
+    竹弘の選択(2026-08-08)により、文字情報とジャケットは
+    別々の工程に分けています。
+
+    1回の読み込みで両方取得すれば初回の解析時間は約半分になりますが、
+    ・解析は裏で進むので曲の再生を妨げない
+    ・一度取得すれば次回以降は読み込まない
+    という理由から、竹弘は「文字が全部揃ってから、ジャケットが
+    1枚ずつ現れる」という演出がはっきり分かれる方を選びました。
     */
+    if(coverTargets.length > 0){
+
+        console.log("ジャケット未取得 :",coverTargets.length,"曲");
+
+        let coverDone = 0;
+        setLampPhase(2,coverDone,coverTargets.length);
+
+        for(const trackId of coverTargets){
+
+            await analyzeCoverArt(trackId);
+
+            coverDone = coverDone + 1;
+            setLampPhase(2,coverDone,coverTargets.length);
+
+        }
+
+        console.log("ジャケット取得完了 :",coverDone,"曲");
+
+    }
+
+    // ============ フェーズ3:完了 ============
+
     setLampPhase(3);
 
 }
@@ -2143,6 +2299,211 @@ async function analyzeOneTrack(trackId){
             error.name,
             error.message
         );
+
+    }
+
+}
+
+/**
+ * 1曲分のジャケット画像を取得して、縮小してDBへ保存します。
+ *
+ * 【処理の流れ】
+ *   ① ファイルの権限を確認して開く
+ *   ② タグの中から画像データ(picture)を取り出す
+ *   ③ 96px角のJPEGに縮小する
+ *   ④ DBへ保存し、画面のその行だけ差し替える
+ *
+ * ジャケットが入っていないファイルも珍しくありません。
+ * その場合も「調べ終わった」印(is_cover_analyzed)は付けるので、
+ * 次回以降くり返し調べにいくことはありません。
+ */
+async function analyzeCoverArt(trackId){
+
+    const track = libraryMap[trackId];
+
+    if(!track || !track.file_handle){
+        return;
+    }
+
+    try{
+
+        // 権限の確認(文字情報の解析・再生処理と全く同じパターン)
+        let permission = await track.file_handle.queryPermission({mode:"read"});
+
+        if(permission !== "granted"){
+            permission = await track.file_handle.requestPermission({mode:"read"});
+        }
+
+        if(permission !== "granted"){
+            console.error("ジャケット取得中止(権限なし) :",track.file_name);
+            return;
+        }
+
+        const file = await track.file_handle.getFile();
+
+        const tags = await readTagsFromFile(file);
+
+        // タグから画像を取り出します(無ければ null が返ります)
+        const originalBlob = extractPictureBlob(tags);
+
+        if(originalBlob){
+
+            // 表示に必要なサイズまで小さくしてから保存します
+            const smallBlob = await shrinkImageBlob(
+                originalBlob,
+                COVER_ART_SIZE,
+                COVER_ART_QUALITY
+            );
+
+            if(smallBlob){
+                track.cover_art = smallBlob;
+            }
+
+        }
+
+        // 画像が無かった場合も「調べ終わった」印は付けます
+        track.is_cover_analyzed = true;
+        track.cover_analyzer_version = COVER_ANALYZER_VERSION;
+
+        await idbPut(STORE_MUSIC,track);
+
+        refreshRow(trackId);
+
+    }
+    catch(error){
+
+        // 1曲の失敗で全体を止めません(文字情報の解析と同じ方針)
+        console.error(
+            "ジャケット取得失敗 :",
+            track.file_name,
+            error.name,
+            error.message
+        );
+
+    }
+
+}
+
+/**
+ * タグの中から、ジャケット画像をBlob(ファイルの実体)として取り出します。
+ *
+ * jsmediatagsが返す picture は
+ *     { format:"image/jpeg", data:[137, 80, 78, ...] }
+ * のような形で、data は画像1バイトずつを数値で並べた配列です。
+ * このままでは画像として扱えないため、Blobに組み立て直します。
+ *
+ * Uint8Array は「0〜255の数値だけを詰める、コンピュータが扱いやすい形の配列」で、
+ * 画像や音声のような生データを扱う時に使います。
+ */
+function extractPictureBlob(tags){
+
+    if(!tags || !tags.picture){
+        return null;
+    }
+
+    const picture = tags.picture;
+
+    if(!picture.data || !picture.data.length){
+        return null;
+    }
+
+    try{
+
+        const bytes = new Uint8Array(picture.data);
+
+        // format(image/jpeg 等)が入っていない場合に備え、既定値を用意します
+        const mimeType = picture.format || "image/jpeg";
+
+        return new Blob([bytes],{type:mimeType});
+
+    }
+    catch(error){
+        console.error("画像データの組み立てに失敗 :",error.name,error.message);
+        return null;
+    }
+
+}
+
+/**
+ * 画像を指定サイズの正方形に縮小します。
+ *
+ * 【なぜ縮小するのか】
+ * 元のジャケット画像は600×600px以上(数百KB〜1MB)が普通です。
+ * 一覧に44pxで表示するだけなのに原寸で保存すると、
+ * 数百曲でDBが数百MBに膨れ上がってしまいます。
+ *
+ * 【正方形に切り取る理由】
+ * ジャケットは正方形が多いものの、まれに横長・縦長の画像もあります。
+ * そのまま縮めると絵が歪むため、中央を正方形に切り取ってから縮小します
+ * (写真アプリのサムネイルと同じ考え方)。
+ */
+async function shrinkImageBlob(blob,size,quality){
+
+    let bitmap = null;
+
+    try{
+
+        /*
+        createImageBitmap は、画像データを「描画に使える形」に
+        変換してくれる標準の命令です。
+        <img>タグを作って読み込みを待つ昔ながらの方法より速く、
+        まとめて処理する時に向いています。
+        */
+        bitmap = await createImageBitmap(blob);
+
+        /*
+        canvas(キャンバス)は、JavaScriptから絵を描ける画用紙です。
+        画面には表示せず、縮小した画像を作るための作業台として使います。
+        */
+        const canvas = document.createElement("canvas");
+        canvas.width = size;
+        canvas.height = size;
+
+        const context = canvas.getContext("2d");
+
+        // 元画像の短い方の辺に合わせて、中央から正方形に切り取ります
+        const sourceSize = Math.min(bitmap.width,bitmap.height);
+        const sourceX = (bitmap.width - sourceSize) / 2;
+        const sourceY = (bitmap.height - sourceSize) / 2;
+
+        /*
+        drawImage の引数は
+            (元画像, 切り取るX, 切り取るY, 切り取る幅, 切り取る高さ,
+             描く先のX, 描く先のY, 描く先の幅, 描く先の高さ)
+        です。切り取りと縮小を一度に行っています。
+        */
+        context.drawImage(
+            bitmap,
+            sourceX,sourceY,sourceSize,sourceSize,
+            0,0,size,size
+        );
+
+        // canvasの内容を、保存できるJPEGファイルの形に変換します
+        return await new Promise(function(resolve){
+
+            canvas.toBlob(
+                function(result){ resolve(result); },
+                "image/jpeg",
+                quality
+            );
+
+        });
+
+    }
+    catch(error){
+        console.error("画像の縮小に失敗 :",error.name,error.message);
+        return null;
+    }
+    finally{
+
+        /*
+        finally は「成功しても失敗しても最後に必ず実行する」ブロックです。
+        close() は画像が使っていたメモリを解放する命令で、
+        何百曲も処理する今回のようなケースでは必ず呼ぶべきものです。
+        */
+        if(bitmap && typeof bitmap.close === "function"){
+            bitmap.close();
+        }
 
     }
 
