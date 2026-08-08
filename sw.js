@@ -1,4 +1,4 @@
-const CACHE_NAME = 'norirun-v68';
+const CACHE_NAME = 'norirun-v69';
 
 const ASSETS = [
   'index.html',
@@ -10,7 +10,13 @@ const ASSETS = [
   'manifest.json',
   'icon-192.png',
   'icon-512.png',
-  'click.wav'
+  'click.wav',
+
+  // 外部ライブラリ(音楽メタデータ解析用)。
+  // CDNから読み込まずリポジトリに同梱しているのは、ランニング中=電波が
+  // 悪い場所で使うアプリのため。ここに登録してキャッシュさせることで、
+  // 圏外でもタイトルやジャケットの取得が動く。
+  'lib/jsmediatags.min.js'
 ];
 
 // インストール時にファイルをキャッシュに保存するぜ

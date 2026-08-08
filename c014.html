@@ -88,6 +88,31 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
       見えなくなる・押せなくなるため(竹弘の要望、2026-08-08)。
       上下の比率(現在は50:50)は仮の値で、今後調整する前提。
 
+    (v69)【STEP A】曲情報(メタデータ)の表示機能を追加。
+
+    ・外部ライブラリ jsmediatags(BSD 3-Clause)を lib/ に同梱して導入
+    ・音楽ファイルのタグから タイトル / アーティスト名 を取得
+    ・曲の長さは audio要素で実測(タグのTLENは信頼できないため、
+      一般的な音楽プレイヤーと同じ方式。竹弘の指示による)
+    ・曲一覧の1行を2行構成に変更
+        1行目 : タイトル
+        2行目 : 曲の長さ(**.** / 1時間超は *.**.**)+ 空白 + アーティスト名
+    ・music_library に is_meta_analyzed / is_cover_analyzed を追加
+      (docs/db-schema.md を v2.2 に更新済み)
+    ・解析状況ランプ(#ofs-lamp)を legacy の OFS Ver1.1 から移植。
+      ただし legacy版は固定ウェイトの「演出シミュレーター」で実処理が
+      無かったため、実際の解析の進捗に連動する作りに変更した
+    ・1曲解析するたびに「その行だけ」差し替える方式にした
+      (legacy版はリスト全体を作り直しておりO(n²)で重くなる作りだった)
+
+    取得できなかった時の扱い(竹弘の指示):
+        タイトル      → ファイル名を表示
+        アーティスト  → 何も表示しない
+        曲の長さ      → 何も表示しない
+
+    ※ ジャケット画像の取得・表示は STEP B(v70)で実装予定。
+      ランプのフェーズ2(緑・ジャケ写同期)もその時に有効化する。
+
 ======================================================================
 -->
 <!DOCTYPE html>
@@ -109,7 +134,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v68)ノリRun
+        (v69)ノリRun
         メインメニュー
 
     </title>
@@ -254,10 +279,76 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             overflow:hidden;
         }
 
-        /* タイトル部分。中身が固定なので縮ませません(flex-shrink:0) */
+        /*
+        タイトル部分。中身が固定なので縮ませません(flex-shrink:0)。
+
+        position:relative を付けているのは、この中の右上に
+        解析状況ランプ(#ofs-lamp)を絶対配置するための基準にするためです。
+        */
         .header-card{
             flex-shrink:0;
             padding:10px 16px;
+            position:relative;
+        }
+
+        /* ======================================================
+           解析状況ランプ(OFS Ver1.1より移植)
+
+           曲データの解析が裏で進んでいることを、画面右上の
+           小さなランプで知らせます。3段階で色と文言が変わり、
+           全部終わると5秒後にフワッと消えます。
+        ====================================================== */
+
+        #ofs-lamp{
+            position:absolute;
+            top:8px;
+            right:8px;
+
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            gap:6px;
+
+            /*
+            元のOFSは width:145px の固定幅でしたが、
+            解析の進捗(3/50 など)も出すようにしたため、
+            最低幅だけ確保して横に伸びられるようにしています。
+            右上を基準に配置しているので、幅が伸びても
+            ランプのアイコン位置は右端で動きません。
+            */
+            min-width:145px;
+            width:auto;
+
+            padding:4px 8px;
+            border-radius:6px;
+            font-size:0.72rem;
+            font-weight:bold;
+            box-sizing:border-box;
+
+            /* フェーズ3完了時に、フワッと消えるためのアニメ設定 */
+            transition:opacity 0.5s ease;
+
+            /* ランプの下にある文字をタップできるよう、当たり判定を無効化 */
+            pointer-events:none;
+            z-index:10;
+        }
+
+        /* フェーズ1用:速い点滅(0.25秒サイクル) */
+        @keyframes blink-fast{
+            0%,100%{opacity:1;}
+            50%{opacity:0.1;}
+        }
+        .blink-fast{
+            animation:blink-fast 0.25s infinite;
+        }
+
+        /* フェーズ2用:普通のテンポの点滅(0.8秒サイクル) */
+        @keyframes blink-normal{
+            0%,100%{opacity:1;}
+            50%{opacity:0.2;}
+        }
+        .blink-normal{
+            animation:blink-normal 0.8s infinite;
         }
 
         h1{
@@ -448,18 +539,48 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             flex-shrink:0;
         }
 
-        .title-area{
-            flex:3;
+        /* ======================================================
+           曲情報エリア(2行構成)
+
+           竹弘の指示による1行の割り当て:
+
+             [ノリ注ボタン:1] [ 曲情報エリア:残り全部 ] [並び替え:1]
+                                    ↑
+                          1行目 … タイトル
+                          2行目 … 曲の長さ + 空白 + アーティスト名
+                          右端  … ジャケット画像(取得できた時だけ)
+        ====================================================== */
+
+        /*
+        以前は .title-area(flex:3)と .artist-area(flex:2)で
+        横に2分割していましたが、曲の長さとジャケット画像が加わったため、
+        「1つのエリアの中を2行に分ける」構成へ変更しました。
+        */
+        .info-area{
+            flex:1;
             min-width:0;
-            padding:0 10px;
+            display:flex;
+            align-items:center;
+            padding:0 8px;
             overflow:hidden;
-            white-space:nowrap;
+            gap:6px;
         }
 
-        .artist-area{
-            flex:2;
+        /*
+        テキスト2行を縦に積むブロックです。
+        min-width:0 は、長い曲名が入った時に
+        このブロックが横に膨らんでジャケット画像を
+        押し出してしまうのを防ぐための指定です
+        (flexアイテムは既定で「中身より狭くならない」ため)。
+        */
+        .text-block{
+            flex:1;
             min-width:0;
-            padding:0 6px;
+            overflow:hidden;
+        }
+
+        /* 1行目・2行目。どちらも1行に収め、はみ出しは隠します */
+        .info-line{
             overflow:hidden;
             white-space:nowrap;
         }
@@ -477,6 +598,36 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             font-size:0.75rem;
             color:var(--text-sub);
             pointer-events:none;
+        }
+
+        /*
+        曲の長さの表示部分。
+
+        font-variant-numeric:tabular-nums は、数字の文字幅を
+        すべて同じに揃える指定です(表計算ソフトの数字と同じ考え方)。
+        これが無いと「1」と「8」で幅が変わり、曲ごとに
+        アーティスト名の開始位置がガタガタずれて見えます。
+        */
+        .duration-text{
+            font-variant-numeric:tabular-nums;
+        }
+
+        /*
+        ジャケット画像。竹弘の指示通り「割合1」=ボタンと同じ44px角で、
+        並び替えボタンの左隣(=曲情報エリアの右端)に配置します。
+
+        margin-left:auto は「左側の余白を可能な限り広げる」という意味で、
+        結果としてこの画像だけが右端へ押し出されます
+        (flexboxで右寄せしたい時の定番の書き方)。
+        */
+        .jacket-img{
+            width:44px;
+            height:44px;
+            border-radius:6px;
+            object-fit:cover;
+            margin-left:auto;
+            flex-shrink:0;
+            background:#e5e5ea;
         }
 
         /* 長いタイトルをタップした時に横スクロールで見せる演出 */
@@ -590,6 +741,17 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <div id="upper-area">
 
         <div class="card header-card">
+
+            <!--
+                解析状況ランプ。起動時は非表示で、
+                未解析の曲がある時だけJSから表示します。
+                (全曲すでに解析済みなら出さない=最速起動)
+            -->
+            <div id="ofs-lamp" style="display:none;">
+                <span id="ofs-lamp-text"></span>
+                <span id="ofs-lamp-icon"></span>
+            </div>
+
             <h1>ノリRun</h1>
             <p class="sub-title">メインメニュー</p>
         </div>
@@ -673,13 +835,16 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     たためるようにしました(つまみをタップで開閉)。
     起動時は最小化した状態から始まります。
 
-    最小化した時の置き場所を「右上」にしているのには理由があります。
-    右下に置くと、曲一覧の一番下の行にある並び替えボタン(右端)に
-    重なってしまい、指で掴めなくなるためです。
-    画面右上は今のところ何も操作するものが無いので、ここに逃がします。
+    最小化した時の置き場所を「左上」にしているのには理由があります。
+
+    ・右下 … 曲一覧の一番下の行の並び替えボタンに重なり、掴めなくなる
+    ・左下 … 一番下の行の再生ボタンに重なる
+    ・右上 … 解析状況ランプ(#ofs-lamp)と衝突する
+    ・左上 … タイトル「ノリRun」は中央寄せなので、ここだけ何も無い ← 採用
+
     */
     #debug-log-panel.minimized{
-        left:auto; right:6px;
+        right:auto; left:6px;
         bottom:auto; top:6px;
         width:auto; height:auto;
         border-radius:20px;
@@ -777,6 +942,26 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
 <!-- ================================================================
      【開発用デバッグログパネル】ここまで
 ================================================================ -->
+
+<!--
+================================================================
+ 外部ライブラリ jsmediatags の読み込み
+
+ 音楽ファイルの中に埋め込まれているメタデータ(タグ情報)を
+ 読み取るためのライブラリです。
+
+ ・タイトル、アーティスト名、ジャケット画像を取り出せる
+ ・MP3(ID3v1/v2)、M4A/MP4、FLAC、OGG に対応している
+ ・日本語タグで使われるUTF-16などの文字コードも自動判別してくれる
+
+ ライセンスは BSD 3-Clause(商用販売可)。
+ CDNから読み込まず lib/ に同梱しているのは、ランニング中=電波が
+ 悪い場所で使うアプリのため。詳細は docs/licenses.md を参照。
+
+ このscriptタグを書くと、JSから window.jsmediatags として使えます。
+================================================================
+-->
+<script src="lib/jsmediatags.min.js"></script>
 
 <script>
 
@@ -1016,6 +1201,23 @@ async function loadMenuData(){
 
     renderList();
 
+    /*
+    曲一覧を先に表示してから、裏でメタデータの解析を進めます。
+
+    ここで await を付けずに呼んでいるのが重要な点です。
+    await を付けると解析が全部終わるまで次の処理に進めませんが、
+    付けないことで「一覧はすぐ操作できる状態にしたまま、
+    裏で解析だけが進んでいく」形になります。
+    竹弘の「曲再生機能を妨げない最速起動」の方針そのものです。
+
+    ただし await を付けない場合、途中でエラーが起きても誰も
+    受け止めないまま消えてしまうため、.catch() で拾って
+    ログに残すようにしています。
+    */
+    startMetadataEngine().catch(function(error){
+        console.error("メタデータ解析エンジンで予想外のエラー :",error);
+    });
+
 }
 
 
@@ -1036,48 +1238,158 @@ function renderList(){
 
     currentOrderList.forEach(function(trackId){
 
-        const track = libraryMap[trackId];
-        if(!track){ return; }
-
-        const displayTitle = track.title || track.file_name;
-        const displayArtist = track.artist || "";
-
-        const row = document.createElement("div");
-        row.className = "music-row";
-        row.dataset.trackId = trackId;
-
-        row.innerHTML =
-            "<button class='square-btn play-btn'>▶️</button>" +
-            "<div class='title-area'>" +
-                "<span class='scroll-text'>" + escapeHtml(displayTitle) + "</span>" +
-            "</div>" +
-            "<div class='artist-area'>" +
-                "<span class='artist-text'>" + escapeHtml(displayArtist) + "</span>" +
-            "</div>" +
-            "<button class='square-btn sort-handle'>" +
-                "<svg width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'>" +
-                    "<line x1='12' y1='2' x2='12' y2='22'></line>" +
-                    "<polyline points='7 7 12 2 17 7'></polyline>" +
-                    "<polyline points='7 17 12 22 17 17'></polyline>" +
-                "</svg>" +
-            "</button>";
-
-        const playBtn = row.querySelector(".play-btn");
-        playBtn.addEventListener("click",function(){
-            playTrack(trackId);
-        });
-
-        const titleArea = row.querySelector(".title-area");
-        const artistArea = row.querySelector(".artist-area");
-        titleArea.addEventListener("click",function(){ triggerMarquee(titleArea); });
-        artistArea.addEventListener("click",function(){ triggerMarquee(artistArea); });
-
-        const sortHandle = row.querySelector(".sort-handle");
-        bindDragAndDropEvents(row,sortHandle);
-
-        menuListEl.appendChild(row);
+        const row = createRowElement(trackId);
+        if(row){ menuListEl.appendChild(row); }
 
     });
+
+}
+
+/*
+1曲分の行(.music-row)を作って返します。
+
+renderList()から切り出して独立した関数にしたのは、
+メタデータの解析が終わった曲を「その行だけ」差し替えたいためです。
+
+【なぜ「その行だけ」にこだわるのか】
+OFS Ver1.1(legacy)では、1曲解析するたびにリスト全体を作り直して
+いました。100曲だと延べ5,050回も行を作ることになり、曲数が増えるほど
+二次関数的に重くなります(いわゆるO(n²)問題)。
+1曲=1行だけ差し替えれば、何百曲になっても速度が落ちません。
+*/
+function createRowElement(trackId){
+
+    const track = libraryMap[trackId];
+    if(!track){ return null; }
+
+    const row = document.createElement("div");
+    row.className = "music-row";
+    row.dataset.trackId = trackId;
+
+    row.innerHTML =
+        "<button class='square-btn play-btn'>▶️</button>" +
+        "<div class='info-area'>" +
+            "<div class='text-block'>" +
+                "<div class='info-line line-title'>" +
+                    "<span class='scroll-text'>" + escapeHtml(buildTitleText(track)) + "</span>" +
+                "</div>" +
+                "<div class='info-line line-meta'>" +
+                    "<span class='artist-text'>" + buildMetaHtml(track) + "</span>" +
+                "</div>" +
+            "</div>" +
+        "</div>" +
+        "<button class='square-btn sort-handle'>" +
+            "<svg width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'>" +
+                "<line x1='12' y1='2' x2='12' y2='22'></line>" +
+                "<polyline points='7 7 12 2 17 7'></polyline>" +
+                "<polyline points='7 17 12 22 17 17'></polyline>" +
+            "</svg>" +
+        "</button>";
+
+    const playBtn = row.querySelector(".play-btn");
+    playBtn.addEventListener("click",function(){
+        playTrack(trackId);
+    });
+
+    // 1行目・2行目それぞれ、タップすると横スクロールで全文を見せます。
+    const lineTitle = row.querySelector(".line-title");
+    const lineMeta = row.querySelector(".line-meta");
+    lineTitle.addEventListener("click",function(){ triggerMarquee(lineTitle); });
+    lineMeta.addEventListener("click",function(){ triggerMarquee(lineMeta); });
+
+    const sortHandle = row.querySelector(".sort-handle");
+    bindDragAndDropEvents(row,sortHandle);
+
+    return row;
+
+}
+
+/*
+1行目に出す文字を決めます。
+
+竹弘の指示:
+    「タイトルが取得できない時は、ファイル名を表示する仕様とします」
+
+c013の登録時点で title には file_name が入っているため、
+通常はそのままでも表示できますが、タグ解析で空文字が
+入ってしまった場合の保険としても || で受け止めています。
+*/
+function buildTitleText(track){
+    return track.title || track.file_name || "(名称不明)";
+}
+
+/*
+2行目に出すHTMLを組み立てます。
+
+竹弘の指示:
+    「1行目をタイトル、2行目を曲長さ(時分秒対応**.**.**)表示の後ろに
+      1ブランク空けてアーティスト名とする」
+    「アーティスト名が取得できない時は、何も表示しません」
+
+曲の長さだけ数字の幅を揃えたい(.duration-text)ので、
+文字列ではなくHTMLとして組み立てています。
+*/
+function buildMetaHtml(track){
+
+    const durationText = formatDuration(track.duration);
+    const artistText = track.artist || "";
+
+    let html = "";
+
+    if(durationText !== ""){
+        html = "<span class='duration-text'>" + durationText + "</span>";
+    }
+
+    if(artistText !== ""){
+        // 曲の長さとアーティスト名の間に、指示通り空白を1つ入れます。
+        // &nbsp; ではなく通常の空白でよいのは、HTMLの空白が詰められるのは
+        // 「連続した空白」の場合だけで、1つなら維持されるためです。
+        if(html !== ""){ html = html + " "; }
+        html = html + escapeHtml(artistText);
+    }
+
+    return html;
+
+}
+
+/*
+秒数を「時.分.秒」の文字列に変換します。
+
+竹弘の指示により、区切り文字は一般的な「:」ではなく「.」を使います。
+1時間未満の曲は「分.秒」の2枠、1時間を超える曲だけ「時.分.秒」の3枠。
+
+    222秒   → "03.42"
+    725秒   → "12.05"
+    3872秒  → "1.04.32"
+
+まだ解析していない(duration が 0)場合は空文字を返し、
+2行目には何も表示しません。解析が済んだ時点で数字が現れます。
+*/
+function formatDuration(seconds){
+
+    // 数値として扱えない値・0以下・無限大(Infinity)を弾きます。
+    // isFiniteは「ちゃんと有限の数値か」を判定する標準関数です。
+    if(!seconds || !isFinite(seconds) || seconds <= 0){
+        return "";
+    }
+
+    const total = Math.round(seconds);
+
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    const secs = total % 60;
+
+    // padStart(2,"0") は「2桁になるまで先頭に0を足す」という命令です。
+    // (例: "5" → "05")
+    function pad2(value){
+        return String(value).padStart(2,"0");
+    }
+
+    if(hours > 0){
+        return hours + "." + pad2(minutes) + "." + pad2(secs);
+    }
+
+    return pad2(minutes) + "." + pad2(secs);
 
 }
 
@@ -1530,7 +1842,411 @@ window.addEventListener("pointercancel",clearAllDraggingStates);
 
 
 // ==========================================================
-// 6. 画面起動
+// 6. メタデータ解析エンジン(3フェーズ演出つき)
+// ==========================================================
+/*
+音楽ファイルの中に埋め込まれているメタデータ(タグ情報)を読み取り、
+music_libraryへ保存し、画面の表示を更新します。
+
+【legacy(OFS Ver1.1)からの設計変更点】
+
+legacyの3フェーズ演出は「シミュレーター」で、実際のタグ読み取りは
+行っておらず、150ms・400msの固定ウェイトで見た目だけを再現していました。
+そのままの作りにすると、100曲で15秒+40秒の「ただ待つだけの時間」が
+発生し、竹弘の「最速起動」方針と矛盾します。
+
+そこで固定ウェイトは全て外し、ランプを「実際の解析の進捗」に
+連動させる作りに変更しました。演出の見え方は変わりませんが、
+1曲ずつ表示が書き換わっていくのが本物の処理になります。
+
+【解析済みの曲は二度と解析しない】
+is_meta_analyzed フラグで判定します。全曲解析済みなら
+ランプすら出さずに終了するため、2回目以降の起動は一瞬です。
+*/
+
+// 現在のランプのフェーズ(0:非表示, 1:文字取込, 2:ジャケ写, 3:完了)
+let lampPhase = 0;
+
+/**
+ * 未解析の曲を順番に解析していきます。
+ */
+async function startMetadataEngine(){
+
+    // まだ解析していない曲だけを集めます。
+    const targets = currentOrderList.filter(function(trackId){
+        const track = libraryMap[trackId];
+        return track && !track.is_meta_analyzed;
+    });
+
+    if(targets.length === 0){
+        console.log("メタデータは全曲解析済み(ランプは表示しません)");
+        return;
+    }
+
+    console.log("メタデータ未解析 :",targets.length,"曲");
+
+    let doneCount = 0;
+    setLampPhase(1,doneCount,targets.length);
+
+    /*
+    for...of で1曲ずつ順番に処理します。
+
+    あえて同時並行(Promise.all)にしていないのは、
+    ・何十曲も同時にファイルを開くと端末のメモリを圧迫する
+    ・1曲ずつ順に表示が変わっていく方が、竹弘の狙った演出になる
+    という2つの理由からです。
+    */
+    for(const trackId of targets){
+
+        await analyzeOneTrack(trackId);
+
+        doneCount = doneCount + 1;
+        setLampPhase(1,doneCount,targets.length);
+
+    }
+
+    console.log("メタデータ解析完了 :",doneCount,"曲");
+
+    /*
+    STEP B(次のバージョン)では、この位置にフェーズ2
+    (ジャケット画像の取得・緑ランプ)を挟みます。
+    現時点では文字情報の取得だけなので、そのまま完了へ進みます。
+    */
+    setLampPhase(3);
+
+}
+
+/**
+ * 1曲分のメタデータを解析して、DBと画面に反映します。
+ */
+async function analyzeOneTrack(trackId){
+
+    const track = libraryMap[trackId];
+
+    if(!track || !track.file_handle){
+        return;
+    }
+
+    try{
+
+        /*
+        ファイルを読む前に、必ず権限を確認し直します。
+        c013の権限バグ、および再生処理(playTrack)と全く同じ理由です
+        (ページ遷移でJSの実行コンテキストがリセットされるため)。
+        */
+        let permission = await track.file_handle.queryPermission({mode:"read"});
+
+        if(permission !== "granted"){
+            permission = await track.file_handle.requestPermission({mode:"read"});
+        }
+
+        if(permission !== "granted"){
+            console.error("解析中止(権限なし) :",track.file_name);
+            return;
+        }
+
+        const file = await track.file_handle.getFile();
+
+        // --- ① タグから タイトル と アーティスト名 を取得 ---
+        const tags = await readTagsFromFile(file);
+
+        if(tags){
+
+            // trim() は文字列の前後の余分な空白を削る命令です。
+            // タグには末尾に空白が入っていることがよくあります。
+            if(tags.title){
+                track.title = String(tags.title).trim();
+            }
+            if(tags.artist){
+                track.artist = String(tags.artist).trim();
+            }
+
+        }
+
+        // タイトルが取れなければファイル名を使う(竹弘の指示)
+        if(!track.title){
+            track.title = track.file_name;
+        }
+
+        // --- ② 曲の長さを実測 ---
+        const measured = await measureDuration(file);
+
+        if(measured > 0){
+            track.duration = measured;
+        }
+
+        // --- ③ 解析済みの印を付けてDBへ保存 ---
+        track.is_meta_analyzed = true;
+
+        await idbPut(STORE_MUSIC,track);
+
+        // --- ④ 画面のその行だけを差し替え ---
+        refreshRow(trackId);
+
+    }
+    catch(error){
+
+        /*
+        1曲の失敗で全体を止めないよう、ここで受け止めて次の曲へ進みます。
+        is_meta_analyzed を立てないままにしているので、
+        次回の起動時にもう一度挑戦されます
+        (一時的な権限エラーなら次は成功するため)。
+        */
+        console.error(
+            "解析失敗 :",
+            track.file_name,
+            error.name,
+            error.message
+        );
+
+    }
+
+}
+
+/**
+ * jsmediatagsでタグを読み取ります。
+ *
+ * setTagsToRead(["title","artist"]) で読む項目を絞っているのは、
+ * ジャケット画像(picture)の読み込みを意図的に省いて速くするためです。
+ * 画像はデータ量が大きく、文字情報より明確に重い処理になります。
+ * (ジャケットはSTEP Bで、フェーズ2として別途取得します)
+ */
+function readTagsFromFile(file){
+
+    return new Promise(function(resolve){
+
+        /*
+        jsmediatagsは「終わったらこの関数を呼んでね」というコールバック
+        方式のライブラリで、そのままではawaitで待てません。
+        そこでPromiseで包んで、awaitできる形に変換しています
+        (コールバックをPromise化する定番の書き方)。
+
+        失敗時もrejectせずresolve(null)にしているのは、
+        タグが無いファイルは珍しくなく、それを「エラー」として
+        扱うと解析全体が止まってしまうためです。
+        */
+        try{
+
+            new jsmediatags.Reader(file)
+                .setTagsToRead(["title","artist"])
+                .read({
+                    onSuccess:function(result){
+                        resolve(result && result.tags ? result.tags : null);
+                    },
+                    onError:function(error){
+                        console.log("タグなし/読み取り不可 :",file.name);
+                        resolve(null);
+                    }
+                });
+
+        }
+        catch(error){
+            console.log("タグ読み取りで例外 :",file.name);
+            resolve(null);
+        }
+
+    });
+
+}
+
+/**
+ * 曲の長さ(秒)を実測します。
+ *
+ * 竹弘の指示「曲の長さが取得できない時は、一般的なプレイヤーと
+ * 同じように算出表示する」への対応です。
+ *
+ * タグの中にも長さの情報(TLENフレーム)を持てる仕様はありますが、
+ * 実際には入っていないファイルが多く、入っていても値が
+ * 信頼できないことが知られています。そのため一般的な音楽プレイヤーは
+ * 音声そのものを読んで長さを測っています。ここでも同じ方式を採ります。
+ */
+function measureDuration(file){
+
+    return new Promise(function(resolve){
+
+        const url = URL.createObjectURL(file);
+
+        // new Audio() は、画面に出さない再生用の部品を作る命令です。
+        const probe = new Audio();
+
+        /*
+        preload="metadata" は「曲全体ではなく、長さなどの基本情報だけ
+        読み込む」指定です。曲を丸ごと読むより大幅に速く終わります。
+        */
+        probe.preload = "metadata";
+
+        // 二重に終了処理が走らないようにする見張り役のフラグです。
+        let settled = false;
+
+        function finish(value){
+
+            if(settled){ return; }
+            settled = true;
+
+            clearTimeout(timer);
+
+            // 使い終わった一時URLを解放します(放置するとメモリを食い続けます)
+            URL.revokeObjectURL(url);
+
+            resolve(value);
+
+        }
+
+        /*
+        コーデック非対応のファイルなどで、成功も失敗もせず
+        永久に待たされてしまうことへの保険です。
+        8秒で諦めて0(=長さ不明)として次へ進みます。
+        */
+        const timer = setTimeout(function(){
+            console.log("長さの測定がタイムアウト :",file.name);
+            finish(0);
+        },8000);
+
+        // 長さなどの基本情報が読めた時に呼ばれます。
+        probe.onloadedmetadata = function(){
+            finish(probe.duration);
+        };
+
+        probe.onerror = function(){
+            finish(0);
+        };
+
+        probe.src = url;
+
+    });
+
+}
+
+/**
+ * 指定した曲の行だけを作り直して差し替えます。
+ */
+function refreshRow(trackId){
+
+    /*
+    querySelectorに文字列を埋め込む方式は、track_idに記号が
+    含まれていた場合に壊れる恐れがあるため、
+    地道に全行を見て一致するものを探しています。
+    (曲数が数百でも、DOMを作り直すより軽い処理です)
+    */
+    const rows = menuListEl.querySelectorAll(".music-row");
+
+    let targetRow = null;
+
+    for(const row of rows){
+        if(row.dataset.trackId === trackId){
+            targetRow = row;
+            break;
+        }
+    }
+
+    if(!targetRow){ return; }
+
+    /*
+    掴んでドラッグしている最中の行は差し替えません。
+    浮遊中の行を作り直すと、指との位置関係や
+    並び替えの状態が壊れてしまうためです。
+    */
+    if(targetRow === draggingRow){ return; }
+
+    const newRow = createRowElement(trackId);
+    if(!newRow){ return; }
+
+    // replaceWith は「この要素を別の要素と入れ替える」標準の命令です。
+    targetRow.replaceWith(newRow);
+
+}
+
+/**
+ * 解析状況ランプの表示を切り替えます。
+ *
+ * phase 1 … 黄・速い点滅  「曲データ取込中」
+ * phase 2 … 緑・普通の点滅「ジャケ写同期」(STEP Bで使用)
+ * phase 3 … 青・常時点灯  「全工程完了」→5秒後に消滅
+ */
+function setLampPhase(phase,doneCount,totalCount){
+
+    const lamp = document.getElementById("ofs-lamp");
+    const lampText = document.getElementById("ofs-lamp-text");
+    const lampIcon = document.getElementById("ofs-lamp-icon");
+
+    if(!lamp || !lampText || !lampIcon){ return; }
+
+    lampPhase = phase;
+
+    lamp.style.display = "flex";
+    lamp.style.opacity = "1";
+
+    if(phase === 1){
+
+        lamp.style.background = "#fff9e6";
+        lamp.style.color = "#ff9500";
+        lampText.innerText = "曲データ取込中" + buildProgressText(doneCount,totalCount);
+        lampIcon.innerText = "🟡";
+        lampIcon.className = "blink-fast";
+
+    }
+    else if(phase === 2){
+
+        lamp.style.background = "#f2fbe6";
+        lamp.style.color = "#34c759";
+        lampText.innerText = "ジャケ写同期" + buildProgressText(doneCount,totalCount);
+        lampIcon.innerText = "🟢";
+        lampIcon.className = "blink-normal";
+
+    }
+    else if(phase === 3){
+
+        lamp.style.background = "#e6f6ff";
+        lamp.style.color = "#007aff";
+        lampText.innerText = "全工程完了";
+        lampIcon.innerText = "🔵";
+
+        // classNameを空にして点滅アニメを解除し、常時点灯にします。
+        lampIcon.className = "";
+
+        hideLampAfterDelay();
+
+    }
+
+}
+
+/*
+「3/50」のような進捗の文字を作ります。
+解析対象が無い場合は何も付けません。
+*/
+function buildProgressText(doneCount,totalCount){
+
+    if(!totalCount){ return ""; }
+
+    return " " + doneCount + "/" + totalCount;
+
+}
+
+/*
+完了の余韻を5秒キープしてから、0.5秒かけてフワッと消します。
+(CSSのtransition:opacityが効くため、opacityを0にするだけで
+ 滑らかに消えていきます)
+*/
+function hideLampAfterDelay(){
+
+    setTimeout(function(){
+
+        const lamp = document.getElementById("ofs-lamp");
+        if(!lamp){ return; }
+
+        lamp.style.opacity = "0";
+
+        setTimeout(function(){
+            lamp.style.display = "none";
+        },500);
+
+    },5000);
+
+}
+
+
+// ==========================================================
+// 7. 画面起動
 // ==========================================================
 
 loadMenuData();
