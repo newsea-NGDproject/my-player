@@ -1,4 +1,4 @@
-const CACHE_NAME = 'norirun-v70';
+const CACHE_NAME = 'norirun-v71';
 
 const ASSETS = [
   'index.html',
@@ -27,10 +27,41 @@ self.addEventListener('install', e => {
   self.skipWaiting();
 
   e.waitUntil(
-    caches.open(CACHE_NAME).then(cache => {
+    (async () => {
+      const cache = await caches.open(CACHE_NAME);
+
       console.log('アセットをキャッシュ中...');
-      return cache.addAll(ASSETS);
-    })
+
+      /*
+      【v71で修正した重要な落とし穴】
+
+      以前はここで cache.addAll(ASSETS) を使っていた。
+      addAll は「全部まとめて登録」する便利な命令だが、
+      リストの中に1つでも取得できないファイルがあると
+      全体が失敗し、その結果 Service Worker の
+      インストールごと失敗してしまう。
+
+      実際にv70で事故が起きた。ASSETSに追加した
+      lib/jsmediatags.min.js がサーバー上に無かったため、
+      Service Workerが更新できない状態に陥り、
+      「CACHE_NAMEを繰り上げたのに古いコードが動き続ける」
+      という分かりにくい不具合になった。
+
+      そこで1ファイルずつ登録し、失敗しても
+      ログを残して次に進む方式に変更した。
+      これなら1つ足りなくてもアプリ本体は動く。
+      */
+      for (const asset of ASSETS) {
+        try {
+          // cache.add は「取得してキャッシュに保存」を1件だけ行う命令
+          await cache.add(asset);
+        } catch (error) {
+          console.error('キャッシュ失敗(処理は続行):', asset, error);
+        }
+      }
+
+      console.log('キャッシュ完了');
+    })()
   );
 });
 
