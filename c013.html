@@ -135,6 +135,12 @@ c014以降で実施する。
     登録処理の完了後、次画面のc014.html(メインメニュー)へ
     自動的に進むようにした
 
+    (v67)
+    .nomedia / .database など音楽ファイルではないものが
+    誤って登録される不具合を修正(拡張子フィルタisAudioFile()を追加)。
+    デバッグログパネルがError/DOMExceptionの中身({}に見えて
+    しまう問題)を正しく表示できるよう修正
+
 ======================================================================
 -->
 <!DOCTYPE html>
@@ -166,7 +172,7 @@ c014以降で実施する。
     <!-- ブラウザタイトル -->
     <title>
 
-        (v66)ノリRun
+        (v67)ノリRun
         Musicフォルダ データ登録
 
     </title>
@@ -543,10 +549,22 @@ console.log(...) の呼び出しは
 
             function(value){
 
+                if(value instanceof Error){
+
+                    /*
+                    ErrorやDOMExceptionは、
+                    JSON.stringifyすると中身が空({})に
+                    見えてしまうため、name(エラーの種類)と
+                    message(内容)を直接取り出して表示します。
+                    */
+                    return value.name + ": " + value.message;
+
+                }
+
                 if(typeof value === "object" && value !== null){
 
                     /*
-                    FileSystemHandleやErrorなどは
+                    FileSystemHandleなどは
                     中身が空に見えることがありますが、
                     今回の確認用途(ファイル名の一覧確認)
                     では文字列の引数がそのまま
@@ -710,6 +728,47 @@ const STORE_FOLDER_ROOTS = "folder_roots";
 // ------------------------------
 
 const ROOT_MUSIC_ID = "root_music";
+
+// ------------------------------
+// 音楽ファイルとして扱う拡張子
+//
+// Musicフォルダの中には、
+// .nomedia(Androidが「この中身は音楽一覧に出さないで」
+// と伝えるための目印ファイル)や、
+// .database(何らかのアプリが残した管理用ファイル)のような、
+// 曲ではないファイルが混ざっていることがあります。
+//
+// これらは名前が「.」で始まるため、
+// 多くのファイラーアプリでは隠しファイルとして
+// 表示されず気づきにくいですが、
+// スキャン処理は隠しファイルかどうかを区別しないので、
+// 拡張子で「音楽ファイルかどうか」を判定します。
+// ------------------------------
+
+const AUDIO_EXTENSIONS = [
+    ".mp3",
+    ".m4a",
+    ".wav",
+    ".aac",
+    ".ogg",
+    ".flac",
+    ".wma",
+    ".aiff"
+];
+
+/*
+ファイル名の拡張子が、
+音楽ファイルとして扱ってよいものかを判定する関数です。
+*/
+function isAudioFile(fileName){
+
+    const lowerName = fileName.toLowerCase();
+
+    return AUDIO_EXTENSIONS.some(function(extension){
+        return lowerName.endsWith(extension);
+    });
+
+}
 
 // ==========================================================
 // 1. 画面部品取得
@@ -1826,6 +1885,32 @@ async function checkMusicFolder(){
                 fileEntry.name
 
             );
+
+            /*
+            ======================================================
+            音楽ファイルかどうかを判定します。
+            ======================================================
+
+            .nomedia や .database のような、
+
+            曲ではないファイルが混ざっている場合は
+
+            対象外にします。
+            */
+
+            if(!isAudioFile(fileEntry.name)){
+
+                console.log(
+
+                    "音楽ファイルではないため対象外 :",
+
+                    fileEntry.name
+
+                );
+
+                continue;
+
+            }
 
             /*
             ======================================================
