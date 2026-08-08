@@ -63,6 +63,12 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
 2026-08-03
     新規作成。曲一覧表示・再生・OFS移植による並び替えを実装(v66)
 
+    (v67)
+    再生失敗時のエラーメッセージを、権限切れとコーデック非対応(play()の
+    失敗、およびaudio要素のonerror)で区別できるよう修正。
+    デバッグログパネルがError/DOMExceptionの中身({}に見えてしまう問題)
+    を正しく表示できるよう修正
+
 ======================================================================
 -->
 <!DOCTYPE html>
@@ -84,7 +90,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v66)ノリRun
+        (v67)ノリRun
         メインメニュー
 
     </title>
@@ -405,6 +411,11 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
 
     function formatArgs(args){
         return Array.prototype.map.call(args,function(value){
+            if(value instanceof Error){
+                // ErrorはJSON.stringifyだと空({})に見えるため、
+                // name(種類)とmessage(内容)を直接表示します。
+                return value.name + ": " + value.message;
+            }
             if(typeof value === "object" && value !== null){
                 try{ return JSON.stringify(value); }
                 catch(e){ return String(value); }
@@ -814,17 +825,82 @@ async function playTrack(trackId){
         nowPlayingEl.textContent = "再生中：" + (track.title || track.file_name);
         playerBox.style.display = "block";
 
-        await audioPlayer.play();
+        /*
+        ここから下は、権限やファイル取得ではなく
+        「実際に音として再生できるか」の問題です。
 
-        console.log("再生開始 :",track.file_name);
+        権限が原因の失敗と、コーデック非対応など
+        別の原因の失敗を混同しないよう、
+        try/catchを分けています。
+        */
+        try{
+
+            await audioPlayer.play();
+
+            console.log("再生開始 :",track.file_name);
+
+        }
+        catch(playError){
+
+            console.error(
+                "再生失敗(play) :",
+                playError.name,
+                playError.message
+            );
+
+            alert(
+                "この曲は再生できませんでした。\n" +
+                "ファイル形式(コーデック)がこの端末で対応していない可能性があります。\n" +
+                "(" + track.file_name + ")"
+            );
+
+        }
 
     }
     catch(error){
-        console.error(error);
+        console.error(
+            "再生失敗(権限/ファイル取得) :",
+            error.name,
+            error.message
+        );
         alert("再生に失敗しました。ブラウザのファイル権限が切れている可能性があります。");
     }
 
 }
+
+/*
+============================================================
+audio要素自体がエラーを起こした時の処理
+
+play()の時点ではエラーにならなくても、
+実際にファイルを読み込んで再生しようとした段階で
+コーデック非対応と分かることがあります。
+
+その場合はこちらのonerrorイベントで検知します。
+============================================================
+*/
+audioPlayer.onerror = function(){
+
+    if(!audioPlayer.error){ return; }
+
+    console.error(
+        "audio要素エラー :",
+        audioPlayer.error.code,
+        audioPlayer.error.message
+    );
+
+    let reason = "不明なエラーです。";
+
+    if(audioPlayer.error.code === audioPlayer.error.MEDIA_ERR_DECODE){
+        reason = "ファイル形式(コーデック)がこの端末で対応していない可能性があります。";
+    }
+    else if(audioPlayer.error.code === audioPlayer.error.MEDIA_ERR_SRC_NOT_SUPPORTED){
+        reason = "この形式のファイルは、このブラウザでは再生できません。";
+    }
+
+    alert("再生できませんでした。\n" + reason);
+
+};
 
 
 // ==========================================================
