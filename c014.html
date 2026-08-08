@@ -110,8 +110,30 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         アーティスト  → 何も表示しない
         曲の長さ      → 何も表示しない
 
-    ※ ジャケット画像の取得・表示は STEP B(v70)で実装予定。
+    ※ ジャケット画像の取得・表示は STEP B で実装予定。
       ランプのフェーズ2(緑・ジャケ写同期)もその時に有効化する。
+
+    (v70)【STEP A の不具合修正】アーティスト名が表示されない問題への対処。
+
+    症状: v69の実機テストで、曲の長さは表示されたがアーティスト名が
+          空欄のままだった(タグが取得できていない時の動きになっていた)。
+
+    ライブラリ(jsmediatags)のソースを調査した結果、setTagsToRead に
+    "title"/"artist" を渡しても内部で正しい項目名へ展開される作りに
+    なっており、ライブラリ側に問題は見つからなかった。
+    そのため原因を推測で決めつけず、次の2つを同時に入れている。
+
+    ① 確実に値を拾えるようにする修正
+       ・setTagsToRead() の絞り込みを外し、全タグを読むようにした
+       ・pickTagValue() を追加し、値が
+           「文字列」「{data:文字列}のオブジェクト」「生の項目名だけ」
+         のどの形で入っていても取り出せるようにした
+       ・MP3(ID3v2.3/2.4のTIT2・TPE1)、古いMP3(ID3v2.2のTT2・TP1)、
+         M4A(©nam・©ART・aART)の項目名に対応
+
+    ② 万一これでも直らない場合に原因を特定するための診断ログ
+       最初の3曲だけ、タグ形式・取得できたキーの一覧・値の型を
+       デバッグログパネルに出力する(原因特定後に削除する)
 
 ======================================================================
 -->
@@ -134,7 +156,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v69)ノリRun
+        (v70)ノリRun
         メインメニュー
 
     </title>
@@ -1867,15 +1889,60 @@ is_meta_analyzed フラグで判定します。全曲解析済みなら
 // 現在のランプのフェーズ(0:非表示, 1:文字取込, 2:ジャケ写, 3:完了)
 let lampPhase = 0;
 
+/*
+============================================================
+タグ解析ロジックのバージョン番号
+
+【何のための仕組みか】
+
+「解析済みの曲は二度と解析しない」(is_meta_analyzed)という
+仕組みには、一つ困った副作用があります。
+解析のプログラム自体を改善しても、すでに解析済みの曲は
+古い結果のまま残り、新しいロジックが適用されないのです。
+
+実際にv69→v70でこの問題が起きました。v69で「アーティスト名が
+空」のまま解析済みと記録された曲は、v70でロジックを直しても
+再解析されず、いつまでも空欄のままになってしまいます。
+
+そこで、曲ごとに「どのバージョンのロジックで解析したか」を
+記録しておき、この番号を上げると自動的に再解析される
+ようにしました。
+
+【使い方】
+タグ解析のやり方を改善した時に、この数字を1つ上げる。
+それだけで、既存の曲も次回起動時に自動で解析し直される。
+(竹弘がDBをクリアしてc013から再スキャンする必要はない)
+
+v70で 2 に上げたので、v69で解析済みの曲も再解析される。
+============================================================
+*/
+const META_ANALYZER_VERSION = 2;
+
 /**
  * 未解析の曲を順番に解析していきます。
  */
 async function startMetadataEngine(){
 
-    // まだ解析していない曲だけを集めます。
+    /*
+    解析が必要な曲だけを集めます。対象になるのは次の2種類です。
+
+      ① まだ一度も解析していない曲
+      ② 古いバージョンのロジックで解析された曲
+         (META_ANALYZER_VERSIONの解説を参照)
+
+    ②の判定で「|| 1」を付けているのは、この仕組みを作る前に
+    解析された曲には meta_analyzer_version が入っていないため、
+    その場合は「バージョン1で解析された」とみなすためです。
+    */
     const targets = currentOrderList.filter(function(trackId){
+
         const track = libraryMap[trackId];
-        return track && !track.is_meta_analyzed;
+        if(!track){ return false; }
+
+        if(!track.is_meta_analyzed){ return true; }
+
+        return (track.meta_analyzer_version || 1) < META_ANALYZER_VERSION;
+
     });
 
     if(targets.length === 0){
@@ -1952,13 +2019,20 @@ async function analyzeOneTrack(trackId){
 
         if(tags){
 
-            // trim() は文字列の前後の余分な空白を削る命令です。
-            // タグには末尾に空白が入っていることがよくあります。
-            if(tags.title){
-                track.title = String(tags.title).trim();
+            /*
+            タグの値は、ファイルの形式や作られ方によって
+            「どのキーに、どんな形で入っているか」がバラバラです。
+            そのため pickTagValue() で複数の可能性を順番に試します
+            (v70での修正。詳しくはpickTagValueの解説を参照)。
+            */
+            const tagTitle = pickTagValue(tags,"title",TITLE_FRAME_IDS);
+            const tagArtist = pickTagValue(tags,"artist",ARTIST_FRAME_IDS);
+
+            if(tagTitle !== ""){
+                track.title = tagTitle;
             }
-            if(tags.artist){
-                track.artist = String(tags.artist).trim();
+            if(tagArtist !== ""){
+                track.artist = tagArtist;
             }
 
         }
@@ -1977,6 +2051,10 @@ async function analyzeOneTrack(trackId){
 
         // --- ③ 解析済みの印を付けてDBへ保存 ---
         track.is_meta_analyzed = true;
+
+        // どのバージョンのロジックで解析したかも記録しておきます
+        // (次にロジックを改善した時、自動で再解析させるため)
+        track.meta_analyzer_version = META_ANALYZER_VERSION;
 
         await idbPut(STORE_MUSIC,track);
 
@@ -2003,13 +2081,117 @@ async function analyzeOneTrack(trackId){
 
 }
 
+/*
+============================================================
+タグの値を取り出すための「候補キー」の一覧
+
+音楽ファイルのタグは、形式ごとに項目名(キー)が全く違います。
+jsmediatagsは "title" / "artist" という分かりやすい名前
+(ショートカット)も用意してくれますが、ファイルの作られ方に
+よってはショートカットが作られないことがあります。
+
+そこで、ショートカットが空だった場合の保険として、
+形式ごとの「生の項目名」も順番に試すようにしました。
+
+  TIT2 / TPE1 … MP3(ID3v2.3・2.4)で使われる項目名
+  TT2  / TP1  … MP3(ID3v2.2、より古い形式)の項目名
+  ©nam / ©ART … M4A・MP4で使われる項目名(先頭の記号も名前の一部)
+  aART        … M4A のアルバムアーティスト(最後の保険)
+============================================================
+*/
+const TITLE_FRAME_IDS = ["TIT2","TT2","©nam"];
+const ARTIST_FRAME_IDS = ["TPE1","TP1","©ART","aART"];
+
+/**
+ * タグの中から、目的の文字列を取り出します。
+ *
+ * 【なぜこんな回り道が必要なのか(v70での修正理由)】
+ *
+ * v69では tags.title / tags.artist をそのまま使っていましたが、
+ * 実機テストでアーティスト名が表示されませんでした。
+ *
+ * タグの値は、次の3つの形のどれかで入っている可能性があります。
+ *
+ *   ① 文字列そのまま            tags.artist = "山田太郎"
+ *   ② オブジェクトの中のdata     tags.TPE1 = { data:"山田太郎", ... }
+ *   ③ ショートカットが作られず、生の項目名にだけ入っている
+ *
+ * この関数は ①→②→③ の順に探しにいくので、
+ * どの形で入っていても取り出せます。
+ */
+function pickTagValue(tags,shortcutName,frameIds){
+
+    // --- ① ショートカット名(title / artist)で探す ---
+    const shortcutValue = extractText(tags[shortcutName]);
+    if(shortcutValue !== ""){
+        return shortcutValue;
+    }
+
+    // --- ②③ 生の項目名を順番に試す ---
+    for(const frameId of frameIds){
+        const frameValue = extractText(tags[frameId]);
+        if(frameValue !== ""){
+            return frameValue;
+        }
+    }
+
+    return "";
+
+}
+
+/*
+値が「文字列」でも「{data:文字列} のオブジェクト」でも、
+中の文字を取り出して返します。取れなければ空文字を返します。
+
+trim() は文字列の前後の余分な空白を削る命令です。
+タグには末尾に空白や余分な文字が入っていることがよくあります。
+*/
+function extractText(value){
+
+    if(value === undefined || value === null){
+        return "";
+    }
+
+    if(typeof value === "string"){
+        return value.trim();
+    }
+
+    // typeof が "object" の時だけ .data を見にいきます。
+    if(typeof value === "object" && typeof value.data === "string"){
+        return value.data.trim();
+    }
+
+    return "";
+
+}
+
+/*
+============================================================
+【診断用】最初の数曲だけ、タグの中身を詳しくログに出します。
+
+原因が特定できたら、この診断ログは削除してよい範囲です。
+CLAUDE.mdの「本番リリース前に削除するもの」にも記載しています。
+============================================================
+*/
+let tagDebugCount = 0;
+const TAG_DEBUG_LIMIT = 3;
+
 /**
  * jsmediatagsでタグを読み取ります。
  *
- * setTagsToRead(["title","artist"]) で読む項目を絞っているのは、
- * ジャケット画像(picture)の読み込みを意図的に省いて速くするためです。
- * 画像はデータ量が大きく、文字情報より明確に重い処理になります。
- * (ジャケットはSTEP Bで、フェーズ2として別途取得します)
+ * 【v70での変更】setTagsToRead() の指定を外しました。
+ *
+ * v69では読む項目を ["title","artist"] に絞って速くしていましたが、
+ * 実機でアーティスト名が取得できなかったため、原因の切り分けとして
+ * 「全部のタグを読む」方式に変更しています。
+ * 絞り込みを外すことで、ショートカットが作られない形式のファイルでも
+ * 生の項目名から値を拾えるようになります。
+ *
+ * ジャケット画像(picture)も一緒に読み込まれるようになりますが、
+ * 1曲ずつ処理して使い終わったら捨てるため、メモリを溜め込むことは
+ * ありません。STEP Bでジャケットを実装する際は、この1回の読み込みで
+ * 文字と画像の両方を取得する形にすれば、ファイルを二度読む無駄が
+ * 無くなります(その時に竹弘と設計を相談する)。
  */
 function readTagsFromFile(file){
 
@@ -2027,25 +2209,104 @@ function readTagsFromFile(file){
         */
         try{
 
-            new jsmediatags.Reader(file)
-                .setTagsToRead(["title","artist"])
-                .read({
-                    onSuccess:function(result){
-                        resolve(result && result.tags ? result.tags : null);
-                    },
-                    onError:function(error){
-                        console.log("タグなし/読み取り不可 :",file.name);
-                        resolve(null);
+            new jsmediatags.Reader(file).read({
+
+                onSuccess:function(result){
+
+                    if(tagDebugCount < TAG_DEBUG_LIMIT){
+                        tagDebugCount = tagDebugCount + 1;
+                        logTagDiagnostics(file,result);
                     }
-                });
+
+                    resolve(result && result.tags ? result.tags : null);
+
+                },
+
+                onError:function(error){
+
+                    if(tagDebugCount < TAG_DEBUG_LIMIT){
+                        tagDebugCount = tagDebugCount + 1;
+                        console.error(
+                            "【診断】タグ読み取り失敗 :",
+                            file.name,
+                            "/ type=" + (error && error.type),
+                            "/ info=" + (error && error.info)
+                        );
+                    }
+                    else{
+                        console.log("タグなし/読み取り不可 :",file.name);
+                    }
+
+                    resolve(null);
+
+                }
+
+            });
 
         }
         catch(error){
-            console.log("タグ読み取りで例外 :",file.name);
+            console.error(
+                "タグ読み取りで例外 :",
+                file.name,
+                error.name,
+                error.message
+            );
             resolve(null);
         }
 
     });
+
+}
+
+/*
+取得したタグの中身をデバッグログに書き出します。
+「何形式のファイルで、どんなキーが取れて、その中身がどうなっていたか」
+が分かるので、表示できない原因を特定できます。
+*/
+function logTagDiagnostics(file,result){
+
+    if(!result){
+        console.error("【診断】結果が空 :",file.name);
+        return;
+    }
+
+    console.log("【診断】" + file.name);
+    console.log("   タグ形式 :",result.type,result.version || "");
+
+    if(!result.tags){
+        console.error("   tagsが空でした");
+        return;
+    }
+
+    // Object.keys は「そのオブジェクトが持っているキー名の一覧」を返します。
+    const keys = Object.keys(result.tags);
+
+    console.log("   取得キー(" + keys.length + "個) :",keys.join(", "));
+    console.log("   title  →",describeTagValue(result.tags.title));
+    console.log("   artist →",describeTagValue(result.tags.artist));
+    console.log("   TIT2   →",describeTagValue(result.tags.TIT2));
+    console.log("   TPE1   →",describeTagValue(result.tags.TPE1));
+
+}
+
+/*
+タグの値が「どんな形で入っているか」を人間が読める文字にします。
+文字列なのかオブジェクトなのかを区別できるようにするのが目的です。
+*/
+function describeTagValue(value){
+
+    if(value === undefined){ return "(キーなし)"; }
+    if(value === null){ return "(null)"; }
+
+    if(typeof value === "string"){
+        return '"' + value + '" [文字列]';
+    }
+
+    if(typeof value === "object"){
+        return "[オブジェクト] data=" + JSON.stringify(value.data);
+    }
+
+    return String(value) + " [" + (typeof value) + "]";
 
 }
 
