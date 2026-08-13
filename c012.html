@@ -1,4 +1,4 @@
-<!-- c012-v03.9-bs01-初期設定 -->
+<!-- c012-v03.8-bs01-初期設定 -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -9,7 +9,7 @@
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#007aff">
 
-    <title>ノリRun - 初期設定</title>
+    <title>(v75)ノリRun - 初期設定</title>
     <style>
         :root {
             --accent-red: #ff3b30;
@@ -34,13 +34,10 @@
             background: #f0f7ff; border: 1px solid #d1d1d6;
             padding: 10px; border-radius: 10px;/* padding:10px文字と枠の間を10px空けます */
             width: 90%; max-width: 450px;
-            font-size: 1rem; line-height: 1.5; color: #3a3a3c; text-align: center;box-shadow: 0 8px 20px rgba(0,0,0,0.08);
+            font-size: 0.88rem; line-height: 1.5; color: #3a3a3c; text-align: center;box-shadow: 0 8px 20px rgba(0,0,0,0.08);
         }
         .kaisetu-title { font-weight: bold; display: block; margin-bottom: 6px; color: #000; }
         .sub-instruction { font-size: 0.88rem; color: #8e8e93; margin-bottom: 10px; }
-
-        /* --- 🎵Musicフォルダ --- */
-        .kaisetu-title2 { font-weight: bold; display: block; margin-bottom: 6px; color: #000; }
 
         /* --- スワイプ定規エリア --- */
         .ruler-outer {/* 定規を置く箱 */
@@ -153,7 +150,7 @@
     <!-- 角丸内　🎵 Musicフォルダの設定 解説メッセージ　-->
     <div class="kaisetu-box">
 
-        <span class="kaisetu-title2"
+        <span class="kaisetu-title"
               id="folder-setup-title">
         </span>
 
@@ -523,14 +520,14 @@ function showFolderSetupScreen(mode) {
 
         box.style.display = "block";
 
-        title.innerText = "🎵 Musicフォルダの設定🎵";
+        title.innerText = "🎵 Musicフォルダの設定";
 
         message.innerHTML =
-            "① ノリRunで再生する<strong>「音楽フォルダ」</strong>を登録します。" +
-            "次に表示されるフォルダへのアクセスを<strong>「許可」</strong>してください。<br><br>" +
-            "② あなたの端末内に<strong>「データベース」</strong>を作成します。" +
-            "次に表示されるサイトへのファイルの表示とコピーを<strong>「許可」</strong>してください。<br><br>" +
-            "（🛡️ ここで作成される情報は、端末内に保存され、外部へは送信されません。）";
+            "① ノリRunで再生する<strong>「音楽フォルダ」</strong>を登録します。<br>" +
+            "フォルダへのアクセスを<strong>「許可」</strong>してください。<br><br>" +
+            "② あなたの端末内にあるノリRun曲データベースサイトに、<br>" +
+            "<strong>「曲情報」</strong>を<strong>「アップロード」</strong>します。<br><br>" +
+            "（曲情報は端末内に保存され、外部へ送信されません。）";
 
         button.innerText = "Musicフォルダを登録する";
         button.style.background = "#ff9500";
@@ -603,7 +600,11 @@ async function handleFolderSetupButton() {
 // ユーザーがボタンを押した時しか実行できない。
 //
 // 許可されたら
-// c013 メインメニューへ進む。
+// c014 メインメニューへ進む。
+//
+// v75より、間にあったc013(Musicフォルダ データ登録)を
+// 通らなくなった。フォルダのスキャンはc014が
+// 開いた時に裏側で自動的に行う。
 // --------------------------------------------------
 async function requestSavedMusicFolderPermissionAndNext() {
 
@@ -623,7 +624,7 @@ async function requestSavedMusicFolderPermissionAndNext() {
 
     if (permission === "granted") {
 
-        location.href = "c013.html";
+        location.href = "c014.html";
 
     }
 
@@ -638,7 +639,7 @@ async function requestSavedMusicFolderPermissionAndNext() {
 // folder_roots に保存する。
 //
 // 保存が終わったら
-// c013 メインメニューへ進む。
+// c014 メインメニューへ進む。
 // --------------------------------------------------
 async function registerMusicFolderAndNext() {
 
@@ -666,7 +667,7 @@ async function registerMusicFolderAndNext() {
 
         tx.oncomplete = function () {
             db.close();
-            location.href = "c013.html";
+            location.href = "c014.html";
         };
 
         tx.onerror = function () {
@@ -687,7 +688,7 @@ async function registerMusicFolderAndNext() {
 // ② 権限状態を確認
 //
 // granted
-//   → c013へ
+//   → c014へ
 //
 // prompt
 //   → 起動設定画面を表示
@@ -715,7 +716,7 @@ async function startRouteB() {
 
         // 権限が残っている場合は、そのままメインメニューへ進む
         if (permission === "granted") {
-            location.href = "c013.html";
+            location.href = "c014.html";
             return;
         }
 
@@ -737,4 +738,4 @@ init();
 </script>
 </body>
 </html>
-<!-- c012-v03.9-be01-初期設定 -->
+<!-- c012-v03.8-be01-初期設定 -->

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'norirun-v74';
+const CACHE_NAME = 'norirun-v75';
 
 const ASSETS = [
   'index.html',
@@ -26,6 +26,7 @@ const ASSETS = [
   // オフラインでメインメニューが動かなくなる。
   'js/config.js',
   'js/db.js',
+  'js/scanner.js',
   'js/list-view.js',
   'js/player.js',
   'js/drag-sort.js',
