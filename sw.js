@@ -1,4 +1,4 @@
-const CACHE_NAME = 'norirun-v72';
+const CACHE_NAME = 'norirun-v73';
 
 const ASSETS = [
   'index.html',
@@ -16,7 +16,22 @@ const ASSETS = [
   // CDNから読み込まずリポジトリに同梱しているのは、ランニング中=電波が
   // 悪い場所で使うアプリのため。ここに登録してキャッシュさせることで、
   // 圏外でもタイトルやジャケットの取得が動く。
-  'lib/jsmediatags.min.js'
+  'lib/jsmediatags.min.js',
+
+  // c014(メインメニュー)のJavaScript。
+  // v73で、c014.htmlに直接書いていた約1,900行を機能ごとに分割した。
+  //
+  // 【重要】js/ にファイルを追加したら、必ずここにも追記すること。
+  // 登録を忘れると、そのファイルだけキャッシュされず、圏外や
+  // オフラインでメインメニューが動かなくなる。
+  'js/config.js',
+  'js/db.js',
+  'js/list-view.js',
+  'js/player.js',
+  'js/drag-sort.js',
+  'js/lamp.js',
+  'js/metadata.js',
+  'js/main.js'
 ];
 
 // インストール時にファイルをキャッシュに保存するぜ
