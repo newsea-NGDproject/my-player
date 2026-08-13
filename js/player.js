@@ -1,0 +1,162 @@
+/*
+======================================================================
+ player.js ── 曲の再生
+
+----------------------------------------------------------------------
+
+【このファイルの役割】
+
+ 曲一覧の再生ボタン(▶️)を押した時に、その曲を再生します。
+
+   playTrack()         … 指定した曲を再生する
+   audioPlayer.onerror … 再生中にエラーが起きた時の受け止め
+
+ なお、ここでの再生は「普通の速さで鳴らすだけ」です。
+ 本命であるビートマッチング(設定BPMに合わせた再生・曲間の接続)は
+ まだ未実装で、今後このファイルの隣に別のJSファイルとして
+ 追加していく予定です。
+
+----------------------------------------------------------------------
+
+【なぜ毎回ファイルの権限を確認し直すのか】
+
+ track.file_handle は、c013でMusicフォルダをスキャンした時に
+ 取得した「ファイルへの取っ手(FileSystemFileHandle)」です。
+
+ この取っ手はIndexedDBに保存できますが、ページを開き直すと
+ JavaScriptの実行状態がリセットされるため、
+ 「前に許可をもらったこと」がそのまま引き継がれるとは限りません。
+
+ c013でもこれが原因の不具合に苦しんだので、ファイルを開く前には
+ 必ず queryPermission → (必要なら)requestPermission の順で
+ 確認し直す作りに統一しています。
+ metadata.js の解析処理も全く同じパターンです。
+======================================================================
+*/
+
+
+// 再生中の一時URL(曲を切り替える時に解放するため覚えておきます)
+let currentObjectUrl = null;
+
+
+/**
+ * 指定したtrack_idの曲を再生します。
+ *
+ * track.file_handle は c013のスキャン時にMusicフォルダから
+ * 取得したFileSystemFileHandleです。
+ *
+ * c013の権限バグと同じ理由(ページ遷移でJSの実行コンテキストが
+ * リセットされるため)で、ここでも必ず権限を確認し直してから
+ * ファイルを読み込みます。
+ */
+async function playTrack(trackId){
+
+    try{
+
+        const track = libraryMap[trackId];
+
+        if(!track || !track.file_handle){
+            alert("曲データが見つかりませんでした。c013で再登録してください。");
+            return;
+        }
+
+        // --- 権限を確認し直します(c013と同じパターン) ---
+        let permission = await track.file_handle.queryPermission({mode:"read"});
+
+        if(permission !== "granted"){
+            permission = await track.file_handle.requestPermission({mode:"read"});
+        }
+
+        if(permission !== "granted"){
+            alert("この曲へのアクセスが許可されませんでした。");
+            return;
+        }
+
+        const file = await track.file_handle.getFile();
+
+        if(currentObjectUrl){
+            URL.revokeObjectURL(currentObjectUrl);
+        }
+
+        currentObjectUrl = URL.createObjectURL(file);
+
+        audioPlayer.src = currentObjectUrl;
+        nowPlayingEl.textContent = "再生中：" + (track.title || track.file_name);
+        playerBox.style.display = "block";
+
+        /*
+        ここから下は、権限やファイル取得ではなく
+        「実際に音として再生できるか」の問題です。
+
+        権限が原因の失敗と、コーデック非対応など
+        別の原因の失敗を混同しないよう、
+        try/catchを分けています。
+        */
+        try{
+
+            await audioPlayer.play();
+
+            console.log("再生開始 :",track.file_name);
+
+        }
+        catch(playError){
+
+            console.error(
+                "再生失敗(play) :",
+                playError.name,
+                playError.message
+            );
+
+            alert(
+                "この曲は再生できませんでした。\n" +
+                "ファイル形式(コーデック)がこの端末で対応していない可能性があります。\n" +
+                "(" + track.file_name + ")"
+            );
+
+        }
+
+    }
+    catch(error){
+        console.error(
+            "再生失敗(権限/ファイル取得) :",
+            error.name,
+            error.message
+        );
+        alert("再生に失敗しました。ブラウザのファイル権限が切れている可能性があります。");
+    }
+
+}
+
+/*
+============================================================
+audio要素自体がエラーを起こした時の処理
+
+play()の時点ではエラーにならなくても、
+実際にファイルを読み込んで再生しようとした段階で
+コーデック非対応と分かることがあります。
+
+その場合はこちらのonerrorイベントで検知します。
+============================================================
+*/
+audioPlayer.onerror = function(){
+
+    if(!audioPlayer.error){ return; }
+
+    console.error(
+        "audio要素エラー :",
+        audioPlayer.error.code,
+        audioPlayer.error.message
+    );
+
+    let reason = "不明なエラーです。";
+
+    if(audioPlayer.error.code === audioPlayer.error.MEDIA_ERR_DECODE){
+        reason = "ファイル形式(コーデック)がこの端末で対応していない可能性があります。";
+    }
+    else if(audioPlayer.error.code === audioPlayer.error.MEDIA_ERR_SRC_NOT_SUPPORTED){
+        reason = "この形式のファイルは、このブラウザでは再生できません。";
+    }
+
+    alert("再生できませんでした。\n" + reason);
+
+};
