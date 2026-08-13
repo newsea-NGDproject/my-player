@@ -43,6 +43,74 @@ let lampPhase = 0;
 
 
 /**
+ * 「曲を探しています」の表示を出します(スキャン中)。
+ *
+ * メインメニューを開いた直後、Musicフォルダの中に新しい曲が
+ * 追加されていないかを調べる間だけ表示します。
+ *
+ * 【色を灰色にしている理由】
+ * 竹弘が作った 黄🟡 → 緑🟢 → 青🔵 の3フェーズ演出は、
+ * 「曲データを取り込んでいく流れ」を表す大事な演出です。
+ * スキャンはその前の準備段階なので、3色のどれとも重ならない
+ * 灰色にして、演出の流れを崩さないようにしています。
+ */
+function setLampScanning(){
+
+    const lamp = document.getElementById("ofs-lamp");
+    const lampText = document.getElementById("ofs-lamp-text");
+    const lampIcon = document.getElementById("ofs-lamp-icon");
+
+    if(!lamp || !lampText || !lampIcon){ return; }
+
+    lampPhase = 0;
+
+    lamp.style.display = "flex";
+    lamp.style.opacity = "1";
+    lamp.style.background = "#f2f2f7";
+    lamp.style.color = "#8e8e93";
+
+    lampText.innerText = "曲を探しています";
+    lampIcon.innerText = "🔍";
+    lampIcon.className = "blink-normal";
+
+}
+
+/*
+スキャンが終わり、かつ解析するものが何も無かった時に
+ランプを消します。
+
+setLampPhase(3)(青・全工程完了)と違い、余韻を見せずに
+すっと消すのは、新しい曲が無かった時にまで「完了しました」と
+知らせる必要がないためです。竹弘の「最速起動」の方針により、
+何も起きていない時のランプは出さないのが基本です。
+*/
+function hideLampNow(){
+
+    const lamp = document.getElementById("ofs-lamp");
+    if(!lamp){ return; }
+
+    lampPhase = 0;
+
+    lamp.style.opacity = "0";
+
+    setTimeout(function(){
+
+        /*
+        消えるまでの0.5秒の間に、別の表示(黄色の取込中など)が
+        始まっていた場合は、消さずにそのままにします。
+        これが無いと、せっかく出た次の表示を後から
+        消してしまう事故が起こりえます。
+        */
+        if(lampPhase !== 0){ return; }
+
+        lamp.style.display = "none";
+
+    },500);
+
+}
+
+
+/**
  * 解析状況ランプの表示を切り替えます。
  *
  * phase 1 … 黄・速い点滅  「曲データ取込中」
