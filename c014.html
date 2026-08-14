@@ -469,7 +469,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v85)ノリRun
+        (v86)ノリRun
         メインメニュー
 
     </title>
@@ -773,16 +773,36 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             align-items:center;
             justify-content:center;
 
-            width:32px;
-            height:32px;
+            /*
+            丸の大きさ(v86で 32px → 40px に拡大)。
+
+            中の記号(⇅ や ↩)が小さくて見えにくいという竹弘の指摘に
+            よるもの。まず文字を大きくし、それでも足りない場合は丸を
+            1.25倍に、という段取りだったので、32×1.25=40px にしている。
+            */
+            width:40px;
+            height:40px;
             padding:0;
 
             border:1px solid var(--border-color);
             border-radius:50%;
             background:#ffffff;
 
-            font-size:0.95rem;
+            /*
+            記号の大きさ(v86で 0.95rem → 1.5rem に拡大)。
+
+            1.5rem は約24px。丸の内側(40px から枠線を引いて38px)に
+            対して6割ほどの大きさで、はみ出さずにできるだけ大きく
+            見せられる値。太字にして、走りながらでも見分けやすくしている。
+
+            line-height:1 は「文字の行の高さを文字そのものと同じにする」
+            指定。これが無いと文字の上下に余白が入り、丸の中で
+            中心からずれて見えてしまう。
+            */
+            font-size:1.5rem;
+            font-weight:bold;
             line-height:1;
+
             cursor:pointer;
             box-sizing:border-box;
 
@@ -844,10 +864,22 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
            浮かせています。基準になるのは #list-area(position:relative)です。
         ====================================================== */
         #sort-menu{
-            position:absolute;
-            top:42px;
-            left:12px;
-            z-index:100;
+            /*
+            画面を基準に位置を決めます(v86で absolute から変更)。
+
+            【なぜ変えたか】
+            以前は曲一覧エリアの中に浮かせていましたが、このエリアは
+            はみ出した部分を隠す設定(overflow:hidden)のため、記号を
+            大きくしてメニューが縦に伸びると、画面の小さい端末で
+            下の項目が切れてしまう計算になりました。
+
+            position:fixed にすると画面そのものが基準になり、
+            エリアの外にも自由に出せます。実際の表示位置(top/left)は
+            ボタンの位置を測って js/sort.js が設定します。
+            画面の下に収まらない時は、ボタンの上側に出す作りです。
+            */
+            position:fixed;
+            z-index:1000;
 
             background:#ffffff;
             border:1px solid var(--border-color);
@@ -866,7 +898,14 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             gap:10px;
 
             width:100%;
-            padding:13px 14px;
+
+            /*
+            上下の余白(v86で 13px → 11px に調整)。
+            記号を大きくした分、行が高くなりすぎないよう少し詰めている。
+            メニュー全体が縦に伸びすぎると、曲一覧エリアからはみ出して
+            下の項目が隠れてしまうため。
+            */
+            padding:11px 14px;
 
             border:none;
             border-bottom:1px solid #f0f0f0;
@@ -892,6 +931,26 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         .sort-menu-item.active{
             color:var(--main-blue);
             font-weight:bold;
+        }
+
+        /*
+        メニューの1文字目にある記号(🕺🆕🔤🎤⏱)(v86で追加)。
+
+        小さくて見分けにくいという竹弘の指摘により、文字だけを
+        大きくしています。行の高さにはまだ余裕があるため、
+        項目名の文字はそのままで記号だけを拡大しました。
+
+        width で幅を決めているのは、記号ごとに横幅が違っても
+        項目名の始まる位置が揃うようにするためです。
+        (揃えないと「ノリ注入順」と「登録日時順」の頭がずれて
+          きれいに見えません)
+        */
+        .sort-icon{
+            font-size:1.5rem;
+            line-height:1;
+            width:1.7rem;
+            text-align:center;
+            flex-shrink:0;
         }
 
         /*
