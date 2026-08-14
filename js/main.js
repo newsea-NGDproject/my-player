@@ -187,6 +187,15 @@ async function showMainMenu(){
     */
     await loadMenuData();
 
+    /*
+    前回どの並び順を選んでいたかを読み込みます(v81)。
+
+    曲順そのものは playlists に保存されているので並べ替え直す必要は
+    ありません。ここで読むのは「並び替えメニューのどの項目に
+    ▲▼を付けるか」を復元するためです。
+    */
+    await loadSortSetting();
+
     // ---------- ② Musicフォルダを調べて、新しい曲を登録する ----------
 
     setLampScanning();
