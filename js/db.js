@@ -59,8 +59,52 @@ function openNoriRunDB(){
 
         const request = indexedDB.open(DB_NAME,DB_VERSION);
 
+        /*
+        onupgradeneeded は「そのデータベースがまだ無い時」と
+        「バージョン番号を上げた時」にだけ呼ばれる特別な場所です。
+        データを入れる棚(ストア)を作れるのは、ここだけです。
+
+        【v77でここに棚を作る処理を移した理由】
+
+        以前この処理は c012.html(初期設定画面)だけが持っていました。
+        必ず c012 を通ってからメインメニューへ進む作りだったので、
+        棚は c012 が作ってくれる前提で問題なかったのです。
+
+        しかしv77で初期設定をメインメニューと同じページにまとめた結果、
+        このファイルがアプリで最初にデータベースを開くことになりました。
+        棚を作る処理が無いままだと、初回起動で
+        「settings という棚が見つかりません」というエラーになり、
+        アプリが動き出せません。
+
+        contains() で「すでにあるか」を確かめてから作っているので、
+        2回目以降の起動で作り直してしまうことはありません。
+        */
         request.onupgradeneeded = function(event){
+
+            const db = event.target.result;
+
             console.log("NoriRunDB 新規作成");
+
+            // アプリ設定(マイ・ピッチ、初期設定の完了フラグなど)
+            if(!db.objectStoreNames.contains(STORE_SETTINGS)){
+                db.createObjectStore(STORE_SETTINGS);
+            }
+
+            // 曲マスター。1曲ごとの主キーは track_id
+            if(!db.objectStoreNames.contains(STORE_MUSIC)){
+                db.createObjectStore(STORE_MUSIC,{ keyPath: "track_id" });
+            }
+
+            // プレイリスト(曲の並び順)。主キーは playlist_id
+            if(!db.objectStoreNames.contains(STORE_PLAYLISTS)){
+                db.createObjectStore(STORE_PLAYLISTS,{ keyPath: "playlist_id" });
+            }
+
+            // Musicフォルダの鍵。主キーは folder_roots_id
+            if(!db.objectStoreNames.contains(STORE_FOLDER_ROOTS)){
+                db.createObjectStore(STORE_FOLDER_ROOTS,{ keyPath: "folder_roots_id" });
+            }
+
         };
 
         request.onsuccess = function(event){

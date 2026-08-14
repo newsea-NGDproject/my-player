@@ -112,9 +112,71 @@ async function loadMenuData(){
 
 
 /**
- * 起動時の一連の流れを、順番に進めます。
+ * アプリを開いた時に最初に動く関数です。
+ *
+ * 【やること】
+ * 初期設定が済んでいるかを調べて、見せる画面を決めます。
+ *
+ *   まだ初期設定していない → マイ・ピッチ設定 → Musicフォルダ登録
+ *   もう初期設定が済んでいる → メインメニュー
+ *
+ * 判断そのものは setup.js の initSetupFlow() が行います。
+ * フォルダの権限が残っているかの確認も含めて、あちらの担当です。
+ *
+ * 【v77で変わったこと】
+ * 以前はこの2つが c012.html と c014.html という別々のページに
+ * 分かれており、初期設定が終わるとページを移動していました。
+ *
+ * しかしブラウザは、ユーザーが選んだフォルダへのアクセス権限を
+ * 「原則そのページを開いている間だけ」有効にします。移動した瞬間に
+ * 許可が消えることがあり、実機で実際に起きました。
+ *
+ * そこで竹弘の発案により、両方を同じ1枚のページにまとめました。
+ * 今は画面を切り替えるだけでページは移動しないので、
+ * 取った許可がそのまま残ります。
  */
 async function startUp(){
+
+    /*
+    initSetupFlow は setup.js が window に登録している関数です。
+    IIFE(即時実行関数)で囲われた中から、この入口だけが
+    外に公開されています。詳しくは setup.js の冒頭を参照。
+    */
+    initSetupFlow();
+
+}
+
+
+/**
+ * メインメニューを表示して、曲一覧の準備を進めます。
+ *
+ * 初期設定が済んでいる場合や、初期設定が終わった直後に
+ * setup.js から呼ばれます。
+ */
+async function showMainMenu(){
+
+    // ---------- ⓪ 画面を初期設定からメインメニューへ切り替える ----------
+
+    const setupScreen = document.getElementById("setup-screen");
+    const appScreen = document.getElementById("app");
+
+    if(setupScreen){ setupScreen.style.display = "none"; }
+
+    /*
+    #app のCSSは display:flex(縦に並べる)なので、
+    "block" ではなく "flex" で戻します。
+    "block" にすると上下2分割のレイアウトが崩れます。
+    */
+    if(appScreen){ appScreen.style.display = "flex"; }
+
+    /*
+    定規の描画と音を確実に止めます。
+    通常は setup.js 側ですでに止まっていますが、
+    裏で回り続けると動作が重くなるため念のため呼びます。
+    */
+    if(typeof stopSetupRuler === "function"){
+        stopSetupRuler();
+    }
 
     // ---------- ① まずDBの内容で一覧を表示する ----------
 
