@@ -62,6 +62,9 @@ function setLampScanning(){
 
     if(!lamp || !lampText || !lampIcon){ return; }
 
+    // 前に警告ランプを押せる状態にしていた場合は元へ戻す
+    resetLampInteraction(lamp);
+
     lampPhase = 0;
 
     lamp.style.display = "flex";
@@ -125,6 +128,9 @@ function setLampPhase(phase,doneCount,totalCount){
 
     if(!lamp || !lampText || !lampIcon){ return; }
 
+    // 前に警告ランプを押せる状態にしていた場合は元へ戻す
+    resetLampInteraction(lamp);
+
     lampPhase = phase;
 
     lamp.style.display = "flex";
@@ -165,19 +171,58 @@ function setLampPhase(phase,doneCount,totalCount){
 }
 
 /*
+ランプを「ただの表示」の状態に戻します。
+
+【なぜこれが必要か】
+
+ランプのCSSには pointer-events:none が指定されています。
+これは「ランプの下にある曲名などを指でタップできるように、
+ランプ自体は指に反応しない」ようにするための設定です。
+
+ただし後述の showLampError() だけは例外で、竹弘がタップして
+フォルダの許可を取り直せるよう、一時的に指に反応する状態へ
+切り替えます。その後で別の表示に変わる時、反応する状態が
+残っていると曲名がタップできなくなってしまうため、
+表示を切り替えるたびにここで元へ戻します。
+*/
+function resetLampInteraction(lamp){
+
+    lamp.style.pointerEvents = "none";
+    lamp.style.cursor = "";
+    lamp.style.padding = "";
+    lamp.onclick = null;
+
+}
+
+/*
 異常を知らせる赤いランプを出します(消えません)。
 
 ライブラリの読み込み失敗のように「竹弘が気づかないと
 先に進めない問題」を、画面上ではっきり伝えるためのものです。
 通常のフェーズ表示と違い、自動では消しません。
+
+【第2引数 onTapHandler について(v76で追加)】
+
+タップされた時に実行したい処理を渡すと、ランプが押せるように
+なります。渡さなければ、これまで通りただの表示です。
+
+Musicフォルダの許可が切れた時に使っています。ブラウザの決まりで
+「許可をください」という命令(requestPermission)は画面をタップ
+した瞬間しか呼べないため、竹弘に一度タップしてもらう必要が
+あるためです。新しくボタンを増やさず、すでに出ている警告ランプを
+そのまま押してもらう形にしています。
 */
-function showLampError(message){
+function showLampError(message,onTapHandler){
 
     const lamp = document.getElementById("ofs-lamp");
     const lampText = document.getElementById("ofs-lamp-text");
     const lampIcon = document.getElementById("ofs-lamp-icon");
 
     if(!lamp || !lampText || !lampIcon){ return; }
+
+    resetLampInteraction(lamp);
+
+    lampPhase = 0;
 
     lamp.style.display = "flex";
     lamp.style.opacity = "1";
@@ -187,6 +232,24 @@ function showLampError(message){
     lampText.innerText = message;
     lampIcon.innerText = "⚠️";
     lampIcon.className = "blink-fast";
+
+    /*
+    typeof で「関数が渡されたか」を確かめてから有効にします。
+    何も渡されなかった場合(従来の使い方)は、上の
+    resetLampInteraction で戻したままなので押せません。
+    */
+    if(typeof onTapHandler === "function"){
+
+        // 指に反応するようにする(CSSのpointer-events:noneを上書き)
+        lamp.style.pointerEvents = "auto";
+        lamp.style.cursor = "pointer";
+
+        // 押しやすいよう、この時だけ少し大きくする
+        lamp.style.padding = "8px 12px";
+
+        lamp.onclick = onTapHandler;
+
+    }
 
 }
 

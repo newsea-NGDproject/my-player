@@ -145,15 +145,25 @@ async function startUp(){
         if(scanResult.status === "no-permission"){
 
             /*
-            通常ここには来ません。c012が起動時に権限を確認し、
-            切れていれば c012 の画面で許可を取り直してから
-            メインメニューへ送り出しているためです。
+            c012が起動時に権限を確認してから送り出しているので、
+            本来ここには来ないはずですが、実機で発生しました。
 
-            それでも権限が無い状態でここへ来た場合は、
-            アプリを開き直せば c012 が許可を求めます。
+            【なぜ起きるか】
+            ブラウザのフォルダアクセス権限は、原則
+            「そのページを開いている間だけ」有効で、
+            ページを移動した瞬間に切れることがあります。
+            (Chromeでは、PWAとしてインストールしていれば
+              記憶されやすくなりますが、確実ではありません)
+
+            この場合、竹弘に一度タップしてもらえば復帰できます。
+            「許可をください」という命令(requestPermission)は、
+            ブラウザの決まりで画面をタップした瞬間しか呼べない
+            ためです。新しいボタンは増やさず、警告ランプ自体を
+            押してもらう形にしています。
             */
             console.error("Musicフォルダの権限が無いため、スキャンと解析を中止しました。");
-            showLampError("フォルダ許可が必要");
+
+            showLampError("タップして許可",requestFolderPermissionAgain);
 
         }
         else if(scanResult.status === "no-folder"){
@@ -204,6 +214,68 @@ async function startUp(){
     startMetadataEngine().catch(function(error){
         console.error("メタデータ解析エンジンで予想外のエラー :",error);
     });
+
+}
+
+
+/**
+ * Musicフォルダの許可を取り直します。
+ *
+ * 警告ランプ「タップして許可」が押された時に呼ばれます。
+ *
+ * 【この関数が必要な理由】
+ *
+ * ブラウザは、ユーザーが意図しないうちにフォルダを覗かれないよう、
+ * 「許可をください」という命令(requestPermission)を
+ * **画面をタップした瞬間しか呼べない**ようにしています。
+ *
+ * 起動時に自動で走る scanner.js からは呼べないため、
+ * 竹弘のタップを起点にするこの関数を用意しました。
+ */
+async function requestFolderPermissionAgain(){
+
+    try{
+
+        const folderHandle = await getMusicFolderHandle();
+
+        // ここはタップの中なので requestPermission を呼べます
+        const permission = await folderHandle.requestPermission({mode:"read"});
+
+        if(permission !== "granted"){
+
+            console.error("許可されませんでした :",permission);
+
+            // もう一度押せるように、ランプはそのまま出しておきます
+            showLampError("タップして許可",requestFolderPermissionAgain);
+
+            return;
+
+        }
+
+        console.log("フォルダの許可を取り直しました。画面を読み込み直します。");
+
+        /*
+        許可が取れたので、画面を読み込み直して起動処理を
+        最初からやり直します。
+
+        startUp() をもう一度呼ぶ手もありますが、読み込み直す方が
+        確実です。一覧やランプの状態が途中まで進んだまま残らず、
+        まっさらな状態から始められるためです。
+        */
+        location.reload();
+
+    }
+    catch(error){
+
+        console.error(
+            "許可の取り直しに失敗 :",
+            error.name,
+            error.message
+        );
+
+        showLampError("許可の取得に失敗");
+
+    }
 
 }
 
