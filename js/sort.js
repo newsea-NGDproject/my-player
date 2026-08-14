@@ -570,9 +570,14 @@ function renderSortMenu(){
         /*
         1文字目の記号には sort-icon というクラスを付けます(v86)。
         記号だけを大きく表示するためのものです(CSSは c014.html)。
+
+        あわせて data-key に並び順の種類を入れています(v87)。
+        絵文字は種類ごとに「文字の枠に対する絵の大きさ」が違い、
+        ⏱ だけ小さく見えたため、CSS側でその記号だけ大きさを
+        調整できるようにするためのものです。
         */
         item.innerHTML =
-            "<span class='sort-icon'>" + definition.icon + "</span>" +
+            "<span class='sort-icon' data-key='" + definition.key + "'>" + definition.icon + "</span>" +
             "<span>" + definition.label + "</span>" +
             "<span class='sort-arrow'>" + arrow + "</span>";
 
