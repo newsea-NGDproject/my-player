@@ -1,4 +1,4 @@
-const CACHE_NAME = 'norirun-v84';
+const CACHE_NAME = 'norirun-v85';
 
 const ASSETS = [
   'index.html',
@@ -33,6 +33,7 @@ const ASSETS = [
   'js/scanner.js',
   'js/nori.js',
   'js/sort.js',
+  'js/undo.js',
   'js/list-view.js',
   'js/player.js',
   'js/drag-sort.js',
