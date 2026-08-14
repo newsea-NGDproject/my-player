@@ -9,7 +9,7 @@
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#007aff">
 
-    <title>(v75)ノリRun - 初期設定</title>
+    <title>(v76)ノリRun - 初期設定</title>
     <style>
         :root {
             --accent-red: #ff3b30;
@@ -36,7 +36,9 @@
             width: 90%; max-width: 450px;
             font-size: 0.88rem; line-height: 1.5; color: #3a3a3c; text-align: center;box-shadow: 0 8px 20px rgba(0,0,0,0.08);
         }
-        .kaisetu-title { font-weight: bold; display: block; margin-bottom: 6px; color: #000; }
+        /* 角丸ボックスの見出し(🛡️ マイ・ピッチとは / 🎵 Musicフォルダの設定🎵)
+           本文と同じ大きさだと見出しに見えないため、少しだけ大きくしている */
+        .kaisetu-title { font-weight: bold; display: block; margin-bottom: 6px; color: #000; font-size: 1.05rem; }
         .sub-instruction { font-size: 0.88rem; color: #8e8e93; margin-bottom: 10px; }
 
         /* --- スワイプ定規エリア --- */
@@ -520,14 +522,14 @@ function showFolderSetupScreen(mode) {
 
         box.style.display = "block";
 
-        title.innerText = "🎵 Musicフォルダの設定";
+        title.innerText = "🎵 Musicフォルダの設定🎵";
 
         message.innerHTML =
             "① ノリRunで再生する<strong>「音楽フォルダ」</strong>を登録します。<br>" +
             "フォルダへのアクセスを<strong>「許可」</strong>してください。<br><br>" +
             "② あなたの端末内にあるノリRun曲データベースサイトに、<br>" +
             "<strong>「曲情報」</strong>を<strong>「アップロード」</strong>します。<br><br>" +
-            "（曲情報は端末内に保存され、外部へ送信されません。）";
+            "（🛡️曲情報は端末内に保存され、外部へ送信されません。）";
 
         button.innerText = "Musicフォルダを登録する";
         button.style.background = "#ff9500";
