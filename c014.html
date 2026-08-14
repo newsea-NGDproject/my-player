@@ -277,6 +277,34 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     ※ c012.html は中身を一切変更せず残している。万一問題が出た時は
       dbclr.html の行き先を c012.html に戻すだけで元の動きに戻せる。
 
+    (v78)【ノリ注入ボタン】曲一覧の一番左を、暫定の再生ボタンから
+    本来の「ノリ注入ボタン」に変更した。legacy(ver8.5-gemini)の
+    OFS Ver.1.0 から移植したもので、記号も判定に使うフィールドも同じ。
+
+        🛌 … まだノリが入っていない曲(寝ている)
+        🕺 … ノリが注入された曲(踊っている)
+
+    ノリRunの一番の売りになる部分。これから作るタップ補正ツールで
+    曲のリズムを解析し、走るテンポに合わせられる状態にすることを
+    「ノリ注入」と呼ぶ(竹弘の構想)。そのツールはまだ無いため、
+    今は押すと印が付くところまでを用意している。
+
+    ・js/nori.js を新設。将来のタップ補正ツールもここに入る
+    ・注入済みかどうかは music_library の is_analyzed に記録する。
+      c013の頃から用意されていたフィールドで、今回初めて使われた
+    ・一度🕺にしたら🛌へは戻せない(legacyと同じ。竹弘の指示)。
+      将来🕺が「補正データを持っている曲」を意味するようになるため、
+      ボタン操作だけで取り消せると実データと表示がずれてしまう
+
+    再生の操作は、曲情報エリア(タイトル / 曲長+アーティスト)の
+    タップに移した。もともと全文を横スクロールさせる機能があった
+    場所で、竹弘の判断により両方を同時に行う。
+
+        「再生選択した時に同時にスクロールを始めるギミックは、
+          何もユーザーの機能を阻害するものはなく、見た目にも良い」
+
+    押した曲の文字が流れ出すので、どれを選んだか目で分かる利点もある。
+
 ======================================================================
 -->
 <!DOCTYPE html>
@@ -298,7 +326,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v77)ノリRun
+        (v78)ノリRun
         メインメニュー
 
     </title>
@@ -658,7 +686,8 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             font-size:1.2rem;
         }
 
-        .play-btn:active{
+        /* ノリ注入ボタン(🛌/🕺)を押した瞬間の色 */
+        .norinori-btn:active{
             background:#e5e5ea;
         }
 
@@ -1244,6 +1273,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
    db        … IndexedDBの読み書き
    setup     … 初期設定(マイ・ピッチ設定・Musicフォルダ登録)
    scanner   … Musicフォルダのスキャンと、新しい曲の登録
+   nori      … ノリ注入ボタン(🛌 → 🕺)
    list-view … 曲一覧の描画
    player    … 曲の再生
    drag-sort … 並び替え(OFS)
@@ -1278,6 +1308,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
 <script src="js/db.js"></script>
 <script src="js/setup.js"></script>
 <script src="js/scanner.js"></script>
+<script src="js/nori.js"></script>
 <script src="js/list-view.js"></script>
 <script src="js/player.js"></script>
 <script src="js/drag-sort.js"></script>
