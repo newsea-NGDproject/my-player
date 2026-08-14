@@ -333,6 +333,41 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     audio要素の paused が true になるため、この判定を素通りして
     頭から再生される。曲が最後まで流れ切った時も同様。
 
+    (v81)【並び替え】曲一覧の見出し横に ⇅ ボタンを置き、押すと開く
+    メニューから並び順を選べるようにした。
+
+        🕺 ノリ注入順 / 🆕 登録日時順 / 🔤 タイトル順 /
+        🎤 アーティスト順 / ⏱ 曲の長さ順
+
+    同じ項目をもう一度選ぶと昇順・降順が入れ替わる。今どの順番で
+    並んでいるかは、メニュー内に▲▼と青文字で示される。
+
+    ・js/sort.js を新設
+    ・ボタン1つ→メニュー方式にしたのは竹弘の判断。並び替えは頻繁に
+      使うものではなく、誤って押すと曲順が変わってしまうため
+    ・ブラウザ標準の<select>(ピッカー)ではなく自作メニューにした。
+      端末ごとに見た目が変わり、記号や▲▼の装飾ができないため
+    ・アイコンは border-radius:50% で丸くしているが、要素自体は四角
+      なので指の当たり判定は四角いまま(竹弘の要望どおり)
+    ・並べ替えた曲順は playlists へ保存する。ドラッグで手動並び替え
+      したのと同じ扱いで、次に開いた時もその順番のまま
+    ・選んだ並び順の種類は settings の main_sort_order に保存する。
+      このキーは c012 が初期設定時に "registered_at_desc" という
+      初期値を書き込んでおり、最初からソート機能を見込んで用意されて
+      いたもの。今回ようやく使うことになった
+
+    【日本語の並び順について】
+    文字の比較には localeCompare(text,"ja") を使っている。単純に
+    大小で比べると文字コード順になり、ひらがな・カタカナ・漢字が
+    日本語の辞書どおりに並ばないため。
+
+    【ノリ注入順の3グループ】
+    ① 注入済みで日時が分かる曲 → ② 注入済みだが日時不明の曲 →
+    ③ 未注入の曲(🛌) の順に並べ、同じグループ内は日時の新しい順。
+    ②があるのは、日時の記録を始めたのが v79 からで、それ以前に
+    🕺にした曲には日時が入っていないため。日時0として扱うと未注入と
+    混ざってしまうので、あいだのグループを設けた。
+
 ======================================================================
 -->
 <!DOCTYPE html>
@@ -354,7 +389,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v80)ノリRun
+        (v81)ノリRun
         メインメニュー
 
     </title>
@@ -618,12 +653,147 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             flex-direction:column;
             padding:12px 12px 10px;
             overflow:hidden;
+
+            /*
+            並び替えメニュー(#sort-menu)を浮かせる時の位置の基準に
+            なります(v81)。これが無いと、メニューが画面全体を基準に
+            置かれてしまい、狙った場所に出せません。
+            */
+            position:relative;
         }
 
         .section-title{
             margin:0 0 8px;
             font-size:1.05rem;
             flex-shrink:0;
+
+            /*
+            「曲一覧」の文字の横に並び替えボタンを置くため、
+            横並びにしています(v81)。
+            gap は文字とボタンの間隔です。
+            */
+            display:flex;
+            align-items:center;
+            gap:8px;
+        }
+
+        /* ======================================================
+           丸ボタン(並び替えメニューを開く等)
+
+           竹弘の要望「ボタンアイコンの判定は四角で
+           アイコンデザインは丸(〇)」に沿った作りです。
+
+           border-radius:50% で見た目だけ丸くしていますが、
+           要素そのものは四角のままなので、指の当たり判定は
+           四角い範囲すべてになります。角の部分を押しても
+           反応するので、小さくても押しやすくなります。
+        ====================================================== */
+        .round-btn{
+            display:flex;
+            align-items:center;
+            justify-content:center;
+
+            width:32px;
+            height:32px;
+            padding:0;
+
+            border:1px solid var(--border-color);
+            border-radius:50%;
+            background:#ffffff;
+
+            font-size:0.95rem;
+            line-height:1;
+            cursor:pointer;
+            box-sizing:border-box;
+
+            /* 曲名が長くてもボタンが潰れないようにします */
+            flex-shrink:0;
+        }
+
+        .round-btn:active{
+            background:#e5e5ea;
+        }
+
+        /* 並び替えメニューを開いている間は、ボタンの色を変えます */
+        .round-btn.open{
+            background:var(--main-blue);
+            border-color:var(--main-blue);
+            color:#ffffff;
+        }
+
+        /* ======================================================
+           並び替えメニュー(v81)
+
+           ブラウザ標準の <select>(ピッカー)ではなく、
+           自分でHTMLとCSSを組んだメニューです。
+
+           理由は、🕺🆕🔤🎤⏱ の記号を狙った位置に置きたいことと、
+           今どの順番で並んでいるかを ▲▼ で示したいため。
+           <select> は端末ごとに見た目が変わり、こうした装飾が
+           できません(竹弘への説明のとおり)。
+
+           position:absolute で「曲一覧エリアの中の、見出しのすぐ下」に
+           浮かせています。基準になるのは #list-area(position:relative)です。
+        ====================================================== */
+        #sort-menu{
+            position:absolute;
+            top:42px;
+            left:12px;
+            z-index:100;
+
+            background:#ffffff;
+            border:1px solid var(--border-color);
+            border-radius:12px;
+            box-shadow:0 8px 24px rgba(0,0,0,0.18);
+
+            /* 角を丸くした内側からはみ出さないようにします */
+            overflow:hidden;
+
+            min-width:210px;
+        }
+
+        .sort-menu-item{
+            display:flex;
+            align-items:center;
+            gap:10px;
+
+            width:100%;
+            padding:13px 14px;
+
+            border:none;
+            border-bottom:1px solid #f0f0f0;
+            background:transparent;
+
+            font-size:0.95rem;
+            color:var(--text-main);
+            text-align:left;
+            cursor:pointer;
+            box-sizing:border-box;
+        }
+
+        /* 一番下の項目にだけ区切り線を引かない */
+        .sort-menu-item:last-child{
+            border-bottom:none;
+        }
+
+        .sort-menu-item:active{
+            background:#e5e5ea;
+        }
+
+        /* 今その順番で並んでいる項目は、青くして目立たせます */
+        .sort-menu-item.active{
+            color:var(--main-blue);
+            font-weight:bold;
+        }
+
+        /*
+        ▲▼を右端に寄せます。
+        margin-left:auto は「左側の余白を目一杯とる」という指定で、
+        結果としてこの要素が右端へ押し出されます。
+        */
+        .sort-arrow{
+            margin-left:auto;
+            font-size:0.75rem;
         }
 
         /*
@@ -1091,7 +1261,25 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ============ 下半分：曲一覧 ============ -->
     <div class="card" id="list-area">
 
-        <h2 class="section-title">曲一覧</h2>
+        <!--
+            曲一覧の見出しと、その横の並び替えボタン(v81)。
+
+            ボタンは押すと下にメニューが開きます。並び替えは
+            走る前の準備で時々使うだけで、頻繁には使いません。
+            また誤って押すと曲順が変わってしまうため、
+            ボタン1つ→メニューで選ぶ形にしています(竹弘の判断)。
+        -->
+        <h2 class="section-title">
+            <span>曲一覧</span>
+            <button id="sort-btn" class="round-btn" type="button">⇅</button>
+        </h2>
+
+        <!--
+            並び替えメニュー。起動時は閉じています。
+            中身(項目)は js/sort.js が作ります。
+            並び順の定義を1箇所にまとめておきたいためです。
+        -->
+        <div id="sort-menu" style="display:none;"></div>
 
         <!--
             #list-viewport は位置の基準になる「窓枠」です。
@@ -1302,6 +1490,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
    setup     … 初期設定(マイ・ピッチ設定・Musicフォルダ登録)
    scanner   … Musicフォルダのスキャンと、新しい曲の登録
    nori      … ノリ注入ボタン(🛌 → 🕺)
+   sort      … 曲一覧の並び替え(メニューと並び順の判定)
    list-view … 曲一覧の描画
    player    … 曲の再生
    drag-sort … 並び替え(OFS)
@@ -1337,6 +1526,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
 <script src="js/setup.js"></script>
 <script src="js/scanner.js"></script>
 <script src="js/nori.js"></script>
+<script src="js/sort.js"></script>
 <script src="js/list-view.js"></script>
 <script src="js/player.js"></script>
 <script src="js/drag-sort.js"></script>
