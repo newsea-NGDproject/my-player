@@ -176,8 +176,15 @@ localeCompare を使う二段構えにしています。
 */
 function compareText(textA,textB){
 
-    const groupA = getTextGroup(textA);
-    const groupB = getTextGroup(textB);
+    /*
+    比べる前に、半角と全角の表記を揃えます(v83で追加。理由は
+    normalizeForSort の解説を参照)。
+    */
+    const normalizedA = normalizeForSort(textA);
+    const normalizedB = normalizeForSort(textB);
+
+    const groupA = getTextGroup(normalizedA);
+    const groupB = getTextGroup(normalizedB);
 
     // 文字の種類が違えば、その順番で決まります
     if(groupA !== groupB){
@@ -190,7 +197,43 @@ function compareText(textA,textB){
     "ja"(日本語)を指定するとひらがな・カタカナが
     日本語の辞書と同じ順番になります。
     */
-    return textA.localeCompare(textB,"ja");
+    return normalizedA.localeCompare(normalizedB,"ja");
+
+}
+
+/*
+比べるための文字列に整えます。
+
+【なぜ必要になったか(v83)】
+
+v82の実機テストで、半角カタカナ(ｱｲｳ)の曲が記号として一番下に
+並んでしまいました。半角カタカナは、全角カタカナ(アイウ)とは
+まったく別の文字として扱われているためです。
+
+竹弘の要望は「半角のカタカナも通常のカタカナ扱いにしてほしい」。
+
+【normalize("NFKC") とは】
+
+文字の表記ゆれを揃えてくれる、JavaScript標準の命令です。
+"NFKC" を指定すると、見た目が違うだけで意味が同じ文字を
+代表的な形へ寄せてくれます。
+
+    ｱｲｳ  → アイウ   (半角カタカナ → 全角カタカナ)
+    ｶﾞ    → ガ       (濁点も正しく1文字にまとまる)
+    Ａ０ → A0       (全角の英数字 → 半角)
+    Ⅰ    → I        (ローマ数字 → アルファベット)
+
+これを比べる前にかけておくことで、半角で書かれていようと全角で
+書かれていようと、同じ場所に並ぶようになります。
+
+なお、変換した文字は「並び順を決めるため」だけに使い、画面に表示
+する文字は元のままです。曲名の見た目は変わりません。
+*/
+function normalizeForSort(text){
+
+    if(!text){ return ""; }
+
+    return text.normalize("NFKC");
 
 }
 
@@ -232,8 +275,24 @@ function getTextGroup(text){
 
     const firstChar = text.charAt(0);
 
-    // ひらがな・カタカナ(぀〜ヿ は続きの範囲なので一続きで書けます)
-    if(/[぀-ヿ]/.test(firstChar)){ return 0; }
+    /*
+    ひらがな・カタカナ。
+
+    範囲を2つに分けているのは、あいだにある「・」(中点)を
+    外すためです。中点は文字コードの並び上カタカナの仲間に
+    入っていますが、実際は記号なので、竹弘の希望どおり
+    記号のグループ(一番後ろ)へ回します。
+
+        ぀〜ヺ … ひらがな と カタカナ
+        (・は ここで除外)
+        ー〜ヿ … 長音符「ー」と、ヽヾヿ
+
+    ｦ〜ﾟ の範囲は半角カタカナです。上の normalizeForSort で全角へ
+    変換済みなので通常はここに来ませんが、変換が効かなかった場合の
+    保険として入れています。
+    (ｦ より前の ｡｢｣､･ は記号なので、あえて含めていません)
+    */
+    if(/[぀-ヺー-ヿｦ-ﾟ]/.test(firstChar)){ return 0; }
 
     // 漢字(々を含む)
     if(/[一-鿿々]/.test(firstChar)){ return 1; }
