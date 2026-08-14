@@ -38,6 +38,27 @@
 // 再生中の一時URL(曲を切り替える時に解放するため覚えておきます)
 let currentObjectUrl = null;
 
+/*
+今どの曲を選んで再生しているかを覚えておく変数です(v80で追加)。
+
+【なぜ必要になったか】
+
+曲情報エリアは1行目(タイトル)と2行目(曲長+アーティスト)に
+分かれていて、どちらをタップしても再生できます。
+しかし同じ曲の別の行を続けてタップすると、そのたびに曲が
+頭から流れ直してしまっていました。
+
+竹弘の要望:
+    「同曲の為、曲の再生し直しをしないように変更をお願いしたい。
+      曲を最初から流したい時は、一旦ストップボタンで止めて、
+      再度曲をタップする方式に変更したい」
+
+そこで「今鳴っている曲」を覚えておき、同じ曲がまたタップされた
+時は何もしないようにしました。長いタイトルを読むために何度
+タップしても、曲は途切れません。
+*/
+let currentTrackId = null;
+
 
 /**
  * 指定したtrack_idの曲を再生します。
@@ -60,6 +81,34 @@ async function playTrack(trackId){
             return;
         }
 
+        /*
+        すでに同じ曲が鳴っている場合は、何もせずに戻ります(v80)。
+
+        【判定の考え方】
+        「同じ曲」であることに加えて「今まさに鳴っている」ことも
+        確かめています。audioPlayer.paused は、止まっている時に
+        true になる標準の値です。
+
+        この2つを両方見ているのは、竹弘の要望どおり
+        「一旦ストップボタンで止めてから、もう一度曲をタップすれば
+          最初から流れる」を成り立たせるためです。
+        止めた後は paused が true になるので、この関門を素通りして
+        頭から再生されます。
+
+        曲が最後まで流れ切った時も paused は true になるため、
+        もう一度タップすればちゃんと頭から鳴り直します。
+
+        なお、この判定より前で止めているのは重い処理(権限の確認や
+        ファイルの読み込み)の手前だからです。無駄な処理をせずに済みます。
+        */
+        if(currentTrackId === trackId && !audioPlayer.paused){
+
+            console.log("すでに再生中です(そのまま続けます) :",track.file_name);
+
+            return;
+
+        }
+
         // --- 権限を確認し直します(c013と同じパターン) ---
         let permission = await track.file_handle.queryPermission({mode:"read"});
 
@@ -79,6 +128,9 @@ async function playTrack(trackId){
         }
 
         currentObjectUrl = URL.createObjectURL(file);
+
+        // 今どの曲を選んだかを覚えておきます(次に同じ曲がタップされた時の判定用)
+        currentTrackId = trackId;
 
         audioPlayer.src = currentObjectUrl;
         nowPlayingEl.textContent = "再生中：" + (track.title || track.file_name);
