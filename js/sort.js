@@ -567,8 +567,12 @@ function renderSortMenu(){
             ? (currentSortOrder === "asc" ? "▲" : "▼")
             : "";
 
+        /*
+        1文字目の記号には sort-icon というクラスを付けます(v86)。
+        記号だけを大きく表示するためのものです(CSSは c014.html)。
+        */
         item.innerHTML =
-            "<span>" + definition.icon + "</span>" +
+            "<span class='sort-icon'>" + definition.icon + "</span>" +
             "<span>" + definition.label + "</span>" +
             "<span class='sort-arrow'>" + arrow + "</span>";
 
@@ -591,7 +595,53 @@ function openSortMenu(){
 
     renderSortMenu();
 
+    /*
+    メニューの位置を、ボタンの位置に合わせて決めます(v86)。
+
+    【なぜJSで位置を決めるのか】
+    メニューは position:fixed(画面が基準)にしてあります。曲一覧
+    エリアの中に置くと、はみ出した分が隠れる設定のせいで下の項目が
+    切れてしまうためです。画面基準にした代わりに、「ボタンのすぐ下」
+    という位置は自分で計算する必要があります。
+
+    getBoundingClientRect() は「その要素が今、画面のどこに見えて
+    いるか」を返す命令です。ドラッグ並び替えの自動スクロールでも
+    同じものを使っています。
+    */
+
+    /*
+    高さを測るために、いったん表示します。
+    visibility:hidden は「場所は取るが見えない」状態で、
+    display:none(場所も取らない)と違って大きさを測れます。
+    測ってから位置を決めるので、一瞬ちらつくこともありません。
+    */
+    menu.style.visibility = "hidden";
     menu.style.display = "block";
+
+    const buttonRect = button.getBoundingClientRect();
+    const menuHeight = menu.offsetHeight;
+
+    // 基本はボタンのすぐ下
+    let top = buttonRect.bottom + 6;
+
+    /*
+    画面の下からはみ出してしまう場合は、ボタンの上側に開きます。
+    (曲一覧エリアが狭い端末や、横向きにした時のための保険)
+    */
+    if(top + menuHeight > window.innerHeight - 8){
+        top = buttonRect.top - menuHeight - 6;
+    }
+
+    // 上にも収まらないほど画面が狭い場合は、画面内に押し込みます
+    if(top < 8){
+        top = 8;
+    }
+
+    menu.style.top = top + "px";
+    menu.style.left = buttonRect.left + "px";
+
+    menu.style.visibility = "visible";
+
     button.classList.add("open");
 
 }
