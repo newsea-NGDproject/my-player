@@ -127,12 +127,43 @@ async function injectNori(trackId,buttonElement){
 
         track.is_analyzed = true;
 
+        /*
+        ノリを注入した日時を記録します(v79で追加)。
+
+        【何に使うのか】
+        これから作る並び替え機能で、「最近ノリを注入した曲から順に
+        上へ持ってくる」ために使います。走る前に、さっき仕込んだ曲を
+        すぐ見つけられるようにするためです(竹弘の構想)。
+
+        【なぜ並び替え機能より先に入れたのか】
+        後から足すと、それまでに注入した曲には日時が残っておらず、
+        「いつ注入したか分からない曲」ができてしまいます。
+        記録だけ先に始めておけば、その取りこぼしが起きません。
+
+        Date.now() は1970年1月1日からの経過ミリ秒を返す標準の命令です。
+        数値なので大小を比べるだけで新しい順に並べられます。
+        */
+        track.nori_injected_at = Date.now();
+
         await idbPut(STORE_MUSIC,track);
 
         // 保存が成功してから表示を変えます
         buttonElement.textContent = NORI_ICON_DANCING;
 
-        console.log("ノリを注入しました :",track.file_name);
+        /*
+        日時も一緒にログへ出しています。画面には出ない情報なので、
+        これが無いと「本当に記録できているか」を竹弘が実機で
+        確かめられないためです。
+
+        toLocaleString() は、ミリ秒の数値を
+        「2026/8/14 10:23:45」のような読める形に直す標準の命令です。
+        */
+        console.log(
+            "ノリを注入しました :",
+            track.file_name,
+            "/ 注入日時 :",
+            new Date(track.nori_injected_at).toLocaleString()
+        );
 
     }
     catch(error){
@@ -145,6 +176,7 @@ async function injectNori(trackId,buttonElement){
         起きるためです。
         */
         track.is_analyzed = false;
+        track.nori_injected_at = undefined;
 
         console.error(
             "ノリ注入の保存に失敗 :",
