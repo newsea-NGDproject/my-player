@@ -82,7 +82,7 @@ function createRowElement(trackId){
     row.dataset.trackId = trackId;
 
     row.innerHTML =
-        "<button class='square-btn play-btn'>▶️</button>" +
+        "<button class='square-btn norinori-btn'>" + buildNoriIcon(track) + "</button>" +
         "<div class='info-area'>" +
             "<div class='text-block'>" +
                 "<div class='info-line line-title'>" +
@@ -101,16 +101,48 @@ function createRowElement(trackId){
             "</svg>" +
         "</button>";
 
-    const playBtn = row.querySelector(".play-btn");
-    playBtn.addEventListener("click",function(){
+    /*
+    一番左のボタンは「ノリ注入ボタン」です(nori.js が担当)。
+
+    ノリRunの一番の売りになる部分で、押すと 🛌(寝ている)から
+    🕺(踊っている)へ変わり、その曲がノリ注入済みであることを表します。
+    */
+    const noriBtn = row.querySelector(".norinori-btn");
+    noriBtn.addEventListener("click",function(){
+        injectNori(trackId,noriBtn);
+    });
+
+    /*
+    曲情報エリア(1行目のタイトル / 2行目の曲長+アーティスト)を
+    タップすると、次の2つを同時に行います。
+
+      ① 長い文字を横スクロールさせて全文を見せる
+      ② その曲を再生する
+
+    【なぜ1つのタップに2つの働きを持たせるのか】
+
+    v78で一番左のボタンがノリ注入ボタンになったため、再生の操作を
+    どこに置くかを決める必要がありました。竹弘の判断で、もともと
+    全文表示に使っていたこのエリアに再生も持たせています。
+
+        「再生選択した時に同時にスクロールを始めるギミックは、
+          何もユーザーの機能を阻害するものはなく、見た目にも良い」
+
+    確かに、押した曲の文字が流れ出すので「今これを選んだ」と
+    目で分かる利点もあります。
+    */
+    const lineTitle = row.querySelector(".line-title");
+    const lineMeta = row.querySelector(".line-meta");
+
+    lineTitle.addEventListener("click",function(){
+        triggerMarquee(lineTitle);
         playTrack(trackId);
     });
 
-    // 1行目・2行目それぞれ、タップすると横スクロールで全文を見せます。
-    const lineTitle = row.querySelector(".line-title");
-    const lineMeta = row.querySelector(".line-meta");
-    lineTitle.addEventListener("click",function(){ triggerMarquee(lineTitle); });
-    lineMeta.addEventListener("click",function(){ triggerMarquee(lineMeta); });
+    lineMeta.addEventListener("click",function(){
+        triggerMarquee(lineMeta);
+        playTrack(trackId);
+    });
 
     /*
     ジャケット画像は、取得できている曲にだけ差し込みます。
