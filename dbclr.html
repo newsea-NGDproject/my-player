@@ -79,7 +79,7 @@ document.getElementById("clear-btn").addEventListener("click", function () {
             "DBクリア完了。c012.htmlへ移動します。";
 
         setTimeout(function () {
-            location.href = "c012.html";
+            location.href = "c014.html";
         }, 1000);
     };
     request.onerror = function () {
@@ -100,8 +100,9 @@ document.getElementById("clear-btn").addEventListener("click", function () {
 document.getElementById("skip-btn").onclick = function () {
 
 // DBは削除しない
-// そのまま c012 に進む
-    location.href = "c012.html";
+// そのまま c014 に進む
+// (v77より、初期設定は c014 の中に入ったため c012 は経由しない)
+    location.href = "c014.html";
 
 };
 

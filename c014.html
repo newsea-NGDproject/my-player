@@ -235,6 +235,48 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     ※ c012.html は遷移先(c013→c014)の3箇所だけを変更しており、
       画面デザイン・メッセージ・ボタンは一切触っていない。
 
+    (v76)警告ランプをタップしてMusicフォルダの許可を取り直せるように
+    した。実機で権限切れが発生したため。あわせて竹弘の指示により
+    c012の見出しを「🎵 Musicフォルダの設定🎵」に戻し、注意書きに🛡️を追加。
+
+    (v77)【権限切れの根本対策】初期設定(c012)をこの画面に取り込み、
+    起動から曲一覧までページを移動しない作りにした。
+
+    【なぜ必要だったか】
+    ブラウザは、ユーザーが選んだフォルダへのアクセス権限を
+    「原則そのページを開いている間だけ」有効にする。別のページへ
+    移動した瞬間に許可が消えることがあり、実機で実際に起きた
+    (初期設定でMusicフォルダを選んだ直後、メインメニューに着いた
+     時には権限が切れていた。ログに「権限がありません : prompt」)。
+
+    竹弘の発案により、初期設定とメインメニューを同じ1枚のページに
+    まとめ、画面の表示を切り替えるだけでページは移動しない形にした。
+    移動しなければ、取った許可は失われない。
+
+    ・#setup-screen(マイ・ピッチ設定 / 起動設定)のHTMLを追加
+    ・css/setup.css を新設(c012のCSSをそのまま移設)
+    ・js/setup.js を新設(c012のJSをそのまま移設)
+    ・js/db.js に「DBの棚を作る処理」を移設。この画面がアプリで
+      最初にDBを開くようになったため、これが無いと初回起動で
+      「settingsという棚が見つかりません」で動き出せない
+    ・dbclr.html の行き先を c012.html から c014.html へ変更
+
+    【デザインを崩さないための工夫】
+    c012とc014は別々に作られたため、h1 と body の指定が重複していた。
+    そこで setup.css の指定は全て「#setup-screen ○○○」の形にして、
+    初期設定画面の中だけに効くよう範囲を限定している。
+    クラス名の重複が無いことは事前に確認済み。数値・色・余白は
+    一切変更しておらず、見た目は1ピクセルも変わらない。
+
+    【JSの名前がぶつからないための工夫】
+    js/setup.js 全体を IIFE(即時実行関数)で囲み、中の名前が外に
+    漏れないようにした。db.js と同じ openNoriRunDB という関数が
+    あったが、これで衝突しない。外へ公開しているのは
+    initSetupFlow と stopSetupRuler の2つだけ。
+
+    ※ c012.html は中身を一切変更せず残している。万一問題が出た時は
+      dbclr.html の行き先を c012.html に戻すだけで元の動きに戻せる。
+
 ======================================================================
 -->
 <!DOCTYPE html>
@@ -256,7 +298,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v76)ノリRun
+        (v77)ノリRun
         メインメニュー
 
     </title>
@@ -849,15 +891,110 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
 
     </style>
 
+    <!--
+    ================================================================
+     初期設定画面のデザイン(css/setup.css)
+
+     もともと c012.html の中にあったものです。v77で初期設定を
+     この画面に取り込んだため、外部ファイルとして読み込みます。
+
+     別ファイルにしているのは、c014.html が大きくなりすぎないように
+     するためです(竹弘の要望)。中身は c012 のCSSをそのまま移した
+     もので、見た目は1ピクセルも変えていません。
+    ================================================================
+    -->
+    <link rel="stylesheet" href="css/setup.css">
+
 </head>
 <body>
+
+<!--
+================================================================
+ 初期設定画面(起動時に1回だけ通る)
+
+ ここには2つの画面が入っています。
+
+   #init-screen         … マイ・ピッチ設定(定規をスワイプ)
+   #folder-setup-screen … 起動設定(Musicフォルダの登録)
+
+ どちらもHTMLは c012.html からそのまま持ってきました。
+
+ 【なぜメインメニューと同じページにあるのか(v77)】
+
+ ブラウザは、ユーザーが選んだフォルダへのアクセス権限を
+ 「原則そのページを開いている間だけ」有効にします。別のページへ
+ 移動した瞬間に、取ったばかりの許可が消えることがあります。
+
+ 実際、初期設定でMusicフォルダを選んだ直後にメインメニューへ
+ 移動したら、着いた時には権限が切れている現象が実機で起きました。
+
+ そこで竹弘の発案により、初期設定とメインメニューを同じ1枚の
+ ページにまとめ、「画面を切り替えるだけでページは移動しない」
+ 作りにしました。移動しなければ許可は失われません。
+
+ 起動時はどちらを見せるか決まっていないので、両方とも
+ display:none にしておき、js/setup.js が判断して表示します。
+================================================================
+-->
+<div id="setup-screen" style="display:none;">
+
+    <div id="init-screen">
+        <h1>ノリRun 初期設定</h1>
+        <p class="instruction">あなたの「<strong>マイ・ピッチ</strong>」を設定します</p>
+
+        <!-- 角丸内　解説メッセージ　-->
+        <div class="kaisetu-box">
+            <span class="kaisetu-title">🛡️ マイ・ピッチとは 　</span>
+            「<strong>イッチ、ニッ!、イッチ、ニッ!</strong>」の、<br>
+            走る時の<strong>リズムスピード</strong>になります。
+
+            <p class="sub-instruction">
+                (※メニューの「設定」から後で変更できます)
+            </p>
+        </div>
+
+        <div id="status-display">
+            <div id="pitch-number">170</div>
+            <div id="pitch-label">🏃‍♂️ マラソン</div>
+        </div>
+
+        <div class="ruler-outer" id="ruler-container">
+            <div class="center-line"></div>
+            <canvas id="ruler-canvas"></canvas>
+        </div>
+
+        <button id="save-btn">設定</button>
+    </div>
+
+    <div id="folder-setup-screen" style="display:none;">
+        <h1>ノリRun 起動設定</h1>
+
+        <!-- 角丸内　🎵 Musicフォルダの設定 解説メッセージ　-->
+        <div class="kaisetu-box">
+
+            <span class="kaisetu-title"
+                  id="folder-setup-title">
+            </span>
+
+            <p id="folder-setup-message"></p>
+
+        </div>
+
+        <button id="folder-btn">Musicフォルダを登録する</button>
+    </div>
+
+</div>
 
 <!--
     画面全体を縦2分割します。
     ・上半分 (#upper-area) … 操作エリア(今後ボタンを増やす場所)
     ・下半分 (#list-area)  … 曲一覧(このエリアの中だけがスクロールする)
+
+    起動時は非表示にしておき、初期設定が済んでいることを確認してから
+    js/main.js の showMainMenu() が表示します(v77)。
+    戻す時は display:flex です。block にすると上下2分割が崩れます。
 -->
-<div id="app">
+<div id="app" style="display:none;">
 
     <!-- ============ 上半分：操作エリア ============ -->
     <div id="upper-area">
@@ -1105,6 +1242,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
 
    config    … 他の全ファイルが使う定数・画面部品・共有状態
    db        … IndexedDBの読み書き
+   setup     … 初期設定(マイ・ピッチ設定・Musicフォルダ登録)
    scanner   … Musicフォルダのスキャンと、新しい曲の登録
    list-view … 曲一覧の描画
    player    … 曲の再生
@@ -1138,6 +1276,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
 -->
 <script src="js/config.js"></script>
 <script src="js/db.js"></script>
+<script src="js/setup.js"></script>
 <script src="js/scanner.js"></script>
 <script src="js/list-view.js"></script>
 <script src="js/player.js"></script>

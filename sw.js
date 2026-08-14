@@ -1,4 +1,4 @@
-const CACHE_NAME = 'norirun-v76';
+const CACHE_NAME = 'norirun-v77';
 
 const ASSETS = [
   'index.html',
@@ -24,8 +24,12 @@ const ASSETS = [
   // 【重要】js/ にファイルを追加したら、必ずここにも追記すること。
   // 登録を忘れると、そのファイルだけキャッシュされず、圏外や
   // オフラインでメインメニューが動かなくなる。
+  // 初期設定画面のデザイン。v77で c012.html から移設した。
+  'css/setup.css',
+
   'js/config.js',
   'js/db.js',
+  'js/setup.js',
   'js/scanner.js',
   'js/list-view.js',
   'js/player.js',
