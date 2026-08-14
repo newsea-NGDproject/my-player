@@ -324,6 +324,18 @@ track_id_list という配列名で保存します。
 */
 async function saveNewOrderFromDOM(){
 
+    /*
+    順番を書き換える前に、今の曲順を「一つ前」として覚えます(v85)。
+
+    ドラッグ中に指が滑って曲順が変わってしまった時、右上の ↩ ボタンで
+    元に戻せるようにするためのものです。竹弘曰く、この機能の一番の
+    出番がまさにここ(並び替えの誤操作)とのこと。
+
+    必ず currentOrderList を書き換える前に呼ぶこと。後だと、
+    すでに変わってしまった順番を覚えることになってしまいます。
+    */
+    savePreviousOrder();
+
     const rows = Array.prototype.slice.call(
         menuListEl.querySelectorAll(".music-row")
     );
@@ -332,14 +344,12 @@ async function saveNewOrderFromDOM(){
         return row.dataset.trackId;
     });
 
-    const playlistData = {
-        playlist_id: MAIN_MENU_PLAYLIST_ID,
-        playlist_name: "メイン全曲リスト",
-        track_id_list: currentOrderList,
-        norirun_track_id_list: []
-    };
-
-    await idbPut(STORE_PLAYLISTS,playlistData);
+    /*
+    保存は js/undo.js の共通処理に任せます(v85)。
+    一つ前の曲順も一緒に保存する必要があり、並び替えメニューからの
+    保存とも同じ内容になるため、1箇所にまとめてあります。
+    */
+    await savePlaylistOrder();
 
     console.log("並び順を保存しました :",currentOrderList.length,"曲");
 

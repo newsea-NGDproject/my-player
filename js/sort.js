@@ -377,6 +377,15 @@ function compareByNori(trackA,trackB){
 async function applySort(key){
 
     /*
+    並べ替える前に、今の曲順を「一つ前」として覚えておきます(v85)。
+    間違った並び順を選んでしまっても、↩ ボタンで戻せるようにするためです。
+
+    必ず並べ替えの前に呼ぶこと。後だと、すでに変わってしまった順番を
+    覚えることになり、戻す意味が無くなります。
+    */
+    savePreviousOrder();
+
+    /*
     同じ項目をもう一度選んだ時は、昇順と降順を入れ替えます。
     違う項目を選んだ時は、その項目の既定の向きから始めます。
     */
@@ -440,15 +449,12 @@ async function saveSortedOrder(){
 
     try{
 
-        // 曲順(ドラッグで並び替えた時と同じ形で保存します)
-        const playlistData = {
-            playlist_id: MAIN_MENU_PLAYLIST_ID,
-            playlist_name: "メイン全曲リスト",
-            track_id_list: currentOrderList,
-            norirun_track_id_list: []
-        };
-
-        await idbPut(STORE_PLAYLISTS,playlistData);
+        /*
+        曲順の保存は js/undo.js の共通処理に任せます(v85)。
+        一つ前の曲順も一緒に保存する必要があり、ドラッグ並び替えとも
+        同じ内容になるため、1箇所にまとめてあります。
+        */
+        await savePlaylistOrder();
 
         /*
         選んだ並び順の種類も保存します。

@@ -196,6 +196,15 @@ async function showMainMenu(){
     */
     await loadSortSetting();
 
+    /*
+    一つ前の曲順があるかを読み込みます(v85)。
+
+    うっかり並び替えたままアプリを閉じても、次に開いた時に
+    ↩ ボタンで戻せるようにするためです。戻せる状態が無ければ
+    ボタンは薄いまま(押せない)になります。
+    */
+    await loadPreviousOrder();
+
     // ---------- ② Musicフォルダを調べて、新しい曲を登録する ----------
 
     setLampScanning();
