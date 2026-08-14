@@ -1,0 +1,174 @@
+/*
+======================================================================
+ setup.css ── 初期設定画面のデザイン
+
+----------------------------------------------------------------------
+
+【このファイルの役割】
+
+ 起動時に1回だけ通る2つの画面のデザインです。
+
+   ① マイ・ピッチ設定  … 定規をスワイプしてBPMを決める画面
+   ② 起動設定          … Musicフォルダを登録する画面
+
+ もともと c012.html の中に書かれていたものを、そのまま持ってきました。
+ 竹弘が作り込んだ画面なので、見た目が1ピクセルも変わらないよう、
+ 数値・色・余白は一切変更していません。
+
+----------------------------------------------------------------------
+
+【なぜ画面を1つにまとめたのか(v77)】
+
+ ブラウザは、ユーザーが選んだフォルダへのアクセス権限を
+ 「原則そのページを開いている間だけ」有効にします。
+ つまり別のページへ移動した瞬間に、せっかく取った許可が
+ 消えてしまうことがあります。
+
+ 実際、初期設定でMusicフォルダを選んだ直後にメインメニューへ
+ 移動したところ、着いた時には権限が切れている現象が起きました。
+
+ そこで竹弘の発案により、初期設定とメインメニューを同じ1枚の
+ ページにまとめ、「画面を切り替えるだけでページは移動しない」
+ 作りに変えました。移動しなければ権限は失われません。
+
+----------------------------------------------------------------------
+
+【なぜ全部 #setup-screen で囲っているのか】
+
+ c012.html と c014.html は別々に作られたため、同じ名前の指定が
+ いくつかあります(h1 など)。1枚のページにまとめると、
+ 片方の指定がもう片方の画面にも効いてしまい、デザインが崩れます。
+
+ そこで、初期設定画面のデザインは全て
+     #setup-screen ○○○
+ という形にして、「初期設定画面の中にある○○○だけ」に
+ 効くよう範囲を限定しています。これでメインメニュー側には
+ 一切影響しません。
+
+ 逆にメインメニュー側のCSS(c014.html内)も、初期設定画面が
+ 使っているクラス名とは重ならないことを確認済みです。
+======================================================================
+*/
+
+
+/*
+c014.html 側の :root には --main-blue と --bg-color が
+同じ値で定義済みなので、こちらに無い色だけを足します。
+(定規の中央にある赤い線の色です)
+*/
+:root {
+    --accent-red: #ff3b30;
+}
+
+/*
+初期設定画面全体を包む箱です。
+
+c012.html では body に直接指定していた「画面いっぱいに広げる」
+「指でなぞってもページが動かない」を、この箱に移しました。
+
+touch-action:none は、定規を左右にスワイプする時に
+ページ自体がスクロールしたり拡大したりしないための指定です。
+body に付けるとメインメニューの曲一覧までスクロールできなく
+なってしまうため、この画面の中だけに限定しています。
+*/
+#setup-screen {
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    background-color: var(--bg-color);
+    font-family: -apple-system, sans-serif;
+    touch-action: none;
+}
+
+#setup-screen #init-screen {
+    display: flex; flex-direction: column; align-items: center;
+    width: 100%; height: 100%; box-sizing: border-box; padding: 15px;
+}
+#setup-screen h1 { margin: 10px 0 20px; font-size: 1.8rem; color: #1c1c1e; }/* margin: 10px 0 20px余白上10px　左右0px　下20px、font-size:1.8rem標準文字の約1.8倍 */
+#setup-screen .instruction {font-size: 1.1rem; margin: 0 0 20px; font-weight: 600;text-align: center;}
+
+/* --- 解説メッセージ(マイピッチとは) --- */
+#setup-screen .kaisetu-box {
+    background: #f0f7ff; border: 1px solid #d1d1d6;
+    padding: 10px; border-radius: 10px;/* padding:10px文字と枠の間を10px空けます */
+    width: 90%; max-width: 450px;
+    font-size: 0.88rem; line-height: 1.5; color: #3a3a3c; text-align: center;box-shadow: 0 8px 20px rgba(0,0,0,0.08);
+}
+/* 角丸ボックスの見出し(🛡️ マイ・ピッチとは / 🎵 Musicフォルダの設定🎵)
+   本文と同じ大きさだと見出しに見えないため、少しだけ大きくしている */
+#setup-screen .kaisetu-title { font-weight: bold; display: block; margin-bottom: 6px; color: #000; font-size: 1.05rem; }
+#setup-screen .sub-instruction { font-size: 0.88rem; color: #8e8e93; margin-bottom: 10px; }
+
+/* --- スワイプ定規エリア --- */
+#setup-screen .ruler-outer {/* 定規を置く箱 */
+    position: relative; width: 100%; height: 160px;/* この箱を基準点にする、width:100% 横幅いっぱい使う、height:160px 定規の高さ */
+    background: #fff; border-radius: 20px;/* border-radius:20px角を丸くする */
+    box-shadow: 0 8px 20px rgba(0,0,0,0.08);/* box-shadow:影を付ける、0横方向の影、8px下方向に影を落とす、20pxぼかし量、rgba(0,0,0,0.08)黒色透明度8%ふわっと浮いて見える */
+    margin-bottom: 15px; overflow: hidden;/* margin-bottom:15px下に15pxの余白、overflow:hidden:はみ出した部分を隠す */
+}
+#setup-screen .center-line {/* BPMを読む基準線 */
+    position: absolute; left: 50%; top: 0; bottom: 0;/* position:absolute好きな場所に置く、left:50%左から50%つまり真ん中、top:0;bottom:0上から下まで線を引く、 */
+    width: 3px; background: var(--accent-red);/* width:3px線の太さ、background: var(--accent-red)赤色 */
+    z-index: 10; transform: translateX(-50%);/* z-index:10一番前に表示、transform: translateX(-50%)線の半分だけ左へ戻す(線の中心＝画面中央) */
+    border-radius: 2px;/* 線の角を少し丸くします */
+}
+#setup-screen #ruler-canvas { cursor: grab; width: 100%; height: 100%; }/* 定規を描く紙、cursor:grabマウスで見ると(スマホだと意味なし) */
+
+/* --- ラベル表示 --- */
+#setup-screen #status-display { text-align: center; margin-bottom: 15px; }
+#setup-screen #pitch-number { font-size: 3.5rem; font-weight: 900; color: var(--main-blue); line-height: 1; font-variant-numeric: tabular-nums; margin-top: 8px; }
+#setup-screen #pitch-label { font-size: 1.6rem; font-weight: bold; margin-top: 8px; }
+
+/* --- 設定ボタン --- */
+#setup-screen #save-btn {
+    margin-top: auto; margin-bottom: 25px;
+    background: var(--main-blue); color: white;
+    border: none; padding: 18px 50px;
+    font-size: 1.15rem; font-weight: bold;
+    border-radius: 35px; cursor: pointer;
+    box-shadow: 0 6px 20px rgba(0,122,255,0.4);
+    transition: transform 0.1s;
+}
+#setup-screen #save-btn:active { transform: scale(0.96); }
+
+/* --- 起動設定表示 --- */
+#setup-screen #folder-setup-screen {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    padding: 15px;
+}
+
+/* --- 起動設定ボタン --- */
+#setup-screen #folder-btn {
+    margin-top: 30px;
+    margin-bottom: 25px;
+    background: #ff9500; /* 暁色 */
+    color: white;
+    border: none;
+    padding: 18px 50px;
+    font-size: 1.15rem;
+    font-weight: bold;
+    border-radius: 35px;
+    cursor: pointer;
+    box-shadow: 0 6px 20px rgba(255,149,0,0.4);
+    transition: transform 0.1s;
+}
+
+#setup-screen #folder-btn:active {
+    transform: scale(0.96);
+}
+
+/* --- 起動設定 説明文 --- */
+#setup-screen #folder-setup-message {
+    font-size: 1rem;
+    line-height: 1.75;
+    text-align: left;
+}
+
+#setup-screen #folder-setup-message strong {
+    font-weight: 800;
+}
