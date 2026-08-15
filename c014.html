@@ -469,7 +469,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v103)ノリRun
+        (v105)ノリRun
         メインメニュー
 
     </title>
@@ -1192,16 +1192,8 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
            エリア7〜8：ピッチ変更の定規
         ====================================================== */
         /*
-        目盛りは repeating-linear-gradient で描いています。
-        これは「同じ模様を繰り返す背景」を作るCSSの機能で、
-        ここでは『1pxの線 + 11pxの余白』を左から右へ延々と
-        繰り返すことで、等間隔の目盛りに見せています。
-
-        画像を1枚も使わずに描けるので、オフラインでも確実に
-        表示され、読み込みも一切発生しません。
-
-        ※これはレイアウト確認のための仮の見た目です。
-          機能を付ける時に <canvas> の描画へ差し替えます。
+        定規の枠です。中の目盛りは <canvas> にJavaScriptで描きます
+        (v104。それまではCSSの背景で描いた仮の見た目でした)。
         */
         .ua-ruler{
             position:relative;
@@ -1209,14 +1201,28 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             border:1px solid var(--border-color);
             border-radius:8px;
             background:#f8f8f8;
-            background-image:repeating-linear-gradient(
-                to right,
-                var(--border-color) 0,
-                var(--border-color) 1px,
-                transparent 1px,
-                transparent 12px
-            );
             overflow:hidden;
+        }
+
+        /*
+        目盛りを描く紙(canvas)です。
+
+        display:block は、canvasが文字と同じ扱い(inline)のままだと
+        下にわずかな隙間ができるための対策です(文字の足元に空く
+        余白が残るため)。
+
+        touch-action:none は「この上での指の動きを、ブラウザの
+        スクロールや拡大に使わせない」という指定です。これが無いと
+        定規を左右になぞった時に画面ごとスクロールしようとして、
+        ピッチ調整が効かなくなります。初期設定画面の定規でも
+        同じ理由で touch-action:none を使っています。
+        */
+        .ua-ruler-canvas{
+            display:block;
+            width:100%;
+            height:100%;
+            touch-action:none;
+            cursor:grab;
         }
 
         /*
@@ -2526,15 +2532,18 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             再生中の曲のピッチを、指で左右にスワイプして
             リアルタイムに変えるための定規です(v8.5と同じ機能)。
 
-            初期設定画面の定規(#ruler-container)は高さ160pxの
-            <canvas> にJSで目盛りを描いていますが、ここは
-            2エリア分の高さに収める必要があるため、CSSを
-            このエリアに合わせて作り直しています(竹弘の指示)。
+            【v104で本物の定規になりました】
 
-            今は目盛りをCSSの背景で描いた「仮の見た目」です。
-            機能を付ける時に <canvas> へ差し替えます。
+            legacy ver8.5 の定規(drawRuler)を移植し、<canvas> に
+            JavaScriptで目盛りを描いています。指で左右にスワイプすると
+            1BPMずつ再生速度が変わり、中央の赤い線が今の再生ピッチを指します。
+
+            初期設定画面の定規(#ruler-container)は高さ160px固定でしたが、
+            ここは2エリア分の高さに収める必要があるため、目盛りの長さを
+            高さに対する割合で描くように作り直しています(竹弘の指示)。
         -->
         <div class="ua-slot ua-span2 ua-ruler">
+            <canvas id="pitch-ruler" class="ua-ruler-canvas"></canvas>
             <div class="ua-ruler-line"></div>
         </div>
 
@@ -2918,6 +2927,7 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
    bpm       … 曲の本来のBPM(元ピッチ)の自動解析
    upper-area… 上半分(操作エリア)の表示。list-view と bpm の関数を
                借りているので、必ずその後に読み込むこと
+   pitch     … 定規UIと再生ピッチ(再生速度)の制御
    settings  … 設定メニュー(⚙️)とライセンス表示
    player    … 曲の再生
    drag-sort … 並び替え(OFS)
@@ -2958,6 +2968,7 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
 <script src="js/list-view.js"></script>
 <script src="js/bpm.js"></script>
 <script src="js/upper-area.js"></script>
+<script src="js/pitch.js"></script>
 <script src="js/settings.js"></script>
 <script src="js/player.js"></script>
 <script src="js/drag-sort.js"></script>
