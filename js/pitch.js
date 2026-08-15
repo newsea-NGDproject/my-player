@@ -567,7 +567,167 @@ userBPM のすべてが基準の値に揃います。竹弘の指定した「定
 
 
 // ==========================================================
-// 8. 大きさが決まったら描く
+// 8. 再生ピッチの直打ち入力
+// ==========================================================
+
+/*
+「再生ピッチ：___」をタップすると開く、数値入力のパネルです。
+
+定規は1BPMずつ動かす道具なので、今120で鳴っている曲を170にしたい
+ような時は何度もなぞることになります。目当ての数字が決まっている時は
+打ち込んだ方が早い、という竹弘の指示によるものです。
+*/
+
+const pitchInputPanel = document.getElementById("pitch-input-panel");
+const pitchInput = document.getElementById("pitch-input");
+const pitchInputRange = document.getElementById("pitch-input-range");
+
+function openPitchInput(){
+
+    const track = libraryMap[currentTrackId];
+
+    // 曲を選んでいない時は、変える相手がいないので開きません
+    if(!track || !pitchInputPanel){ return; }
+
+    const base = getEffectiveBaseBpm(track);
+
+    // 設定できる範囲を先に見せておきます
+    const minBpm = Math.round(base * RATE_MIN);
+    const maxBpm = Math.round(base * RATE_MAX);
+
+    pitchInputRange.textContent =
+        "設定できる範囲：" + minBpm + " 〜 " + maxBpm + " BPM";
+
+    // 今のテンポを入れておきます
+    pitchInput.value = currentRulerBpm;
+
+    pitchInputPanel.style.display = "flex";
+
+    /*
+    focus() で入力欄に狙いを定め、select() で中の数字を選択状態にします。
+    こうしておくと開いた直後にキーを打てばそのまま置き換わるので、
+    今入っている数字をいちいち消す手間がありません。
+
+    スマホの数字キーボードもここで開きます。画面のタップから呼ばれて
+    いるため、ブラウザに「利用者の操作によるもの」と認めてもらえます
+    (勝手に開くキーボードは、どのブラウザでも止められます)。
+    */
+    pitchInput.focus();
+    pitchInput.select();
+
+}
+
+function closePitchInput(){
+
+    if(!pitchInputPanel){ return; }
+
+    pitchInputPanel.style.display = "none";
+
+    // blur() は focus() の逆で、キーボードを引っ込めます
+    pitchInput.blur();
+
+}
+
+function commitPitchInput(){
+
+    const track = libraryMap[currentTrackId];
+
+    if(!track){
+        closePitchInput();
+        return;
+    }
+
+    const value = Number(pitchInput.value);
+
+    // 数字として読めない・0以下の時は、何もせずに閉じます
+    if(!value || !isFinite(value) || value <= 0){
+        closePitchInput();
+        return;
+    }
+
+    const base = getEffectiveBaseBpm(track);
+
+    /*
+    applyTempo には「基準に対する倍率」を渡します。範囲からはみ出す値は
+    applyTempo の中で0.5〜2.0倍に丸められるので、ここでは入力された
+    数字をそのまま素直に渡しています(丸めの判断を2か所に書くと、
+    片方だけ直した時に食い違うため)。
+
+    第2引数の true は「DBに保存する」という意味です。竹弘が自分で
+    決めた値なので、次にこの曲を再生した時も同じテンポで鳴ります。
+
+    applyTempo の中で定規も再生ピッチの数字も一緒に更新されるので、
+    竹弘の指定した「直打ち変更が定規UIにリアルで反映する」は
+    これだけで実現しています。
+    */
+    applyTempo(value / base,true);
+
+    closePitchInput();
+
+}
+
+(function bindPitchInput(){
+
+    /*
+    タップの受け口は、数字だけでなく「再生ピッチ：」を含む左半分
+    ぜんぶ(.ua-pitch-now)にしています。走りながら狙うには、
+    数字だけでは的が小さすぎるためです。
+    */
+    const pitchArea = document.querySelector(".ua-pitch-now");
+
+    if(pitchArea){
+        pitchArea.addEventListener("click",openPitchInput);
+    }
+
+    const okButton = document.getElementById("pitch-input-ok");
+    const cancelButton = document.getElementById("pitch-input-cancel");
+
+    if(okButton){
+        okButton.addEventListener("click",commitPitchInput);
+    }
+
+    if(cancelButton){
+        cancelButton.addEventListener("click",closePitchInput);
+    }
+
+    /*
+    背景の暗い部分をタップしても閉じます。
+
+    event.target === pitchInputPanel で「幕そのものが押された時だけ」に
+    限っているのが要点です。この判定が無いと、中の入力欄やボタンを
+    押した時にもここへ伝わってきて、操作するそばから閉じてしまいます。
+    */
+    if(pitchInputPanel){
+
+        pitchInputPanel.addEventListener("click",function(event){
+
+            if(event.target === pitchInputPanel){
+                closePitchInput();
+            }
+
+        });
+
+    }
+
+    // キーボードのEnterでも決定できるようにします
+    if(pitchInput){
+
+        pitchInput.addEventListener("keydown",function(event){
+
+            if(event.key === "Enter"){
+                event.preventDefault();
+                commitPitchInput();
+            }
+
+        });
+
+    }
+
+})();
+
+
+// ==========================================================
+// 9. 大きさが決まったら描く
 // ==========================================================
 
 /*
