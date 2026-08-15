@@ -469,7 +469,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v88)ノリRun
+        (v90)ノリRun
         メインメニュー
 
     </title>
@@ -697,25 +697,66 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
            全部終わると5秒後にフワッと消えます。
         ====================================================== */
 
-        #ofs-lamp{
-            position:absolute;
-            top:8px;
-            right:8px;
+        /*
+        タイトルと解析ランプを載せる行です(v89)。
 
+        justify-content:center で h1 を行の中央に置き、
+        position:relative で「この行の右端」をランプの
+        置き場所の基準にしています。
+        */
+        .ua-title-row{
+            position:relative;
+            width:100%;
             display:flex;
             align-items:center;
-            justify-content:space-between;
-            gap:6px;
+            justify-content:center;
+        }
+
+        #ofs-lamp{
+            /*
+            【v89】タイトルと同じ行の右端に置きます(竹弘の変更依頼)。
+
+            top:50% と transform:translateY(-50%) は、
+            「親の高さのちょうど半分の位置まで下げ、そこから
+              自分の高さの半分だけ上へ戻す」という指定です。
+            2つセットで「高さが何pxであっても必ず縦中央」になり、
+            ランプが1行でも2行でもタイトルと目線が揃います。
+            */
+            position:absolute;
+            top:50%;
+            right:0;
+            transform:translateY(-50%);
 
             /*
-            元のOFSは width:145px の固定幅でしたが、
-            解析の進捗(3/50 など)も出すようにしたため、
-            最低幅だけ確保して横に伸びられるようにしています。
-            右上を基準に配置しているので、幅が伸びても
-            ランプのアイコン位置は右端で動きません。
+            【v89】縦2行組みにしました(竹弘の提案)。
+
+              flex-direction:column … 中身を縦に積む
+              align-items:flex-end  … 2行目を右詰めにする(竹弘の指示)
+
+            右詰めなので、1行目より短い2行目は右端に寄ります。
+
+                曲データ取込中
+                    18/371 🟡
+
+            v88までは横1行で、min-width:145px を確保していました。
+            しかしこの形だと進捗の桁数が増えるほど横に伸びるため、
+            画面の狭い端末ではタイトルに近づいてしまいます。
+
+            進捗を2行目へ逃がすと、ランプの幅は1行目の文言
+            (「曲データ取込中」など)だけで決まります。解析が
+            3/371 から 300/371 まで進んでも幅は変わりません。
+
+            white-space:nowrap は、1行目の文言が途中で
+            折り返されて3行になるのを防ぐための指定です。
+
+            ※この2行組みが効くのは「進捗がある表示」だけです。
+              進捗が無い表示は下の .lamp-oneline で1行に戻します。
             */
-            min-width:145px;
-            width:auto;
+            display:flex;
+            flex-direction:column;
+            align-items:flex-end;
+            gap:1px;
+            white-space:nowrap;
 
             padding:4px 8px;
             border-radius:6px;
@@ -729,6 +770,56 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             /* ランプの下にある文字をタップできるよう、当たり判定を無効化 */
             pointer-events:none;
             z-index:10;
+        }
+
+        /*
+        ランプの2行目(進捗 + ランプの色)です(v89)。
+
+        「18/371 🟡」のように、進捗のすぐ右へランプの色が並びます。
+        行そのものの位置は竹弘の指示で右詰めです
+        (#ofs-lamp の align-items:flex-end で効かせています)。
+        */
+        .ofs-lamp-line2{
+            display:flex;
+            align-items:center;
+            gap:4px;
+        }
+
+        /*
+        【v90】進捗が無い表示を、横1行に戻すための指定です。
+
+        竹弘の判断:
+            「色だけの行は寂しい」
+
+        たしかに「全工程完了」の下にランプの色だけがぽつんと
+        並ぶ形は間が抜けて見えるため、進捗の数字を持たない表示
+        (曲探索中 / 全工程完了 / 警告5種)は1行に戻します。
+
+            曲データ取込中     ← 進捗あり:2行のまま
+                18/371 🟡
+
+            全工程完了 🔵      ← 進捗なし:1行に戻す
+
+        付け外しは js/lamp.js の applyLampLineMode() が担当し、
+        「進捗が空かどうか」だけで自動的に決まります。将来ランプの
+        種類が増えても、この判断は勝手に正しく働きます。
+
+        【警告(⚠️)がタイトルに重なることについて】
+
+        1行に戻すと文言が横に長くなり、画面の狭い端末では
+        中央のタイトル「ノリRun」に重なることがあります。
+        これは竹弘の判断で、あえてそのままにしています。
+
+            「警告に関しては目立つ必要がある為、
+              被るくらいで違和感があった方がよい」
+
+        重なった時にランプが上に来るよう、#ofs-lamp には
+        z-index:10 が指定してあります。
+        */
+        #ofs-lamp.lamp-oneline{
+            flex-direction:row;
+            align-items:center;
+            gap:6px;
         }
 
         /* フェーズ1用:速い点滅(0.25秒サイクル) */
@@ -1878,16 +1969,42 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         <div class="ua-slot ua-span2 ua-header">
 
             <!--
-                解析状況ランプ。起動時は非表示で、
-                未解析の曲がある時だけJSから表示します。
-                (全曲すでに解析済みなら出さない=最速起動)
+                【v89】タイトルと解析ランプを「同じ行」に並べました
+                (竹弘の変更依頼、写真①)。
+
+                h1 はこの行の中央、ランプは同じ行の右端です。
+                ランプは position:absolute で浮かせているので、
+                ランプが出ても消えてもタイトルの位置は1ミリも
+                動きません(中央からズレて見えるのを防ぐため)。
             -->
-            <div id="ofs-lamp" style="display:none;">
-                <span id="ofs-lamp-text"></span>
-                <span id="ofs-lamp-icon"></span>
+            <div class="ua-title-row">
+
+                <h1>ノリRun</h1>
+
+                <!--
+                    解析状況ランプ。起動時は非表示で、
+                    未解析の曲がある時だけJSから表示します。
+                    (全曲すでに解析済みなら出さない=最速起動)
+
+                    v89から2行組みです(竹弘の提案)。
+
+                        1行目 … 今なにをしているか(曲データ取込中 など)
+                        2行目 … 進捗とランプの色(18/371 🟡)を右詰め
+
+                    進捗を2行目へ逃がしたので、解析が進んで桁数が
+                    増えてもランプの横幅が変わりません。どの解像度でも
+                    タイトルと重なりにくくなります。
+                -->
+                <div id="ofs-lamp" style="display:none;">
+                    <span id="ofs-lamp-text"></span>
+                    <span class="ofs-lamp-line2">
+                        <span id="ofs-lamp-progress"></span>
+                        <span id="ofs-lamp-icon"></span>
+                    </span>
+                </div>
+
             </div>
 
-            <h1>ノリRun</h1>
             <p class="sub-title">メインメニュー</p>
         </div>
 
