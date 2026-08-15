@@ -117,6 +117,17 @@ const npSeekEl = document.getElementById("np-seek");
 const npArtistEl = document.getElementById("np-artist");
 const npJacketEl = document.getElementById("np-jacket");
 
+/*
+エリア6のピッチ表示です。
+
+  pitchValueEl     … 「再生ピッチ：___」の数字(今の再生テンポ)
+  basePitchValueEl … 「元ピッチ：___」の数字(その曲が本来もつテンポ)
+
+中身を書き込むのは js/upper-area.js、数字を割り出すのは js/bpm.js です。
+*/
+const pitchValueEl = document.getElementById("pitch-value");
+const basePitchValueEl = document.getElementById("base-pitch-value");
+
 
 // ==========================================================
 // 3. 共有状態(複数のファイルが読み書きする変数)

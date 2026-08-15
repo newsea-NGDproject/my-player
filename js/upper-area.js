@@ -133,6 +133,99 @@ function showNowPlaying(track){
 
     }
 
+    // ---- ピッチ(元ピッチ / 再生ピッチ) ----
+    /*
+    まだ解析していない曲は、この中でBPMを解析します。
+
+    await を付けずに呼んでいるのは、解析に数秒かかることがあるためです。
+    先に曲名・アーティスト・ジャケットを出してしまい、ピッチの数字だけが
+    解析の終わった時点で後から入る、という順番にしています。
+    こうしないと、曲を選んでから画面に何も出ない時間ができてしまいます。
+    */
+    updatePitchDisplay(track);
+
+}
+
+
+/*
+================================================================
+ エリア6：ピッチ(BPM)の表示
+================================================================
+*/
+
+/*
+BPMを画面に出す形(3桁)にします。
+
+竹弘の指定で、数字は必ず3桁です(例: 85 → 085)。padStart(3,"0") は
+「3文字になるまで先頭に0を足す」という命令で、こうしておくと
+85と123で桁数が変わらず、右にある文字の位置がずれません。
+
+まだ分かっていない時は、3桁ぶんの「---」を返します。
+*/
+function formatPitch(bpm){
+
+    if(!bpm || !isFinite(bpm) || bpm <= 0){
+        return "---";
+    }
+
+    return String(Math.round(bpm)).padStart(3,"0");
+
+}
+
+/*
+2つのピッチを画面に書き込みます。
+
+  元ピッチ   … その曲が本来もつテンポ(baseBPM)
+  再生ピッチ … 今どのテンポで鳴らしているか
+
+再生ピッチに userBPM(竹弘が定規で変えた値)を優先して使い、まだ
+変えていなければ元ピッチと同じ値を出します。ピッチを変える機能は
+これから作るので、今のところ2つは必ず同じ数字になります。
+*/
+function showPitchValues(track){
+
+    basePitchValueEl.textContent = formatPitch(track.baseBPM);
+    pitchValueEl.textContent = formatPitch(track.userBPM || track.baseBPM);
+
+}
+
+/*
+再生する曲のピッチを表示します。まだ解析していない曲は、ここで解析します。
+
+【なぜ再生した曲だけ解析するのか】
+
+BPMの解析は、曲を丸ごと波形の数値にほどいてから調べます。4分の曲で
+80MBほどのメモリを使うため、369曲を一度にやるとメモリが足りません。
+その曲を実際に聴く時に1曲だけ解析し、結果をDBに残す形にしています。
+2回目からは保存した値をそのまま出すので待ち時間はありません
+(タイトルやジャケットの解析と同じ考え方です)。
+*/
+async function updatePitchDisplay(track){
+
+    // すでに解析済みなら、保存してある値をそのまま出します
+    if(!needsBpmAnalysis(track)){
+        showPitchValues(track);
+        return;
+    }
+
+    // 解析が終わるまでは「---」のままにしておきます
+    basePitchValueEl.textContent = "---";
+    pitchValueEl.textContent = "---";
+
+    await analyzeTrackBpm(track.track_id);
+
+    /*
+    解析には数秒かかることがあります。その間に竹弘が別の曲を選んで
+    いた場合、ここで書き込むと「今かかっている曲」とは違う数字が
+    出てしまいます。そのため、まだ同じ曲が選ばれている時だけ
+    画面を更新します。
+
+    currentTrackId は js/player.js が持っている「今どの曲を選んだか」です。
+    */
+    if(currentTrackId !== track.track_id){ return; }
+
+    showPitchValues(track);
+
 }
 
 
