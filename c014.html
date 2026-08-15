@@ -469,7 +469,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v101)ノリRun
+        (v102)ノリRun
         メインメニュー
 
     </title>
@@ -1632,7 +1632,17 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
            position:absolute で「曲一覧エリアの中の、見出しのすぐ下」に
            浮かせています。基準になるのは #list-area(position:relative)です。
         ====================================================== */
-        #sort-menu{
+        /*
+        並び替えメニューと設定メニューは、見た目をまったく同じに
+        します(竹弘の指示「曲一覧のソートボタンと同じように」)。
+
+        セレクタをカンマで並べて1つの指定を共有しているのは、
+        設定メニュー用にもう一組そっくりなCSSを書くと、片方だけ
+        直した時に見た目がズレていくためです。曲情報が曲一覧の
+        クラスを借りているのと同じ考え方です。
+        */
+        #sort-menu,
+        #settings-menu{
             /*
             画面を基準に位置を決めます(v86で absolute から変更)。
 
@@ -1661,7 +1671,8 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             min-width:210px;
         }
 
-        .sort-menu-item{
+        .sort-menu-item,
+        .settings-menu-item{
             display:flex;
             align-items:center;
             gap:10px;
@@ -1688,11 +1699,13 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         }
 
         /* 一番下の項目にだけ区切り線を引かない */
-        .sort-menu-item:last-child{
+        .sort-menu-item:last-child,
+        .settings-menu-item:last-child{
             border-bottom:none;
         }
 
-        .sort-menu-item:active{
+        .sort-menu-item:active,
+        .settings-menu-item:active{
             background:#e5e5ea;
         }
 
@@ -1714,7 +1727,8 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         (揃えないと「ノリ注入順」と「登録日時順」の頭がずれて
           きれいに見えません)
         */
-        .sort-icon{
+        .sort-icon,
+        .settings-icon{
             font-size:1.5rem;
             line-height:1;
             width:1.7rem;
@@ -2067,6 +2081,127 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         */
         #audio-player{
             display:none;
+        }
+
+        /* ======================================================
+           ライセンス表示画面
+        ====================================================== */
+
+        /*
+        画面全体を覆うパネルです。
+
+        top/right/bottom/left をすべて0にすると、画面の四辺に
+        ぴったり張り付いた「全画面」になります。position:fixed と
+        セットで使う、覆いかぶせる画面の定番の書き方です。
+
+        z-index:2000 は重なり順で、数字が大きいほど手前に来ます。
+        メニュー(1000)より手前、開発用デバッグパネル(20000)より
+        奥に置いています。
+
+        中を display:flex の縦並びにして、見出しを固定し、本文だけが
+        スクロールする形にしています(上下2分割の考え方は #app と同じ)。
+        */
+        #license-panel{
+            position:fixed;
+            top:0;
+            right:0;
+            bottom:0;
+            left:0;
+            z-index:2000;
+
+            background:var(--bg-color);
+
+            display:flex;
+            flex-direction:column;
+        }
+
+        /* 見出し。flex-shrink:0 で、本文が長くても縮ませません */
+        .license-header{
+            flex-shrink:0;
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            gap:8px;
+
+            padding:12px 16px;
+            box-sizing:border-box;
+
+            background:var(--card-bg);
+            border-bottom:1px solid var(--border-color);
+        }
+
+        .license-title{
+            font-size:1rem;
+            font-weight:bold;
+        }
+
+        /*
+        閉じるボタン(✕)。走りながら押すことは無い画面ですが、
+        指で確実に押せるよう40px角にしています。
+        */
+        .license-close-btn{
+            flex-shrink:0;
+            width:40px;
+            height:40px;
+            padding:0;
+
+            display:flex;
+            align-items:center;
+            justify-content:center;
+
+            font-size:1.1rem;
+            line-height:1;
+            color:var(--text-main);
+
+            background:#ffffff;
+            border:1px solid var(--border-color);
+            border-radius:50%;
+            cursor:pointer;
+        }
+
+        .license-close-btn:active{
+            background:#e5e5ea;
+        }
+
+        /*
+        本文の入れ物。ここだけがスクロールします。
+
+        min-height:0 は、上半分・下半分と同じflexboxの落とし穴への
+        対策です。これが無いと中身の長さだけ縦に伸びてしまい、
+        エリア内スクロールになりません。
+        */
+        .license-body{
+            flex:1;
+            min-height:0;
+            overflow-y:auto;
+            -webkit-overflow-scrolling:touch;
+
+            padding:16px;
+            box-sizing:border-box;
+        }
+
+        /*
+        ライセンス本文です。
+
+        <pre> は既定で等幅フォント・折り返しなしで表示されますが、
+        そのままだとスマホの幅では右へはみ出して横スクロールが
+        必要になります。そこで
+
+          white-space:pre-wrap … 原文の改行は残しつつ、画面の幅で
+                                 折り返しもする
+          word-break:break-word … 長いURLなども画面内で折り返す
+
+        の2つを足しています。font-family:inherit は、等幅フォントを
+        やめてアプリ全体と同じ書体に揃えるための指定です。
+        */
+        .license-text{
+            margin:0;
+            font-family:inherit;
+            font-size:0.72rem;
+            line-height:1.7;
+            color:var(--text-main);
+            white-space:pre-wrap;
+            word-break:break-word;
         }
 
     </style>
@@ -2501,6 +2636,91 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
 </div>
 
 <!-- ================================================================
+ 設定メニュー(⚙️ を押すと開く)
+
+ 中身は js/settings.js が作ります。曲一覧の並び替えメニュー
+ (#sort-menu)とまったく同じ作りで、見た目のCSSも共有しています。
+
+ 【なぜ #app の外に置くのか】
+
+ 上半分(#upper-area)は縦10等分のグリッドになっており、その中に
+ 要素を増やすと11番目のマスが生まれてレイアウトが崩れます。
+ このメニューは画面を基準に浮かせる(position:fixed)ので、
+ どこに書いてあっても表示位置は変わりません。それなら10等分の
+ 邪魔にならない外側に置いておくのが安全、という判断です。
+================================================================ -->
+<div id="settings-menu" style="display:none;"></div>
+
+<!-- ================================================================
+ ライセンス表示画面
+
+ 設定メニューの「📜 ライセンス」を選ぶと、画面全体を覆って開きます。
+ 2026-08-08に竹弘と約束していたもので、有償販売するアプリのため
+ 表記漏れは許されません。
+
+ 文面は docs/licenses.md の「掲載する文面」をそのまま載せています。
+ ライブラリを追加した時は、あちらとここの両方を更新すること。
+
+ 【<pre> を使っている理由】
+
+ ライセンス全文は、行の折り返し位置まで含めて原文のまま載せるのが
+ 作法です。<pre>(preformatted=整形済み)は、書いたとおりの改行と
+ 空白をそのまま表示するタグなので、この用途に向いています。
+
+ 中身を左端から書いているのは、<pre>がHTMLのインデント(字下げ)まで
+ 本文として表示してしまうためです。読みにくいですが、ここは
+ 崩さないでください。
+================================================================ -->
+<div id="license-panel" style="display:none;">
+
+    <div class="license-header">
+        <span class="license-title">📜 ライセンス</span>
+        <button type="button" id="license-close-btn" class="license-close-btn">✕</button>
+    </div>
+
+    <div class="license-body">
+<pre class="license-text">本アプリは、以下のオープンソースライブラリを使用しています。
+
+■ jsmediatags (音楽メタデータ解析用)
+   ライセンス: BSD 3-Clause License
+   https://github.com/aadsm/jsmediatags
+
+Copyright (c) 2009 Opera Software ASA
+Copyright (c) 2015 António Afonso
+Copyright (c) 2008 Jacob Seidelin, http://blog.nihilogic.dk/
+Copyright (c) 2010 Joshua Kifer
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+ * Redistributions of source code must retain the above copyright notice,
+   this list of conditions and the following disclaimer.
+
+ * Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+ * Neither the name Facebook nor the names of its contributors may be used
+   to endorse or promote products derived from this software without
+   specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.</pre>
+    </div>
+
+</div>
+
+<!-- ================================================================
      【開発用デバッグログパネル】ここから
      実機確認が終わったら、この範囲をまるごと削除してよい。
 ================================================================ -->
@@ -2697,6 +2917,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
    list-view … 曲一覧の描画
    upper-area… 上半分(操作エリア)の表示。list-view の関数を
                借りているので、必ずその後に読み込むこと
+   settings  … 設定メニュー(⚙️)とライセンス表示
    player    … 曲の再生
    drag-sort … 並び替え(OFS)
    lamp      … 解析状況ランプの表示
@@ -2735,6 +2956,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
 <script src="js/undo.js"></script>
 <script src="js/list-view.js"></script>
 <script src="js/upper-area.js"></script>
+<script src="js/settings.js"></script>
 <script src="js/player.js"></script>
 <script src="js/drag-sort.js"></script>
 <script src="js/lamp.js"></script>
