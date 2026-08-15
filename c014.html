@@ -469,7 +469,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v91)ノリRun
+        (v92)ノリRun
         メインメニュー
 
     </title>
@@ -865,6 +865,47 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         */
         .ua-nowplaying{
             gap:6px;
+        }
+
+        /*
+        2行目(再生位置 + アーティスト名)です(v92)。
+
+        display:flex で横に並べ、gap:4px が曲一覧の
+        「曲の長さとアーティスト名の間の半角スペース1つ」に
+        あたる隙間になります。
+
+        align-items:baseline は、文字の大きさが違う2つを
+        「文字の足元の線」で揃える指定です。中央揃え(center)に
+        すると、小さい方の文字が浮いて見えてしまいます。
+        */
+        .ua-meta-line{
+            display:flex;
+            align-items:baseline;
+            gap:4px;
+        }
+
+        /*
+        アーティスト名にかぶせる「窓」です(v92)。
+
+        タップした時の横スクロール演出は、
+        「窓(幅が決まっている外側)の中で、中身を横にずらす」
+        という仕組みで動きます。窓が無いと、どこまで動かせば
+        全部見えるのかを計算できません。
+
+        再生位置(0.00 / 4.32)をこの窓の外に置いてあるので、
+        アーティスト名が流れても再生位置は動きません
+        (竹弘の指示。今後シークバーと連動させるため)。
+
+        flex:1 で行の残り幅を全部受け取り、min-width:0 で
+        「中身より狭くなれない」という flexbox の既定を外します。
+        これが無いと、長いアーティスト名で窓自体が広がってしまい、
+        はみ出しが発生せず、スクロールする必要がなくなってしまいます。
+        */
+        .ua-artist-window{
+            flex:1;
+            min-width:0;
+            overflow:hidden;
+            white-space:nowrap;
         }
 
         /*
@@ -2039,13 +2080,51 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             <span class="ua-note-mark">♪</span>
 
             <div class="text-block">
-                <div class="info-line">
+
+                <!-- 1行目：曲のタイトル(タップすると横スクロール) -->
+                <div class="info-line" id="np-title-line">
                     <span class="scroll-text" id="np-title">曲を選ぶとここに表示されます</span>
                 </div>
-                <div class="info-line">
-                    <span class="artist-text">
-                        <span class="duration-text" id="np-seek">0.00 / 0.00</span>
-                        <span id="np-artist"></span>
+
+                <!--
+                    2行目：再生位置 + アーティスト名。
+
+                    曲一覧はこの行を丸ごとスクロールさせますが、
+                    ここだけは作りが違います(v92、竹弘の指示)。
+
+                        「曲の長さだけは、今後シークともリンク予定なので
+                          スクロールの対象としないでください」
+
+                    そこで再生位置は動かさず、アーティスト名だけを
+                    スクロールさせます。
+
+                    そのために、アーティスト名には専用の窓
+                    (.ua-artist-window)をかぶせています。スクロール演出は
+                    「窓の中で中身を横に動かす」仕組みなので、窓が無いと
+                    どこまで動かせばいいかを決められないためです。
+                    窓の外にある再生位置は、その動きに巻き込まれません。
+                -->
+                <div class="info-line ua-meta-line">
+
+                    <!--
+                        再生位置。クラスを2つ付けているのには理由があります。
+
+                          .artist-text  … 曲一覧の2行目と同じ文字の
+                                          大きさ・色にするため
+                          .duration-text … 数字の幅を揃えるため
+
+                        曲一覧では .duration-text が .artist-text の「中」に
+                        あるので、大きさと色は親から自然に受け継がれていました。
+                        v92でアーティスト名を専用の窓に移した際にこの親子関係が
+                        切れたため、両方を直接付けて同じ見た目を保っています。
+
+                        (数値だけをここに書き写さないのは、曲一覧側の文字
+                          サイズを将来変えた時に、ここだけ取り残されるのを
+                          防ぐためです)
+                    -->
+                    <span class="artist-text duration-text" id="np-seek">0.00 / 0.00</span>
+                    <span class="ua-artist-window" id="np-artist-line">
+                        <span class="artist-text" id="np-artist"></span>
                     </span>
                 </div>
             </div>
