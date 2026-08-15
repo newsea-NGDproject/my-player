@@ -32,10 +32,12 @@
 
      ・再生中の曲情報の表示(エリア3〜4)
      ・タイトル/アーティスト名のタップで横スクロール(エリア3〜4)
+     ・シークバー(エリア5)
      ・ミュートボタン(エリア5)
+     ・停止/再開ボタン(エリア10)
 
- の3つです。シークバー・ピッチ定規・その他のボタンは
- まだ見た目だけで、ここには何も書いていません。
+ の5つです。ピッチ定規やその他のボタンは、まだ見た目だけで
+ ここには何も書いていません。
 
  【読み込み順について】
 
@@ -78,16 +80,13 @@ function showNowPlaying(track){
     曲一覧の2行目は「曲の長さ」ですが、ここは竹弘の指定により
     再生位置の表示にします。
 
-    左側(今どこを再生しているか)を動かすのはシークバーの機能を
-    付ける時なので、今は 0.00 のまま固定です。右側の曲の長さは
-    今の時点でも分かるので入れておきます。
-
-    formatDuration は、まだ解析が済んでいない曲だと空文字を
-    返します。その時に「0.00 / 」と中途半端に見えてしまうため、
-    || で "0.00" を代わりに使うようにしています。
+    曲を選んだ直後なので、左側(今どこを再生しているか)は0秒です。
+    右側の曲の長さには、DBに保存してある値をひとまず使います。
+    音の読み込みが済んだ時点で、下の loadedmetadata が
+    audioが実際に測った長さへ置き換えます。
     */
-    const totalText = formatDuration(track.duration);
-    npSeekEl.textContent = "0.00 / " + (totalText || "0.00");
+    npSeekEl.textContent =
+        formatSeekTime(0) + " / " + formatSeekTime(track.duration);
 
     // ---- 2行目の右側：アーティスト名 ----
     // 取得できていない曲は、竹弘の指示通り何も表示しません。
@@ -185,6 +184,189 @@ npTitleLine.addEventListener("click",function(){
 
 npArtistLine.addEventListener("click",function(){
     triggerMarquee(npArtistLine);
+});
+
+
+/*
+================================================================
+ エリア5：シークバー(再生位置の表示と操作)
+================================================================
+*/
+
+const seekBar = document.getElementById("seek-bar");
+
+/*
+シークバーのつまみを指でつまんでいる最中かどうかを覚えておく印です。
+
+【なぜ必要か】
+
+再生中は、下の timeupdate が絶え間なくバーの位置を書き換えています。
+その最中に竹弘が指でつまみを動かすと、「指が動かす」と「再生が動かす」が
+同時に起きて、つまみが指から逃げていくような動きになります。
+
+そこで、つまみを触っている間だけこの印を立て、timeupdate 側に
+「今は書き換えないで」と伝えるようにしました。
+*/
+let isSeeking = false;
+
+/*
+再生位置の秒数を「分.秒」の文字にします。
+
+list-view.js の formatDuration() をそのまま使わないのには理由が
+あります。あちらは「まだ解析していない曲」を空文字で表す作りなので、
+0秒も空文字になってしまいます。再生位置は必ず0秒から始まるため、
+ここでは0秒を「00.00」として扱える形にしました。
+
+区切りが「:」ではなく「.」なのは、曲一覧の曲の長さと同じ竹弘の
+指定に合わせているためです(中身は formatDuration に任せています)。
+*/
+function formatSeekTime(seconds){
+
+    if(!seconds || !isFinite(seconds) || seconds <= 0){
+        return "00.00";
+    }
+
+    return formatDuration(seconds);
+
+}
+
+/*
+再生位置の文字(エリア3〜4の「00.00 / 04.00」)を書き換えます。
+*/
+function updateSeekText(currentSeconds){
+
+    npSeekEl.textContent =
+        formatSeekTime(currentSeconds) + " / " + formatSeekTime(audioPlayer.duration);
+
+}
+
+/*
+曲の長さが分かった時点で、バーの目盛りをその曲に合わせます。
+
+loadedmetadata は「曲の中身(長さなど)が読み込めた」という合図の
+イベントです。src を差し替えた直後はまだ長さが分からない
+(duration が NaN になる)ため、この合図を待ってから設定します。
+
+seekBar.max に曲の長さ(秒)を入れることで、バーの左端が0秒、
+右端が曲の終わりを表すようになります。
+*/
+audioPlayer.addEventListener("loadedmetadata",function(){
+
+    seekBar.max = audioPlayer.duration;
+    seekBar.value = 0;
+
+    updateSeekText(0);
+
+});
+
+/*
+再生が進むたびに、バーと文字を今の位置に合わせます。
+
+timeupdate は再生中におよそ0.25秒ごとに起きるイベントです。
+細かすぎず粗すぎない間隔なので、秒の表示を更新するのにちょうど
+良く、専用のタイマーを自分で回す必要がありません。
+*/
+audioPlayer.addEventListener("timeupdate",function(){
+
+    // つまみを触っている間は、指の邪魔をしないよう何もしません
+    if(isSeeking){ return; }
+
+    seekBar.value = audioPlayer.currentTime;
+
+    updateSeekText(audioPlayer.currentTime);
+
+});
+
+/*
+つまみを動かしている最中の処理です。
+
+input は「値が変わるたび」に起きるイベントで、指を動かしている
+間ずっと呼ばれます。ここでは音の再生位置はまだ動かさず、文字だけを
+先に更新します。動かしている途中で音まで飛ばすと、音が細切れに
+鳴って耳障りなためです。
+
+「今どのあたりを指しているか」は文字で分かるので、
+狙った場所で指を離せます。
+*/
+seekBar.addEventListener("input",function(){
+
+    isSeeking = true;
+
+    // Number() を通しているのは、入力部品の値が文字列で返るためです
+    updateSeekText(Number(seekBar.value));
+
+});
+
+/*
+指を離した時の処理です。
+
+change は「操作が終わって値が確定した時」に起きるイベントです。
+ここで初めて、実際の再生位置を動かします。
+*/
+seekBar.addEventListener("change",function(){
+
+    audioPlayer.currentTime = Number(seekBar.value);
+
+    isSeeking = false;
+
+});
+
+
+/*
+================================================================
+ エリア10：停止ボタン(■ / ▶)
+================================================================
+*/
+
+/*
+竹弘の判断で「一時停止」にしています。
+
+    ■ を押す … その場で止まり、記号が ▶ に変わる
+    ▶ を押す … 続きから再生され、記号が ■ に戻る
+
+信号待ちや給水で止めても、そこから走り出せるようにするためです
+(再生位置が曲の先頭に戻る「完全停止」ではありません)。
+*/
+const STOP_ICON_PLAYING = "■";
+const STOP_ICON_PAUSED = "▶";
+
+const stopBtn = document.getElementById("stop-btn");
+
+stopBtn.addEventListener("click",function(){
+
+    /*
+    まだ1曲も選んでいない時は、鳴らすものがないので何もしません。
+    音の入っていない状態で play() を呼ぶとエラーになるためです。
+    */
+    if(!audioPlayer.src){ return; }
+
+    if(audioPlayer.paused){
+        audioPlayer.play();
+    }
+    else{
+        audioPlayer.pause();
+    }
+
+});
+
+/*
+記号(■ ⇄ ▶)の切り替えは、ボタンが押された時ではなく
+「実際に再生が始まった/止まった時」に行います。
+
+こうしておくと、曲一覧をタップして再生が始まった時のように
+このボタン以外がきっかけで状態が変わった場合でも、記号が自動的に
+正しくなります。押された時に書き換える作りだと、別の場所から
+再生が始まった時に ▶ のまま取り残されてしまいます。
+
+「JSは “今どうなっているか” を写すだけ」という形にしておくのが、
+表示と実際の状態がズレない一番の近道です。
+*/
+audioPlayer.addEventListener("play",function(){
+    stopBtn.textContent = STOP_ICON_PLAYING;
+});
+
+audioPlayer.addEventListener("pause",function(){
+    stopBtn.textContent = STOP_ICON_PAUSED;
 });
 
 
