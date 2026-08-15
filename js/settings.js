@@ -1,0 +1,300 @@
+/*
+================================================================
+ settings.js … 設定メニュー(⚙️)とライセンス表示
+
+----------------------------------------------------------------------
+
+【このファイルの役割】
+
+ 上半分エリア10の ⚙️ ボタンを押した時に開くメニューと、そこから
+ 選ぶ画面を受け持ちます。
+
+ 竹弘の指示により、見た目も操作も曲一覧の並び替えメニュー
+ (js/sort.js)とまったく同じにしてあります。
+
+     「曲一覧のソートボタンと同じように、
+       設定ボタンを押したらメニューを用意して欲しい」
+
+ CSSも #sort-menu / .sort-menu-item と共有しているため、
+ 片方の見た目を直せば両方に効きます。
+
+----------------------------------------------------------------------
+
+【今ある項目】
+
+     📜 ライセンス … 使用している外部ライブラリのライセンス表記
+
+ ライセンス表示は2026-08-08に竹弘と約束していたもので、有償販売
+ するアプリのため表記漏れは許されません。文面は docs/licenses.md の
+ 「掲載する文面」を c014.html にそのまま載せてあります。
+ ライブラリを増やした時は、docs/licenses.md と c014.html の
+ 両方を更新すること。
+
+ 項目を増やす時は、下の SETTINGS_DEFINITIONS に1行足して、
+ openSettingsItem() に処理を書き足します。
+================================================================
+*/
+
+
+// ==========================================================
+// 1. メニューの項目
+// ==========================================================
+/*
+ここに並べた順で、そのままメニューに出ます。
+
+  key   … どの項目が選ばれたかを見分けるための名前
+  icon  … 行の先頭に出す記号
+  label … 画面に出す文字
+
+js/sort.js の SORT_DEFINITIONS と同じ形にしてあります。
+*/
+const SETTINGS_DEFINITIONS = [
+    {
+        key: "license",
+        icon: "📜",
+        label: "ライセンス"
+    }
+];
+
+
+// ==========================================================
+// 2. メニューの表示
+// ==========================================================
+
+/**
+ * メニューの中身を作り直します。
+ */
+function renderSettingsMenu(){
+
+    const menu = document.getElementById("settings-menu");
+
+    if(!menu){ return; }
+
+    menu.innerHTML = "";
+
+    SETTINGS_DEFINITIONS.forEach(function(definition){
+
+        const item = document.createElement("button");
+        item.type = "button";
+        item.className = "settings-menu-item";
+
+        /*
+        並び替えメニューは3つ目に ▲▼ を出しますが、こちらには
+        並び順という考え方がありません。それでも空のspanを1つ
+        置いているのは、CSSを共有しているためです(項目の横幅の
+        配分が、記号・文字・余白の3つで決まっています)。
+        */
+        item.innerHTML =
+            "<span class='settings-icon'>" + definition.icon + "</span>" +
+            "<span>" + definition.label + "</span>" +
+            "<span></span>";
+
+        item.addEventListener("click",function(){
+            openSettingsItem(definition.key);
+        });
+
+        menu.appendChild(item);
+
+    });
+
+}
+
+/**
+ * メニューを開きます。
+ *
+ * 位置の決め方は js/sort.js の openSortMenu() とほぼ同じですが、
+ * 横位置の扱いだけ違います(下の解説を参照)。
+ */
+function openSettingsMenu(){
+
+    const menu = document.getElementById("settings-menu");
+    const button = document.getElementById("settings-btn");
+
+    if(!menu || !button){ return; }
+
+    renderSettingsMenu();
+
+    /*
+    大きさを測るために、いったん表示します。
+    visibility:hidden は「場所は取るが見えない」状態で、
+    display:none(場所も取らない)と違って大きさを測れます。
+    */
+    menu.style.visibility = "hidden";
+    menu.style.display = "block";
+
+    const buttonRect = button.getBoundingClientRect();
+    const menuHeight = menu.offsetHeight;
+    const menuWidth = menu.offsetWidth;
+
+    // --- 縦の位置 ---
+
+    // 基本はボタンのすぐ下
+    let top = buttonRect.bottom + 6;
+
+    /*
+    ⚙️ は画面のかなり下(エリア10)にあるため、下に開くと
+    ほぼ必ず画面からはみ出します。その時はボタンの上側に開きます。
+    */
+    if(top + menuHeight > window.innerHeight - 8){
+        top = buttonRect.top - menuHeight - 6;
+    }
+
+    if(top < 8){
+        top = 8;
+    }
+
+    // --- 横の位置 ---
+
+    /*
+    並び替えボタン(⇅)は画面の左寄りにあるので、js/sort.js は
+    メニューの左端をボタンの左端に合わせるだけで済んでいました。
+
+    一方 ⚙️ は画面の右端近くにあるため、同じことをすると
+    メニューが画面の外へはみ出します。そこで、はみ出す時は
+    「メニューの右端をボタンの右端に合わせる」形に切り替えます。
+    (右揃えで開く、という言い方をします)
+    */
+    let left = buttonRect.left;
+
+    if(left + menuWidth > window.innerWidth - 8){
+        left = buttonRect.right - menuWidth;
+    }
+
+    if(left < 8){
+        left = 8;
+    }
+
+    menu.style.top = top + "px";
+    menu.style.left = left + "px";
+
+    menu.style.visibility = "visible";
+
+}
+
+function closeSettingsMenu(){
+
+    const menu = document.getElementById("settings-menu");
+
+    if(!menu){ return; }
+
+    menu.style.display = "none";
+
+}
+
+function isSettingsMenuOpen(){
+
+    const menu = document.getElementById("settings-menu");
+
+    return (menu && menu.style.display !== "none");
+
+}
+
+
+// ==========================================================
+// 3. 項目が選ばれた時
+// ==========================================================
+
+/**
+ * メニューの項目が選ばれた時に呼ばれます。
+ *
+ * 項目を増やした時は、ここに分岐を足します。
+ */
+function openSettingsItem(key){
+
+    closeSettingsMenu();
+
+    if(key === "license"){
+        openLicensePanel();
+    }
+
+}
+
+
+// ==========================================================
+// 4. ライセンス表示画面
+// ==========================================================
+
+function openLicensePanel(){
+
+    const panel = document.getElementById("license-panel");
+
+    if(!panel){ return; }
+
+    panel.style.display = "flex";
+
+    /*
+    前回開いた時のスクロール位置が残らないよう、先頭に戻します。
+    竹弘がソートの時に指摘した「見たいのは頭からなのに途中から
+    始まる」のと同じ理屈で、開いた時は必ず1行目から読めるように
+    しておきます。
+    */
+    const body = panel.querySelector(".license-body");
+
+    if(body){ body.scrollTop = 0; }
+
+}
+
+function closeLicensePanel(){
+
+    const panel = document.getElementById("license-panel");
+
+    if(!panel){ return; }
+
+    panel.style.display = "none";
+
+}
+
+
+// ==========================================================
+// 5. ボタンの結び付け
+// ==========================================================
+
+(function bindSettingsButton(){
+
+    const button = document.getElementById("settings-btn");
+
+    if(!button){ return; }
+
+    button.addEventListener("click",function(event){
+
+        /*
+        stopPropagation は「このタップを親の要素へ伝えない」という
+        命令です。これが無いと、下で登録している「画面のどこかが
+        タップされたらメニューを閉じる」処理にもこのタップが届き、
+        開いた瞬間に閉じてしまいます。
+        */
+        event.stopPropagation();
+
+        if(isSettingsMenuOpen()){
+            closeSettingsMenu();
+        }
+        else{
+            openSettingsMenu();
+        }
+
+    });
+
+    // メニューの外側をタップしたら閉じます
+    document.addEventListener("click",function(event){
+
+        if(!isSettingsMenuOpen()){ return; }
+
+        const menu = document.getElementById("settings-menu");
+
+        // メニューの中を押した時は閉じません(項目を選んだ時は別途閉じます)
+        if(menu && menu.contains(event.target)){ return; }
+
+        closeSettingsMenu();
+
+    });
+
+    // ライセンス画面の閉じるボタン(✕)
+    const closeBtn = document.getElementById("license-close-btn");
+
+    if(closeBtn){
+        closeBtn.addEventListener("click",function(){
+            closeLicensePanel();
+        });
+    }
+
+})();
