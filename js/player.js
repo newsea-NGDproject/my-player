@@ -133,8 +133,15 @@ async function playTrack(trackId){
         currentTrackId = trackId;
 
         audioPlayer.src = currentObjectUrl;
-        nowPlayingEl.textContent = "再生中：" + (track.title || track.file_name);
-        playerBox.style.display = "block";
+
+        /*
+        上半分(エリア3〜4)に、今かけている曲の情報を表示します。
+
+        v87まではここで #player-box という丸角カードを表示して
+        いましたが、v88で上半分を10分割レイアウトに作り替えた際、
+        曲情報の表示は js/upper-area.js の担当になりました。
+        */
+        showNowPlaying(track);
 
         /*
         ここから下は、権限やファイル取得ではなく

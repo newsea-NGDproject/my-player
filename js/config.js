@@ -102,8 +102,20 @@ HTMLがまだ組み上がっていない状態(<head>の中など)で実行す�
 
 const menuListEl = document.getElementById("menu-list");
 const audioPlayer = document.getElementById("audio-player");
-const playerBox = document.getElementById("player-box");
-const nowPlayingEl = document.getElementById("now-playing");
+
+/*
+上半分(操作エリア)にある、再生中の曲情報の表示部分です。
+
+v87までは再生すると #player-box という丸角カードが現れ、
+そこに「再生中：曲名」を出していましたが、v88で上半分を
+10分割レイアウトに作り替えた際、エリア3〜4の曲情報
+(♪・タイトル・再生位置・アーティスト・ジャケット)に
+置き換わりました。中身を書き込むのは js/upper-area.js です。
+*/
+const npTitleEl = document.getElementById("np-title");
+const npSeekEl = document.getElementById("np-seek");
+const npArtistEl = document.getElementById("np-artist");
+const npJacketEl = document.getElementById("np-jacket");
 
 
 // ==========================================================
