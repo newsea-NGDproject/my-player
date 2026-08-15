@@ -263,6 +263,72 @@ function drawRuler(centerBpm){
 
     }
 
+    /*
+    最後に、設定できない範囲へうすいグレーをかぶせます(v107)。
+
+    目盛りを描いた「後」に重ねているのがポイントで、こうすると
+    その範囲の目盛りも一緒に薄く沈み、「ここは使えない場所」として
+    見えます。先に塗ってしまうと目盛りだけがはっきり浮いてしまい、
+    使える場所との差が出ません。
+    */
+    drawOutOfRangeMask(centerBpm,width,height,centerX);
+
+}
+
+/**
+ * 再生速度を変えられない範囲に、うすいグレーをかぶせます。
+ *
+ * 竹弘の要望(v107):
+ *     「定規UIの設定できないピッチエリアの少しグレー化。
+ *       これ以上は設定範囲ではないよとわかればいいレベル。
+ *       ユーザーがなんでこれ以上定規UIが動かないのかなといった
+ *       疑問がでるかもしれない為」
+ *
+ * 再生速度には 0.5〜2.0倍 という安全装置があるため(RATE_MIN /
+ * RATE_MAX)、定規もそこで止まります。何も無いまま止まると
+ * 故障のように見えてしまうので、行き止まりを目で分かるようにします。
+ *
+ * 例えば元ピッチ120の曲なら、60BPMより下と240BPMより上が
+ * グレーになります。
+ */
+function drawOutOfRangeMask(centerBpm,width,height,centerX){
+
+    const track = libraryMap[currentTrackId];
+
+    // 曲を選んでいない間は、そもそも設定できる範囲が決まりません
+    if(!track){ return; }
+
+    const base = getEffectiveBaseBpm(track);
+
+    // 設定できるBPMの下限と上限
+    const minBpm = base * RATE_MIN;
+    const maxBpm = base * RATE_MAX;
+
+    /*
+    その境目が、定規の上でどの位置(x座標)に来るかを求めます。
+    計算の仕方は目盛りを描く時とまったく同じで、
+    「中心からのBPMの差 × 1BPMあたりの間隔」です。
+    */
+    const minX = centerX + (minBpm - centerBpm) * RULER_GAP;
+    const maxX = centerX + (maxBpm - centerBpm) * RULER_GAP;
+
+    /*
+    rgba の4つ目の数字が透明度で、0で透明・1で真っ黒です。
+    0.12 は「言われてみれば色が違う」程度の薄さで、竹弘の
+    「わかればいいレベル」に合わせています。
+    */
+    rulerCtx.fillStyle = "rgba(0,0,0,0.12)";
+
+    // 下限より左側(遅すぎて設定できない範囲)
+    if(minX > 0){
+        rulerCtx.fillRect(0,0,minX,height);
+    }
+
+    // 上限より右側(速すぎて設定できない範囲)
+    if(maxX < width){
+        rulerCtx.fillRect(maxX,0,width - maxX,height);
+    }
+
 }
 
 
