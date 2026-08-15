@@ -469,7 +469,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v108)ノリRun
+        (v109)ノリRun
         メインメニュー
 
     </title>
@@ -1098,6 +1098,14 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             display:flex;
             align-items:baseline;
             justify-content:center;
+
+            /*
+            v109から、ここをタップすると数値の直接入力パネルが開きます。
+            数字だけでなく「再生ピッチ：」の文字も含めた左半分ぜんぶを
+            当たり判定にしているのは、走りながらでも狙いやすくするためです
+            (数字だけだと的が小さすぎます)。
+            */
+            cursor:pointer;
         }
 
         .ua-pitch-label{
@@ -1118,6 +1126,14 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             font-weight:900;
             color:var(--main-blue);
             font-variant-numeric:tabular-nums;
+
+            /*
+            点線の下線は「ここは押せる」という合図です(v109)。
+            legacy ver8.5 でも、直接入力できる数値には同じように
+            点線が引いてありました。押せる場所が見た目で分からないと、
+            機能があること自体に気づけないためです。
+            */
+            border-bottom:2px dashed var(--main-blue);
         }
 
         /*
@@ -2210,6 +2226,157 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             word-break:break-word;
         }
 
+        /* ======================================================
+           再生ピッチの直打ち入力パネル
+        ====================================================== */
+
+        /*
+        画面全体を覆う、うすい黒の幕です。
+
+        中央に入力欄を浮かせつつ、後ろを暗くすることで
+        「今はこの入力に答える場面」だと伝わります。
+        display:flex + center で、中の箱が縦にも横にも中央へ来ます。
+
+        z-index は、設定メニュー(1000)より手前・ライセンス画面(2000)と
+        並ぶ高さにしています。
+        */
+        #pitch-input-panel{
+            position:fixed;
+            top:0;
+            right:0;
+            bottom:0;
+            left:0;
+            z-index:2000;
+
+            background:rgba(0,0,0,0.4);
+
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            padding:20px;
+            box-sizing:border-box;
+        }
+
+        /* 中央に浮かぶ白い箱。見た目は他のカードと揃えています */
+        .pitch-input-box{
+            width:100%;
+            max-width:300px;
+            box-sizing:border-box;
+            padding:20px;
+
+            background:var(--card-bg);
+            border-radius:18px;
+            box-shadow:0 8px 24px rgba(0,0,0,0.25);
+
+            text-align:center;
+        }
+
+        .pitch-input-title{
+            margin:0 0 14px;
+            font-size:0.9rem;
+            font-weight:bold;
+        }
+
+        .pitch-input-row{
+            display:flex;
+            align-items:baseline;
+            justify-content:center;
+            gap:6px;
+        }
+
+        /*
+        数値の入力欄。
+
+        走りながらでも読める大きさにしたいので、画面の他の文字より
+        かなり大きくしています。text-align:center で数字を中央に置き、
+        tabular-nums で桁数が変わっても幅がぶれないようにしています。
+
+        appearance:none と ::-webkit-outer-spin-button は、
+        数値入力欄の右端に出る小さな上下の矢印を消す指定です。
+        指で押すには小さすぎて誤操作のもとになるうえ、
+        1ずつの調整は定規の方が得意なので出しません。
+        */
+        .pitch-input{
+            width:120px;
+            padding:6px 4px;
+            box-sizing:border-box;
+
+            font-size:2rem;
+            font-weight:900;
+            text-align:center;
+            color:var(--main-blue);
+            font-variant-numeric:tabular-nums;
+
+            border:none;
+            border-bottom:2px solid var(--main-blue);
+            background:transparent;
+            outline:none;
+
+            -webkit-appearance:none;
+            appearance:none;
+        }
+
+        .pitch-input::-webkit-outer-spin-button,
+        .pitch-input::-webkit-inner-spin-button{
+            -webkit-appearance:none;
+            margin:0;
+        }
+
+        .pitch-input-unit{
+            font-size:0.8rem;
+            color:var(--text-sub);
+        }
+
+        /*
+        設定できる範囲の案内。
+
+        範囲外の数字を入れても自動で内側へ丸められますが、
+        それだけだと「入れた数字と違う」と戸惑うため、
+        先に上限と下限を見せておきます。
+        */
+        .pitch-input-range{
+            margin:12px 0 0;
+            font-size:0.7rem;
+            color:var(--text-sub);
+        }
+
+        .pitch-input-buttons{
+            display:flex;
+            gap:10px;
+            margin-top:18px;
+        }
+
+        .pitch-input-btn{
+            flex:1 1 0;
+            width:0;
+            padding:10px 0;
+            box-sizing:border-box;
+
+            font-size:0.85rem;
+            font-weight:bold;
+            color:var(--text-main);
+
+            background:#ffffff;
+            border:1px solid var(--border-color);
+            border-radius:10px;
+            cursor:pointer;
+        }
+
+        .pitch-input-btn:active{
+            background:#e5e5ea;
+        }
+
+        /* 決定ボタンは主役なので青で目立たせます(エリア9と同じ考え方) */
+        .pitch-input-ok{
+            color:#ffffff;
+            background:var(--main-blue);
+            border-color:var(--main-blue);
+        }
+
+        .pitch-input-ok:active{
+            background:#0062cc;
+        }
+
     </style>
 
     <!--
@@ -2659,6 +2826,47 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
  邪魔にならない外側に置いておくのが安全、という判断です。
 ================================================================ -->
 <div id="settings-menu" style="display:none;"></div>
+
+<!-- ================================================================
+ 再生ピッチの直打ち入力パネル
+
+ エリア6の「再生ピッチ：___」をタップすると開きます。定規を何度も
+ なぞらなくても、目当てのテンポへ一息で移れるようにするためのものです。
+
+ 【なぜ自作したのか(竹弘の判断)】
+
+ legacy ver8.5 はブラウザ標準の prompt() を使っていましたが、あの窓は
+ 見た目が端末任せで、アプリのデザインと揃いません。設定メニューや
+ ライセンス画面と同じ作りにしています。
+
+ 【<input type="number"> と inputmode について】
+
+ type="number" は数字だけを受け付ける入力欄で、スマホでは数字キーが
+ 出ます。inputmode="numeric" も併記しているのは、端末によっては
+ type だけではキーボードが切り替わらないことがあるためです。
+================================================================ -->
+<div id="pitch-input-panel" style="display:none;">
+
+    <div class="pitch-input-box">
+
+        <p class="pitch-input-title">再生ピッチを入力</p>
+
+        <div class="pitch-input-row">
+            <input type="number" id="pitch-input" class="pitch-input"
+                   inputmode="numeric" min="1" max="999">
+            <span class="pitch-input-unit">BPM</span>
+        </div>
+
+        <p class="pitch-input-range" id="pitch-input-range">設定できる範囲：--- 〜 ---</p>
+
+        <div class="pitch-input-buttons">
+            <button type="button" id="pitch-input-cancel" class="pitch-input-btn">キャンセル</button>
+            <button type="button" id="pitch-input-ok" class="pitch-input-btn pitch-input-ok">決定</button>
+        </div>
+
+    </div>
+
+</div>
 
 <!-- ================================================================
  ライセンス表示画面
