@@ -92,8 +92,27 @@ function needsBpmAnalysis(track){
     if(!track){ return false; }
 
     /*
+    タップ補正(ノリ注入)で人が耳で測った値がある曲は、自動解析しません。
+
+    その曲の基準として実際に使われるのは manualBPM の方なので
+    (js/pitch.js の getEffectiveBaseBpm)、自動解析しても結果は
+    どこにも使われません。それでも解析は数秒かかり、曲を丸ごと
+    波形にほどくため80MBほどのメモリを使います。使われない値の
+    ために毎回それを払うのは無駄なので、ここで打ち切ります。
+
+    竹弘の確認(2026-08-15)への答えでもあります。タップ補正した曲が
+    後から自動解析に上書きされることはありません。
+    */
+    if(track.manualBPM){ return false; }
+
+    /*
     まだ一度も解析していない曲は bpm_analyzer_version を持っていないので、
     || 0 で「0番」として扱い、必ず解析対象になるようにしています。
+
+    逆に言うと、一度解析した曲はこの番号が入るので二度と解析されません。
+    同じ曲を何度再生しても、baseBPM が解析し直されることはありません
+    (私が解析ロジックを改善して BPM_ANALYZER_VERSION を上げた時だけ、
+      その1回に限り解析し直されます)。
     */
     return (track.bpm_analyzer_version || 0) < BPM_ANALYZER_VERSION;
 
