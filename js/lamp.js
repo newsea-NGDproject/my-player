@@ -10,12 +10,41 @@
  切り替えます。曲情報の解析が今どこまで進んでいるかを、
  竹弘に一目で伝えるためのものです。
 
-   フェーズ1 … 🟡 黄・速い点滅  「曲データ取込中 3/369」
-   フェーズ2 … 🟢 緑・普通の点滅「ジャケ写同期 3/369」
+   フェーズ1 … 🟡 黄・速い点滅  「曲データ取込中」
+   フェーズ2 … 🟢 緑・普通の点滅「ジャケ写同期」
    フェーズ3 … 🔵 青・常時点灯  「全工程完了」→5秒後に消える
 
  このほか、異常を知らせる赤いランプ(showLampError)もあります。
  こちらは自動では消えません。
+
+----------------------------------------------------------------------
+
+【ランプの行数(v89-v90、竹弘の指示)】
+
+ ランプは「進捗の数字を持つ表示だけ」縦2行になります。
+
+     1行目(#ofs-lamp-text)     … 今なにをしているか
+     2行目(#ofs-lamp-progress  … 進捗(18/371)
+           + #ofs-lamp-icon)      とランプの色。右詰め
+
+ 表示は次のようになります。
+
+     曲データ取込中            全工程完了 🔵
+         18/371 🟡
+
+     ↑進捗あり:2行            ↑進捗なし:1行
+
+ v88までは横1行に「曲データ取込中 18/371」と並べていましたが、
+ それだと解析が進んで桁数が増えるほどランプが横に伸び、
+ 画面の狭い端末で中央のタイトル「ノリRun」に近づいてしまいます。
+
+ 進捗を2行目へ逃がすと、ランプの幅は1行目の文言だけで決まるため、
+ 3/371 でも 300/371 でも横幅が一切変わりません。
+
+ 一方、進捗を持たない表示まで2行にすると、2行目にランプの色だけが
+ ぽつんと残って間が抜けて見えます(竹弘の指摘「色だけの行は寂しい」)。
+ そこで v90 から、進捗が無い表示は1行に戻しました。
+ 切り替えは applyLampLineMode() が進捗の有無だけを見て自動で行います。
 
  実際に「いつどのフェーズにするか」を決めているのは metadata.js で、
  このファイルは頼まれた通りに表示を変えるだけの担当です。
@@ -43,7 +72,7 @@ let lampPhase = 0;
 
 
 /**
- * 「曲を探しています」の表示を出します(スキャン中)。
+ * 「曲探索中」の表示を出します(スキャン中)。
  *
  * メインメニューを開いた直後、Musicフォルダの中に新しい曲が
  * 追加されていないかを調べる間だけ表示します。
@@ -58,9 +87,10 @@ function setLampScanning(){
 
     const lamp = document.getElementById("ofs-lamp");
     const lampText = document.getElementById("ofs-lamp-text");
+    const lampProgress = document.getElementById("ofs-lamp-progress");
     const lampIcon = document.getElementById("ofs-lamp-icon");
 
-    if(!lamp || !lampText || !lampIcon){ return; }
+    if(!lamp || !lampText || !lampProgress || !lampIcon){ return; }
 
     // 前に警告ランプを押せる状態にしていた場合は元へ戻す
     resetLampInteraction(lamp);
@@ -72,7 +102,16 @@ function setLampScanning(){
     lamp.style.background = "#f2f2f7";
     lamp.style.color = "#8e8e93";
 
-    lampText.innerText = "曲を探しています";
+    /*
+    文言は v90 で「曲を探しています」から「曲探索中」に短くしました
+    (竹弘の指示)。1行で表示するため、短いほどタイトルから離れます。
+    */
+    lampText.innerText = "曲探索中";
+
+    // 進捗の数字は無いので、「曲探索中 🔍」の1行で表示します
+    lampProgress.innerText = "";
+    applyLampLineMode(lamp,lampProgress.innerText);
+
     lampIcon.innerText = "🔍";
     lampIcon.className = "blink-normal";
 
@@ -124,9 +163,10 @@ function setLampPhase(phase,doneCount,totalCount){
 
     const lamp = document.getElementById("ofs-lamp");
     const lampText = document.getElementById("ofs-lamp-text");
+    const lampProgress = document.getElementById("ofs-lamp-progress");
     const lampIcon = document.getElementById("ofs-lamp-icon");
 
-    if(!lamp || !lampText || !lampIcon){ return; }
+    if(!lamp || !lampText || !lampProgress || !lampIcon){ return; }
 
     // 前に警告ランプを押せる状態にしていた場合は元へ戻す
     resetLampInteraction(lamp);
@@ -136,11 +176,18 @@ function setLampPhase(phase,doneCount,totalCount){
     lamp.style.display = "flex";
     lamp.style.opacity = "1";
 
+    /*
+    v88までは1行目に「曲データ取込中 18/371」とまとめて入れて
+    いましたが、v89の2行組みでは進捗を2行目(lampProgress)へ
+    分けて入れます。文言と進捗の入れ先が違うだけで、
+    表示される中身は今までと同じです。
+    */
     if(phase === 1){
 
         lamp.style.background = "#fff9e6";
         lamp.style.color = "#ff9500";
-        lampText.innerText = "曲データ取込中" + buildProgressText(doneCount,totalCount);
+        lampText.innerText = "曲データ取込中";
+        lampProgress.innerText = buildProgressText(doneCount,totalCount);
         lampIcon.innerText = "🟡";
         lampIcon.className = "blink-fast";
 
@@ -149,7 +196,8 @@ function setLampPhase(phase,doneCount,totalCount){
 
         lamp.style.background = "#f2fbe6";
         lamp.style.color = "#34c759";
-        lampText.innerText = "ジャケ写同期" + buildProgressText(doneCount,totalCount);
+        lampText.innerText = "ジャケ写同期";
+        lampProgress.innerText = buildProgressText(doneCount,totalCount);
         lampIcon.innerText = "🟢";
         lampIcon.className = "blink-normal";
 
@@ -159,6 +207,10 @@ function setLampPhase(phase,doneCount,totalCount){
         lamp.style.background = "#e6f6ff";
         lamp.style.color = "#007aff";
         lampText.innerText = "全工程完了";
+
+        // 進捗の数字は不要なので「全工程完了 🔵」の1行になります
+        lampProgress.innerText = "";
+
         lampIcon.innerText = "🔵";
 
         // classNameを空にして点滅アニメを解除し、常時点灯にします。
@@ -167,6 +219,15 @@ function setLampPhase(phase,doneCount,totalCount){
         hideLampAfterDelay();
 
     }
+
+    /*
+    最後に、いま入れた進捗の有無を見て1行か2行かを決めます。
+
+    3つのフェーズそれぞれに同じ処理を書かず、ここで1回だけ
+    呼んでいるのは、フェーズを増やした時に書き忘れて
+    そこだけ行数が食い違う事故を防ぐためです。
+    */
+    applyLampLineMode(lamp,lampProgress.innerText);
 
 }
 
@@ -216,9 +277,10 @@ function showLampError(message,onTapHandler){
 
     const lamp = document.getElementById("ofs-lamp");
     const lampText = document.getElementById("ofs-lamp-text");
+    const lampProgress = document.getElementById("ofs-lamp-progress");
     const lampIcon = document.getElementById("ofs-lamp-icon");
 
-    if(!lamp || !lampText || !lampIcon){ return; }
+    if(!lamp || !lampText || !lampProgress || !lampIcon){ return; }
 
     resetLampInteraction(lamp);
 
@@ -230,6 +292,23 @@ function showLampError(message,onTapHandler){
     lamp.style.color = "#ff453a";
 
     lampText.innerText = message;
+
+    /*
+    警告に進捗の数字は無いので「タップして許可 ⚠️」のように1行で出ます。
+
+    1行にすると横に長くなり、画面の狭い端末では中央のタイトル
+    「ノリRun」に重なることがありますが、竹弘の判断でそのままに
+    しています。
+
+        「警告に関しては目立つ必要がある為、
+          被るくらいで違和感があった方がよい」
+
+    重なった時にランプが上に来るよう、CSSの #ofs-lamp には
+    z-index:10 が指定してあります。
+    */
+    lampProgress.innerText = "";
+    applyLampLineMode(lamp,lampProgress.innerText);
+
     lampIcon.innerText = "⚠️";
     lampIcon.className = "blink-fast";
 
@@ -256,12 +335,60 @@ function showLampError(message,onTapHandler){
 /*
 「3/50」のような進捗の文字を作ります。
 解析対象が無い場合は何も付けません。
+
+v88までは前の文言と続けて1行に並べていたため、区切りとして
+先頭に半角スペースを1つ付けていました。v89でランプが2行組みに
+なり、この文字は2行目に独立して置かれるようになったので、
+その半角スペースを外しています(残っていると2行目だけ
+1文字分よけいに幅を取ってしまうため)。
 */
 function buildProgressText(doneCount,totalCount){
 
     if(!totalCount){ return ""; }
 
-    return " " + doneCount + "/" + totalCount;
+    return doneCount + "/" + totalCount;
+
+}
+
+/*
+ランプを1行で出すか2行で出すかを決めます(v90)。
+
+判断はとても単純で、進捗の数字があれば2行、無ければ1行です。
+
+    曲データ取込中          ← 進捗あり:2行のまま
+        18/371 🟡
+
+    全工程完了 🔵           ← 進捗なし:1行に戻す
+
+竹弘の「色だけの行は寂しい」という指摘への対応です。
+
+【classList.add / remove とは】
+
+HTMLの要素に付いているクラス名を、後から足したり外したりする
+命令です。ここでは lamp-oneline というクラスを付け外ししていて、
+実際に横1行へ切り替えているのは c014.html 側のCSS
+(#ofs-lamp.lamp-oneline)です。
+
+「JSは “どういう状態か” を伝えるだけ、見た目の作り方はCSSが決める」
+という分担にしておくと、後から行間や隙間を調整したくなった時に
+CSSだけ直せば済みます。
+
+【なぜ表示ごとに書かず、この関数にまとめたのか】
+
+ランプの種類は今5つ(曲探索中/フェーズ1/2/3/警告)あり、今後
+増える可能性もあります。それぞれに「ここは1行」「ここは2行」と
+書いて回ると、必ずどこかで書き忘れが起きます。
+「進捗が空かどうか」という1つのルールに集約しておけば、
+新しい表示を足しても自動的に正しい行数になります。
+*/
+function applyLampLineMode(lamp,progressText){
+
+    if(progressText === ""){
+        lamp.classList.add("lamp-oneline");
+    }
+    else{
+        lamp.classList.remove("lamp-oneline");
+    }
 
 }
 
