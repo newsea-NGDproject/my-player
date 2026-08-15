@@ -469,7 +469,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v97)ノリRun
+        (v98)ノリRun
         メインメニュー
 
     </title>
@@ -1260,7 +1260,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
 
         そこでv97では、v95の flex の作りに戻したうえで、
         **幅の指定だけ**を確実な書き方に直しています
-        (下の .ua-wide-btn / .ua-circle-group を参照)。
+        (下の .ua-wide-btn / .ua-btn-pair を参照)。
         */
         .ua-btn-row{
             gap:8px;
@@ -1364,91 +1364,58 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         }
 
         /*
-        右半分に置く丸ボタン2つの入れ物です。
-        justify-content:space-around が、竹弘の指定した
-        「等間隔で設置」にあたります。
+        エリア10の右半分。停止(■)と設定(⚙️)の入れ物です。
 
-        align-self:stretch でこの器をエリアの高さいっぱいに広げて
-        いるのは、中のボタンに指定した max-height:100% が
-        「エリアの高さ」を基準に効くようにするためです
-        (エリア6の元ピッチボタンと同じ作りです)。
+        【v98で丸ボタンから横長ボタンに変えました(竹弘の指示)】
+
+            「停止ボタンと設定ボタンが小さくて押しにくいので
+              ボタンを大きいボタンに改善したい」
+
+        v97までは32px角の丸ボタンでしたが、走りながら押すには
+        小さすぎました。エリア9の「マイピッチ設定」と同じ形の
+        横長ボタンを2つ、この器の中に並べています。
+
+        器の幅 calc(50% - 4px) は、真上の「🏃‍ノリノリRun再生」と
+        まったく同じ式です。これで竹弘の指示どおり
+        「ノリノリRun再生ボタンの幅の中に2つを収める」形になり、
+        エリア9とエリア10で縦のラインも揃います。
+
+        align-self:stretch は、中のボタンの height:100% が
+        「エリアの高さ」を基準に効くようにするためのものです
+        (エリア6の元ピッチボタンと同じ作り)。
         */
-        .ua-circle-group{
+        .ua-btn-pair{
             flex:0 0 calc(50% - 4px);
             min-width:0;
             align-self:stretch;
             display:flex;
             align-items:center;
-            justify-content:space-around;
+            gap:8px;
         }
 
         /*
-        丸ボタンの当たり判定。竹弘の指示通り、ここは四角のままです。
-        枠も背景も付けず、中の .ua-circle だけが目に見えます。
+        停止・設定のボタン本体です。
 
-        【v95で小さくしました(竹弘の指摘)】
+        HTMLで .ua-wide-btn と一緒に付けているため、白い背景・枠線・
+        角丸・高さいっぱい といった見た目は、すべて「マイピッチ設定」と
+        同じものを使い回しています。ここで上書きするのは2点だけです。
 
-            「丸(〇)のボタンの上下の線が画面の解像度によっては
-              消える事があった」
+          flex      … 行の右半分を、さらに2つで分け合う。式の形は
+                      .ua-wide-btn と同じで、隙間(gap:8px)の半分の
+                      4pxを引いています
+          font-size … 中身が文字ではなく記号1つなので、文字用の
+                      0.72remのままでは小さすぎるため大きくする
 
-        原因は元ピッチボタンと同じで、10等分したエリアの高さが
-        画面の高さに応じて決まることです。画面の小さい端末では
-        エリアが狭くなり、34px角のボタンがそこからはみ出して、
-        丸の上下が .ua-slot の overflow:hidden に切り取られて
-        いました。
+        これで指で押せる面積は、v97の丸ボタン(32px角)から
+        およそ3倍になります。走りながら操作するアプリなので、
+        当たり判定の広さはそのまま使い勝手に直結します。
 
-        対策は2つです。
-
-          ① 34px → 32px に少し小さくする
-          ② max-height:100% で、エリアより高くならないようにする
-
-        aspect-ratio:1/1 は「縦横の比を1:1に保つ」指定です。
-        ②で高さが縮んだ時に幅も一緒に縮むので、どんな画面でも
-        正円のまま(楕円に潰れずに)小さくなります。
+        ※押した時の色の変化は .ua-wide-btn:active がそのまま
+          効くので、ここには書いていません。
         */
-        .ua-circle-btn{
-            flex-shrink:0;
-            height:32px;
-            max-height:100%;
-            aspect-ratio:1 / 1;
-            padding:0;
-            border:none;
-            background:none;
-            display:flex;
-            align-items:center;
-            justify-content:center;
-            cursor:pointer;
-        }
-
-        /*
-        目に見える丸の部分。border-radius:50% で正円になります。
-
-        大きさをpxではなく%(親の84%)にしているのは、上の
-        max-height で親が縮んだ時に、この丸も一緒に縮むように
-        するためです。pxで固定すると、親だけが縮んで丸がはみ出し、
-        結局また上下が切れてしまいます。
-
-        中の記号は、竹弘の要望で大きくしました
-        (0.8rem → 0.95rem。約2割増)。丸自体は 28px → 約27px と
-        わずかに小さくなっているので、「丸は若干小さく、記号は
-        できるだけ大きく」の両方を満たしています。
-        */
-        .ua-circle{
-            width:84%;
-            height:84%;
-            box-sizing:border-box;
-            border:1.5px solid var(--border-color);
-            border-radius:50%;
-            background:#ffffff;
-            font-size:0.95rem;
-            line-height:1;
-            display:flex;
-            align-items:center;
-            justify-content:center;
-        }
-
-        .ua-circle-btn:active .ua-circle{
-            background:#e5e5ea;
+        .ua-pair-btn{
+            flex:0 0 calc(50% - 4px);
+            font-size:1.1rem;
         }
 
         /* ======================================================
@@ -2409,14 +2376,17 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
 
         <!-- ===== エリア10：プレイリスト作成 / 停止・設定 ===== -->
         <!--
-            右半分の丸ボタンは、竹弘の指示で
-            「当たり判定は四角、見た目は丸」にしています。
+            【v98】右側の停止・設定を、丸ボタンから横長ボタンに
+            変えました(竹弘の指示)。
 
-            ボタン(<button>)自体は四角のままにして、中に入れた
-            <span class="ua-circle"> だけを丸くしているのがその仕組みです。
-            ボタン自体を丸くする(border-radius:50%)と、タップの
-            判定まで丸くなり、走りながらだと角を押した時に
-            反応しないことがあるためです。
+                「停止ボタンと設定ボタンが小さくて押しにくいので
+                  ボタンを大きいボタンに改善したい」
+
+            走りながら押すボタンなので、当たり判定の大きさが
+            そのまま使い勝手に直結します。32px角の丸をやめ、
+            エリア9の「マイピッチ設定」と同じ形の横長ボタンにして、
+            「🏃‍ノリノリRun再生」と同じ幅の中に2つ並べました。
+            指で押せる面積は、およそ3倍になります。
         -->
         <div class="ua-slot ua-btn-row">
             <!--
@@ -2426,13 +2396,9 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             -->
             <button type="button" id="playlist-btn" class="ua-wide-btn"><span class="ua-btn-condensed">🏃‍ノリノリプレイリスト作成</span></button>
 
-            <div class="ua-circle-group">
-                <button type="button" id="stop-btn" class="ua-circle-btn">
-                    <span class="ua-circle">■</span>
-                </button>
-                <button type="button" id="settings-btn" class="ua-circle-btn">
-                    <span class="ua-circle">⚙️</span>
-                </button>
+            <div class="ua-btn-pair">
+                <button type="button" id="stop-btn" class="ua-wide-btn ua-pair-btn">■</button>
+                <button type="button" id="settings-btn" class="ua-wide-btn ua-pair-btn">⚙️</button>
             </div>
         </div>
 
