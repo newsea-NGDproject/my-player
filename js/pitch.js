@@ -194,9 +194,27 @@ function drawRuler(centerBpm){
     const tickLong = height * 0.42;
     const tickMiddle = height * 0.25;
     const tickShort = height * 0.13;
-    const textY = height * 0.72;
 
-    const fontSize = Math.max(9,Math.round(height * 0.17));
+    /*
+    【v106】目盛りの数字を2倍にしました(竹弘の指示)。
+
+        「定規の目盛りの数値が小さすぎて読めない」
+
+    走りながら見る数字なので、止まって画面を覗き込む前提の
+    大きさでは用をなしません。0.17 → 0.34 と、割合をそのまま
+    倍にしています。
+
+    あわせて数字の描く位置(textY)を 0.72 → 0.78 と少し下げました。
+    文字が大きくなるとその分だけ上へ伸びるため、そのままだと
+    目盛りの線(tickLong = 高さの0.42)に頭がぶつかるためです。
+    下げても文字の足元は定規の下端に届きません。
+
+    textY は文字の「足元の線(ベースライン)」の位置で、
+    文字はそこから上へ向かって描かれます。
+    */
+    const textY = height * 0.78;
+
+    const fontSize = Math.max(18,Math.round(height * 0.34));
     rulerCtx.font = fontSize + "px sans-serif";
     rulerCtx.textAlign = "center";
 
