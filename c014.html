@@ -469,7 +469,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v94)ノリRun
+        (v95)ノリRun
         メインメニュー
 
     </title>
@@ -1274,6 +1274,42 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             background:#e5e5ea;
         }
 
+        /*
+        文字数の多いボタン(🏃‍ノリノリプレイリスト作成)を、
+        枠の中にゆとりを持って収めるための指定です(v95)。
+
+        竹弘の指示:
+            「文字間隔を詰めるか、少し縦長にして『マイピッチ設定』の
+              ボタンサイズと同じスペースに収めて欲しい」
+
+        ボタンの幅そのものは、もともと「マイピッチ設定」と同じです
+        (どちらも flex:1 で、行を半分ずつ分け合っています)。
+        違って見えていたのは、12文字が枠いっぱいまで詰まっていて
+        左右に余白が無かったためなので、文字の側を細くします。
+
+        竹弘が挙げた2つの方法を、少しずつ両方使っています。
+
+          letter-spacing:-0.05em … 文字と文字の間隔を詰める
+          transform:scaleX(0.93) … 文字を横に縮めて少し縦長にする
+
+        片方だけで詰め切ろうとすると、間隔が不自然に狭くなったり、
+        字が痩せすぎたりするためです。文字の高さは変えていないので、
+        小さくなった感じはほとんどしません。
+
+        【scaleX の注意点】
+        transform は「見た目だけ」を変える指定で、場所取りの計算は
+        縮む前の幅のまま行われます。そのため .ua-wide-btn の
+        text-overflow:ellipsis(はみ出しを「…」で示す)は効かなくなり、
+        極端に画面が狭い端末では文字がそのまま切れます。
+        ボタン側に overflow:hidden があるので枠から溢れることは
+        ありません。
+        */
+        .ua-btn-condensed{
+            display:inline-block;
+            letter-spacing:-0.05em;
+            transform:scaleX(0.93);
+        }
+
         /* このアプリの主役になる操作(ノリノリRun再生)は青で目立たせます */
         .ua-btn-accent{
             color:#ffffff;
@@ -1289,10 +1325,16 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         右半分に置く丸ボタン2つの入れ物です。
         justify-content:space-around が、竹弘の指定した
         「等間隔で設置」にあたります。
+
+        align-self:stretch でこの器をエリアの高さいっぱいに広げて
+        いるのは、中のボタンに指定した max-height:100% が
+        「エリアの高さ」を基準に効くようにするためです
+        (エリア6の元ピッチボタンと同じ作りです)。
         */
         .ua-circle-group{
             flex:1;
             min-width:0;
+            align-self:stretch;
             display:flex;
             align-items:center;
             justify-content:space-around;
@@ -1301,11 +1343,32 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         /*
         丸ボタンの当たり判定。竹弘の指示通り、ここは四角のままです。
         枠も背景も付けず、中の .ua-circle だけが目に見えます。
+
+        【v95で小さくしました(竹弘の指摘)】
+
+            「丸(〇)のボタンの上下の線が画面の解像度によっては
+              消える事があった」
+
+        原因は元ピッチボタンと同じで、10等分したエリアの高さが
+        画面の高さに応じて決まることです。画面の小さい端末では
+        エリアが狭くなり、34px角のボタンがそこからはみ出して、
+        丸の上下が .ua-slot の overflow:hidden に切り取られて
+        いました。
+
+        対策は2つです。
+
+          ① 34px → 32px に少し小さくする
+          ② max-height:100% で、エリアより高くならないようにする
+
+        aspect-ratio:1/1 は「縦横の比を1:1に保つ」指定です。
+        ②で高さが縮んだ時に幅も一緒に縮むので、どんな画面でも
+        正円のまま(楕円に潰れずに)小さくなります。
         */
         .ua-circle-btn{
             flex-shrink:0;
-            width:34px;
-            height:34px;
+            height:32px;
+            max-height:100%;
+            aspect-ratio:1 / 1;
             padding:0;
             border:none;
             background:none;
@@ -1315,15 +1378,27 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             cursor:pointer;
         }
 
-        /* 目に見える丸の部分。border-radius:50% で正円になります */
+        /*
+        目に見える丸の部分。border-radius:50% で正円になります。
+
+        大きさをpxではなく%(親の84%)にしているのは、上の
+        max-height で親が縮んだ時に、この丸も一緒に縮むように
+        するためです。pxで固定すると、親だけが縮んで丸がはみ出し、
+        結局また上下が切れてしまいます。
+
+        中の記号は、竹弘の要望で大きくしました
+        (0.8rem → 0.95rem。約2割増)。丸自体は 28px → 約27px と
+        わずかに小さくなっているので、「丸は若干小さく、記号は
+        できるだけ大きく」の両方を満たしています。
+        */
         .ua-circle{
-            width:28px;
-            height:28px;
+            width:84%;
+            height:84%;
             box-sizing:border-box;
             border:1.5px solid var(--border-color);
             border-radius:50%;
             background:#ffffff;
-            font-size:0.8rem;
+            font-size:0.95rem;
             line-height:1;
             display:flex;
             align-items:center;
@@ -2302,7 +2377,12 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             反応しないことがあるためです。
         -->
         <div class="ua-slot ua-btn-row">
-            <button type="button" id="playlist-btn" class="ua-wide-btn">🏃‍ノリノリプレイリスト作成</button>
+            <!--
+                このボタンだけ文字数が多いため、中身をspanで包んで
+                文字を細身にしています(v95、竹弘の指示)。
+                詳しくはCSSの .ua-btn-condensed を参照。
+            -->
+            <button type="button" id="playlist-btn" class="ua-wide-btn"><span class="ua-btn-condensed">🏃‍ノリノリプレイリスト作成</span></button>
 
             <div class="ua-circle-group">
                 <button type="button" id="stop-btn" class="ua-circle-btn">
