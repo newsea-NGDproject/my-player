@@ -173,23 +173,6 @@ function formatPitch(bpm){
 }
 
 /*
-2つのピッチを画面に書き込みます。
-
-  元ピッチ   … その曲が本来もつテンポ(baseBPM)
-  再生ピッチ … 今どのテンポで鳴らしているか
-
-再生ピッチに userBPM(竹弘が定規で変えた値)を優先して使い、まだ
-変えていなければ元ピッチと同じ値を出します。ピッチを変える機能は
-これから作るので、今のところ2つは必ず同じ数字になります。
-*/
-function showPitchValues(track){
-
-    basePitchValueEl.textContent = formatPitch(track.baseBPM);
-    pitchValueEl.textContent = formatPitch(track.userBPM || track.baseBPM);
-
-}
-
-/*
 再生する曲のピッチを表示します。まだ解析していない曲は、ここで解析します。
 
 【なぜ再生した曲だけ解析するのか】
@@ -202,9 +185,15 @@ BPMの解析は、曲を丸ごと波形の数値にほどいてから調べま�
 */
 async function updatePitchDisplay(track){
 
-    // すでに解析済みなら、保存してある値をそのまま出します
+    /*
+    すでに解析済みなら、保存してある値でそのまま再生します。
+
+    applyTrackTempo() は js/pitch.js の関数で、前回この曲で選んだ
+    テンポ(userBPM)があればその速さで、無ければ元ピッチのままで
+    鳴らします。あわせて再生ピッチの数字と定規の位置も揃えます。
+    */
     if(!needsBpmAnalysis(track)){
-        showPitchValues(track);
+        applyTrackTempo(track);
         return;
     }
 
@@ -224,7 +213,7 @@ async function updatePitchDisplay(track){
     */
     if(currentTrackId !== track.track_id){ return; }
 
-    showPitchValues(track);
+    applyTrackTempo(track);
 
 }
 
