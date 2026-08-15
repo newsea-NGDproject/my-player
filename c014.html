@@ -469,7 +469,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v102)ノリRun
+        (v103)ノリRun
         メインメニュー
 
     </title>
@@ -2915,7 +2915,8 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
    sort      … 曲一覧の並び替え(メニューと並び順の判定)
    undo      … 曲順を一つ前に戻す(↩ボタン)
    list-view … 曲一覧の描画
-   upper-area… 上半分(操作エリア)の表示。list-view の関数を
+   bpm       … 曲の本来のBPM(元ピッチ)の自動解析
+   upper-area… 上半分(操作エリア)の表示。list-view と bpm の関数を
                借りているので、必ずその後に読み込むこと
    settings  … 設定メニュー(⚙️)とライセンス表示
    player    … 曲の再生
@@ -2955,6 +2956,7 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
 <script src="js/sort.js"></script>
 <script src="js/undo.js"></script>
 <script src="js/list-view.js"></script>
+<script src="js/bpm.js"></script>
 <script src="js/upper-area.js"></script>
 <script src="js/settings.js"></script>
 <script src="js/player.js"></script>
