@@ -469,7 +469,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v107)ノリRun
+        (v108)ノリRun
         メインメニュー
 
     </title>
@@ -1255,7 +1255,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         v96で幅を揃えるために display:grid へ作り替えたところ、
         高さの決まり方まで変わってしまい、
 
-          ・「🏃‍ノリノリプレイリスト作成」ボタンが縦に伸びる
+          ・「🕺ノリノリプレイリスト作成」ボタンが縦に伸びる
           ・v95でOKだった停止/設定の丸ボタンが崩れる
 
         という別の不具合を起こしました(デグレード)。
@@ -1292,7 +1292,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
 
         v95までは flex:1(余りを等分に伸ばす)でしたが、この書き方は
         伸ばす前の基準幅が中身に引きずられることがあり、文字数の多い
-        「🏃‍ノリノリプレイリスト作成」だけ数px広くなって、上の
+        「🕺ノリノリプレイリスト作成」だけ数px広くなって、上の
         「マイピッチ設定」より右へはみ出していました。
         「余りを分け合う」のをやめて最初から半分と決め打つことで、
         中身の文字数に一切影響されなくなります。
@@ -1324,7 +1324,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         }
 
         /*
-        文字数の多いボタン(🏃‍ノリノリプレイリスト作成)を、
+        文字数の多いボタン(🕺ノリノリプレイリスト作成)を、
         枠の中にゆとりを持って収めるための指定です(v95)。
 
         竹弘の指示:
@@ -1381,7 +1381,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         小さすぎました。エリア9の「マイピッチ設定」と同じ形の
         横長ボタンを2つ、この器の中に並べています。
 
-        器の幅 calc(50% - 4px) は、真上の「🏃‍ノリノリRun再生」と
+        器の幅 calc(50% - 4px) は、真上の「🕺ノリノリRun再生」と
         まったく同じ式です。これで竹弘の指示どおり
         「ノリノリRun再生ボタンの幅の中に2つを収める」形になり、
         エリア9とエリア10で縦のラインも揃います。
@@ -2550,7 +2550,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         <!-- ===== エリア9：マイピッチ設定 / ノリノリRun再生 ===== -->
         <div class="ua-slot ua-btn-row">
             <button type="button" id="mypitch-btn" class="ua-wide-btn">マイピッチ設定</button>
-            <button type="button" id="norirun-play-btn" class="ua-wide-btn ua-btn-accent">🏃‍ノリノリRun再生</button>
+            <button type="button" id="norirun-play-btn" class="ua-wide-btn ua-btn-accent">🕺ノリノリRun再生</button>
         </div>
 
         <!-- ===== エリア10：プレイリスト作成 / 停止・設定 ===== -->
@@ -2564,7 +2564,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             走りながら押すボタンなので、当たり判定の大きさが
             そのまま使い勝手に直結します。32px角の丸をやめ、
             エリア9の「マイピッチ設定」と同じ形の横長ボタンにして、
-            「🏃‍ノリノリRun再生」と同じ幅の中に2つ並べました。
+            「🕺ノリノリRun再生」と同じ幅の中に2つ並べました。
             指で押せる面積は、およそ3倍になります。
         -->
         <div class="ua-slot ua-btn-row">
@@ -2573,7 +2573,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
                 文字を細身にしています(v95、竹弘の指示)。
                 詳しくはCSSの .ua-btn-condensed を参照。
             -->
-            <button type="button" id="playlist-btn" class="ua-wide-btn"><span class="ua-btn-condensed">🏃‍ノリノリプレイリスト作成</span></button>
+            <button type="button" id="playlist-btn" class="ua-wide-btn"><span class="ua-btn-condensed">🕺ノリノリプレイリスト作成</span></button>
 
             <div class="ua-btn-pair">
                 <button type="button" id="stop-btn" class="ua-wide-btn ua-pair-btn">■</button>
