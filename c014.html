@@ -469,7 +469,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v92)ノリRun
+        (v93)ノリRun
         メインメニュー
 
     </title>
@@ -1052,10 +1052,35 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         }
 
         /* ======================================================
-           エリア6：現在のピッチ + 元ピッチボタン
+           エリア6：再生ピッチ + 元ピッチボタン
         ====================================================== */
+        /*
+        竹弘が写真①に引いた緑線を測ったところ、真ん中の線が
+        カード内幅のちょうど50%でした。そこでこのエリアを
+        左右半分に分け、左に再生ピッチ、右に元ピッチボタンを
+        置いています(エリア9のボタン2つと同じ分け方です)。
+        */
         .ua-pitch-row{
-            gap:6px;
+            gap:0;
+        }
+
+        /*
+        左半分：再生ピッチ。
+
+        align-self:flex-end が、竹弘の指定した「下詰め」です。
+        .ua-slot は中身を縦中央に揃える設定なので、この要素だけが
+        その指示を自分で上書きし、エリアの下端に足を揃えています。
+
+        align-items:baseline は、大きさの違う「再生ピッチ：」と
+        数字を、文字の足元の線で揃えるための指定です。
+        中央揃えにすると、小さい方の文字が浮いて見えてしまいます。
+        */
+        .ua-pitch-now{
+            flex:1;
+            min-width:0;
+            align-self:flex-end;
+            display:flex;
+            align-items:baseline;
         }
 
         .ua-pitch-label{
@@ -1078,30 +1103,72 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             font-variant-numeric:tabular-nums;
         }
 
-        .ua-pitch-unit{
-            font-size:0.7rem;
-            color:var(--text-sub);
+        /*
+        右半分：元ピッチボタンの置き場所です。
+
+        align-self:stretch で、この器をエリアの高さいっぱいに
+        広げています。こうしておくと、中のボタンに指定した
+        max-height:100% が「エリアの高さ」を基準に効きます
+        (器が中身なりの高さだと、基準が定まりません)。
+        */
+        .ua-pitch-base{
+            flex:1;
+            min-width:0;
+            align-self:stretch;
+            display:flex;
+            align-items:center;
         }
 
         /*
-        「元ピッチ」ボタン。border-radius:999px は、
+        「元ピッチ：___」ボタン。border-radius:999px は、
         高さより十分大きい値を指定して左右を完全な半円にする
         書き方です(いわゆる「pill=錠剤型」)。
+
+        【v93で薄くしました(竹弘の指摘)】
+
+            「ボタンの上下の線が画面の解像度によっては
+              消える事があった」
+
+        原因は、10等分したエリアの高さが画面の高さに応じて
+        決まることでした。画面の小さい端末ではエリアが狭くなり、
+        ボタンがそこからはみ出して、上下の枠線が
+        .ua-slot の overflow:hidden に切り取られていたのです。
+
+        そこで上下のpaddingをほぼ無くし、行の高さ(line-height)も
+        詰めて、ボタンそのものを薄くしました。その代わり、
+        竹弘の要望通り文字は逆に大きくしています
+        (0.75rem → 0.9rem)。
+
+        max-height:100% は念のための歯止めです。どんなに画面が
+        小さい端末でも、ボタンがエリアの高さを超えることは
+        なくなるので、枠線が切れる症状は再発しません。
         */
         .ua-pill-btn{
-            margin-left:auto;
             flex-shrink:0;
-            padding:4px 12px;
-            font-size:0.75rem;
+            max-height:100%;
+            box-sizing:border-box;
+            padding:1px 16px;
+            font-size:0.9rem;
+            line-height:1.15;
             color:var(--text-main);
             background:#ffffff;
             border:1px solid var(--border-color);
             border-radius:999px;
             cursor:pointer;
+            white-space:nowrap;
         }
 
         .ua-pill-btn:active{
             background:#e5e5ea;
+        }
+
+        /*
+        ボタンの中の数値です。再生ピッチ側と同じく tabular-nums で
+        数字の幅を揃え、太字にして拾いやすくしています。
+        */
+        .ua-pill-value{
+            font-weight:bold;
+            font-variant-numeric:tabular-nums;
         }
 
         /* ======================================================
@@ -2155,16 +2222,32 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             <button type="button" id="mute-btn" class="ua-icon-btn">🔈</button>
         </div>
 
-        <!-- ===== エリア6：現在のピッチ + 元ピッチボタン ===== -->
+        <!-- ===== エリア6：再生ピッチ + 元ピッチボタン ===== -->
         <!--
             「元ピッチ」は、曲を自動解析して分かった本来のBPMへ
             戻すボタンです(v8.5と同じ機能)。
+
+            【v93の変更(竹弘の指示、写真①)】
+
+            文言を「再生ピッチ：___」「元ピッチ：___」に変えました。
+            ___ には3桁の数字が入ります(例:123 / 085)。
+            まだBPMの解析もピッチ変更も作っていないため、
+            今は3桁ぶんの「---」を置いてあります。
+
+            配置は写真①の緑線に合わせ、このエリアを左右半分に
+            分けています(左=再生ピッチ / 右=元ピッチボタン)。
         -->
         <div class="ua-slot ua-pitch-row">
-            <span class="ua-pitch-label">ピッチ</span>
-            <span class="ua-pitch-value" id="pitch-value">---</span>
-            <span class="ua-pitch-unit">BPM</span>
-            <button type="button" id="reset-pitch-btn" class="ua-pill-btn">元ピッチ</button>
+
+            <div class="ua-pitch-now">
+                <span class="ua-pitch-label">再生ピッチ：</span>
+                <span class="ua-pitch-value" id="pitch-value">---</span>
+            </div>
+
+            <div class="ua-pitch-base">
+                <button type="button" id="reset-pitch-btn" class="ua-pill-btn">元ピッチ：<span class="ua-pill-value" id="base-pitch-value">---</span></button>
+            </div>
+
         </div>
 
         <!-- ===== エリア7〜8：ピッチ変更の定規 ===== -->
