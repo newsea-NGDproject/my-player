@@ -469,7 +469,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v87)ノリRun
+        (v88)ノリRun
         メインメニュー
 
     </title>
@@ -604,26 +604,89 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         「指定した50%を守り、中身は内側でスクロールする」
         という本来やりたい動きになります。
         */
+        /*
+        【v88】上半分そのものが丸角カード1枚になりました。
+
+        class="card" を付けてあるので、背景の白・角丸・影は
+        .card の指定がそのまま効きます。ただし .card の padding は
+        20px と広く、10エリア分の高さを圧迫してしまうため、
+        ここだけ狭い値で上書きしています(後に書いた方が勝つルール)。
+
+        【display:grid と grid-template-rows:repeat(10,1fr)】
+
+        display:grid は、中身を「マス目」に並べる方式です。
+        flexが「一列に並べて余りを配分する」のに対し、gridは
+        「先に枠を10個作り、そこへ中身をはめ込む」ことができます。
+
+        grid-template-rows は、その横罫線の引き方を決める指定です。
+
+            repeat(10, 1fr)  =  1fr を10回くり返す
+
+        fr は fraction(ぶんすう)の略で「余った高さの取り分」を表す
+        grid専用の単位です。1fr が10行なので取り分は全部同じ、
+        つまり画面の大きさに関わらず必ず正確な10等分になります。
+
+        高さを px で書かないのがポイントで、端末の画面が
+        大きくても小さくても「上から何番目のエリア」の位置関係が
+        変わりません(走りながら押すボタンなので重要)。
+
+        row-gap はエリア同士の隙間です。
+        */
         #upper-area{
             flex:1 1 50%;
             min-height:0;
 
-            display:flex;
-            flex-direction:column;
-            gap:8px;
+            box-sizing:border-box;
+            padding:8px 12px;
+
+            display:grid;
+            grid-template-rows:repeat(10,1fr);
+            row-gap:4px;
             overflow:hidden;
         }
 
         /*
-        タイトル部分。中身が固定なので縮ませません(flex-shrink:0)。
+        10等分した1エリア分の共通の器です。
+
+        min-height:0 と overflow:hidden は、中身(長い曲名など)が
+        大きい時にエリアが押し広げられて10等分が崩れるのを防ぎます。
+        gridの子も、flexの子と同じく既定では「中身より小さくならない」
+        ためです(#upper-area の解説と同じ落とし穴)。
+        */
+        .ua-slot{
+            min-height:0;
+            display:flex;
+            align-items:center;
+            overflow:hidden;
+        }
+
+        /*
+        2エリア分の高さを使うブロックに付けます。
+
+        grid-row:span 2 は「縦のマスを2つ分またいで使う」という意味で、
+        表計算ソフトの「セルの結合」と同じ考え方です。
+        タイトル・曲情報・ピッチ定規の3つがこれを使います。
+        */
+        .ua-span2{
+            grid-row:span 2;
+        }
+
+        /*
+        エリア1〜2：タイトル部分。
 
         position:relative を付けているのは、この中の右上に
         解析状況ランプ(#ofs-lamp)を絶対配置するための基準にするためです。
+
+        justify-content:center で「タイトル+副題のまとまり」を
+        このブロックの中央に置いています。結果としてタイトルは
+        中央より少し上、副題は中央より下に来るので、竹弘の指定
+        (1エリアの下半分〜2エリアの上半分にタイトル、
+          2エリア下半分に「メインメニュー」)通りの位置になります。
         */
-        .header-card{
-            flex-shrink:0;
-            padding:10px 16px;
+        .ua-header{
             position:relative;
+            flex-direction:column;
+            justify-content:center;
         }
 
         /* ======================================================
@@ -699,26 +762,346 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             font-size:0.85rem;
         }
 
+        /* ======================================================
+           エリア3〜4：再生中の曲情報
+        ====================================================== */
         /*
-        今後ボタンを置く予定の空きエリア。
-        上半分の「余り」を全部受け持ちます(flex:1)。
-        再生エリアが表示された時は、その分だけここが縮みます。
+        中の文字部分は、曲一覧の行と同じクラス(.text-block /
+        .info-line / .scroll-text / .artist-text / .duration-text)を
+        そのまま使っているため、ここに書く指定はほとんどありません。
+        「同じ見た目にする」のではなく「同じものを使う」のが
+        一番ズレない方法です。
         */
-        #future-area{
-            flex:1;
-            min-height:0;
-            display:flex;
-            align-items:center;
-            justify-content:center;
+        .ua-nowplaying{
+            gap:6px;
+        }
+
+        /* 行頭の♪。曲情報の始まりを示す目印です */
+        .ua-note-mark{
+            flex-shrink:0;
+            font-size:1.1rem;
+            color:var(--main-blue);
+        }
+
+        /*
+        ジャケット画像の枠。竹弘の指定で、曲一覧と同じく右端に寄せ、
+        エリア3〜4の高さいっぱいの正方形にします。
+
+        ・margin-left:auto … 左側の余白を目一杯広げる=右端へ押し出す
+                             (flexboxで右寄せしたい時の定番の書き方)
+        ・height:100%      … 親(.ua-slot=2エリア分)の高さに合わせる
+        ・aspect-ratio:1/1 … 縦横の比を1:1に保つ。高さが決まっている
+                             ので、それと同じ幅が自動で決まります。
+                             端末ごとに高さが変わっても正方形のまま。
+
+        画像が入るまでは、この灰色の枠だけが見えます。
+        */
+        .ua-jacket{
+            margin-left:auto;
+            flex-shrink:0;
+
+            /*
+            align-self:stretch は「この要素だけ、親の高さいっぱいに
+            引き伸ばす」という指定です。親(.ua-slot)は中身を縦中央に
+            揃える(align-items:center)設定なので、それを自分の分だけ
+            打ち消しています。height:100% と両方書いてあるのは、
+            どちらか一方だけだと端末やブラウザによって高さの解釈が
+            変わり、正方形が崩れることがあるためです。
+            */
+            align-self:stretch;
+            height:100%;
+            aspect-ratio:1 / 1;
+            border-radius:6px;
+            background:#e5e5ea;
             overflow:hidden;
         }
 
-        .future-note{
+        /*
+        枠の中に入る実際の画像です。
+        object-fit:cover は「縦横比を保ったまま枠を埋める」指定で、
+        正方形でないジャケットでも歪まずに表示されます
+        (曲一覧の .jacket-img と同じ考え方)。
+        */
+        .ua-jacket-img{
+            width:100%;
+            height:100%;
+            object-fit:cover;
+            display:block;
+        }
+
+        /* ======================================================
+           エリア5：シークバー + ミュートボタン
+        ====================================================== */
+        .ua-seek{
+            gap:10px;
+        }
+
+        /*
+        シークバー本体。
+
+        appearance:none は「ブラウザ標準の見た目を捨てる」指定です。
+        これを書かないと、端末ごとに全く違う形のバーが表示され、
+        アプリの見た目が揃いません。捨てた上で、下の
+        ::-webkit-slider-thumb などで自分の見た目を作ります。
+
+        -webkit- が付いた方は、Chrome/Safari向けの古い書き方です。
+        Androidファーストのアプリなので両方書いておきます。
+        */
+        .ua-range{
+            flex:1;
+            min-width:0;
             margin:0;
-            text-align:center;
+            height:4px;
+            border-radius:2px;
+            background:var(--border-color);
+            outline:none;
+            -webkit-appearance:none;
+            appearance:none;
+        }
+
+        /*
+        つまみ(thumb)の見た目。走りながら指で掴むので、
+        バーの太さ(4px)より大きめの16px角にしています。
+
+        ::-webkit-slider-thumb と ::-moz-range-thumb は
+        同じ「つまみ」を指す、ブラウザごとに違う名前です。
+        1つのルールにまとめて書くと、片方を知らないブラウザが
+        ルールごと無視してしまうため、必ず別々に書きます。
+        */
+        .ua-range::-webkit-slider-thumb{
+            -webkit-appearance:none;
+            appearance:none;
+            width:16px;
+            height:16px;
+            border-radius:50%;
+            background:var(--main-blue);
+            box-shadow:0 1px 3px rgba(0,0,0,0.3);
+            cursor:pointer;
+        }
+
+        .ua-range::-moz-range-thumb{
+            width:16px;
+            height:16px;
+            border:none;
+            border-radius:50%;
+            background:var(--main-blue);
+            box-shadow:0 1px 3px rgba(0,0,0,0.3);
+            cursor:pointer;
+        }
+
+        /* ミュートボタン(🔈)。記号だけを見せたいので枠は付けません */
+        .ua-icon-btn{
+            flex-shrink:0;
+            width:32px;
+            height:32px;
+            padding:0;
+            border:none;
+            background:none;
+            font-size:1.1rem;
+            line-height:1;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            cursor:pointer;
+        }
+
+        /* ======================================================
+           エリア6：現在のピッチ + 元ピッチボタン
+        ====================================================== */
+        .ua-pitch-row{
+            gap:6px;
+        }
+
+        .ua-pitch-label{
+            font-size:0.75rem;
             color:var(--text-sub);
+        }
+
+        /*
+        ピッチの数値。走行中に一番よく見る数字なので、
+        初期設定画面の #pitch-number と同じく青の太字にしています。
+
+        font-variant-numeric:tabular-nums は数字の幅を揃える指定で、
+        数値が変わるたびに右の文字がガタガタ動くのを防ぎます
+        (曲一覧の .duration-text と同じ理由)。
+        */
+        .ua-pitch-value{
+            font-size:1.15rem;
+            font-weight:900;
+            color:var(--main-blue);
+            font-variant-numeric:tabular-nums;
+        }
+
+        .ua-pitch-unit{
+            font-size:0.7rem;
+            color:var(--text-sub);
+        }
+
+        /*
+        「元ピッチ」ボタン。border-radius:999px は、
+        高さより十分大きい値を指定して左右を完全な半円にする
+        書き方です(いわゆる「pill=錠剤型」)。
+        */
+        .ua-pill-btn{
+            margin-left:auto;
+            flex-shrink:0;
+            padding:4px 12px;
+            font-size:0.75rem;
+            color:var(--text-main);
+            background:#ffffff;
+            border:1px solid var(--border-color);
+            border-radius:999px;
+            cursor:pointer;
+        }
+
+        .ua-pill-btn:active{
+            background:#e5e5ea;
+        }
+
+        /* ======================================================
+           エリア7〜8：ピッチ変更の定規
+        ====================================================== */
+        /*
+        目盛りは repeating-linear-gradient で描いています。
+        これは「同じ模様を繰り返す背景」を作るCSSの機能で、
+        ここでは『1pxの線 + 11pxの余白』を左から右へ延々と
+        繰り返すことで、等間隔の目盛りに見せています。
+
+        画像を1枚も使わずに描けるので、オフラインでも確実に
+        表示され、読み込みも一切発生しません。
+
+        ※これはレイアウト確認のための仮の見た目です。
+          機能を付ける時に <canvas> の描画へ差し替えます。
+        */
+        .ua-ruler{
+            position:relative;
+            box-sizing:border-box;
+            border:1px solid var(--border-color);
+            border-radius:8px;
+            background:#f8f8f8;
+            background-image:repeating-linear-gradient(
+                to right,
+                var(--border-color) 0,
+                var(--border-color) 1px,
+                transparent 1px,
+                transparent 12px
+            );
+            overflow:hidden;
+        }
+
+        /*
+        中央の赤い基準線。ここに重なった目盛りが現在のピッチです。
+
+        色は初期設定画面の定規と同じ --accent-red を使っています
+        (css/setup.css の :root で定義。同じページで読み込んで
+          いるので、こちらからも使えます)。定規の意味を持つ赤は
+        アプリ全体で1色に統一します。
+        */
+        .ua-ruler-line{
+            position:absolute;
+            left:50%;
+            top:0;
+            bottom:0;
+            width:3px;
+            transform:translateX(-50%);
+            border-radius:2px;
+            background:var(--accent-red);
+        }
+
+        /* ======================================================
+           エリア9〜10：操作ボタン
+        ====================================================== */
+        .ua-btn-row{
+            gap:8px;
+        }
+
+        /*
+        横長のボタン。flex:1 で、同じ行のボタンと幅を等分します。
+
+        文字数が多いボタン(🏃‍ノリノリプレイリスト作成)があるため、
+        1行に収めてはみ出しは「…」で省略します
+        (white-space / overflow / text-overflow の3点セット)。
+        */
+        .ua-wide-btn{
+            flex:1;
+            min-width:0;
+            height:100%;
+            box-sizing:border-box;
+            padding:0 6px;
+            font-size:0.72rem;
+            font-weight:bold;
+            color:var(--text-main);
+            background:#ffffff;
+            border:1px solid var(--border-color);
+            border-radius:8px;
+            white-space:nowrap;
+            overflow:hidden;
+            text-overflow:ellipsis;
+            cursor:pointer;
+        }
+
+        .ua-wide-btn:active{
+            background:#e5e5ea;
+        }
+
+        /* このアプリの主役になる操作(ノリノリRun再生)は青で目立たせます */
+        .ua-btn-accent{
+            color:#ffffff;
+            background:var(--main-blue);
+            border-color:var(--main-blue);
+        }
+
+        .ua-btn-accent:active{
+            background:#0062cc;
+        }
+
+        /*
+        右半分に置く丸ボタン2つの入れ物です。
+        justify-content:space-around が、竹弘の指定した
+        「等間隔で設置」にあたります。
+        */
+        .ua-circle-group{
+            flex:1;
+            min-width:0;
+            display:flex;
+            align-items:center;
+            justify-content:space-around;
+        }
+
+        /*
+        丸ボタンの当たり判定。竹弘の指示通り、ここは四角のままです。
+        枠も背景も付けず、中の .ua-circle だけが目に見えます。
+        */
+        .ua-circle-btn{
+            flex-shrink:0;
+            width:34px;
+            height:34px;
+            padding:0;
+            border:none;
+            background:none;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            cursor:pointer;
+        }
+
+        /* 目に見える丸の部分。border-radius:50% で正円になります */
+        .ua-circle{
+            width:28px;
+            height:28px;
+            box-sizing:border-box;
+            border:1.5px solid var(--border-color);
+            border-radius:50%;
+            background:#ffffff;
             font-size:0.8rem;
-            line-height:1.7;
+            line-height:1;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+        }
+
+        .ua-circle-btn:active .ua-circle{
+            background:#e5e5ea;
         }
 
         /* ======================================================
@@ -1315,42 +1698,29 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         }
 
         /* ======================================================
-           再生エリア
+           再生の実体(<audio>)
         ====================================================== */
 
         /*
-        再生エリア。曲を再生した時だけ表示します。
-        flex-shrink:0 で、表示された時は必ずこの高さを確保します
-        (代わりに #future-area の空きエリアが縮みます)。
+        v87までは、再生すると上半分に「再生中：曲名」と
+        ブラウザ標準の再生バーが出る丸角カード(#player-box)が
+        現れる作りでした。v88でこれを廃止しています。
+
+        理由は2つあります。
+
+          ① 曲名・アーティスト・ジャケットの表示は、
+             エリア3〜4の曲情報が受け持つようになった
+          ② 再生位置の操作は、エリア5の自作シークバーに置き換わる
+
+        表示が要らなくなっただけで、音を鳴らす部品としては
+        今まで通り必要なので、画面から隠して残しています。
+
+        display:none にしても、JSからの再生(audioPlayer.play())は
+        問題なく動きます。「画面に出ない」ことと「動かない」ことは
+        別なので安心してください。
         */
-        #player-box{
+        #audio-player{
             display:none;
-            flex-shrink:0;
-            padding:10px 14px;
-        }
-
-        /*
-        曲名が長い時、以前は word-break:break-all で折り返していましたが、
-        固定1画面レイアウトでは何行にも増えると上半分を圧迫するため、
-        1行に収めて、はみ出した分は「…」で省略する形に変更しました。
-
-        white-space:nowrap  … 改行しない
-        overflow:hidden     … はみ出した分は表示しない
-        text-overflow:ellipsis … 隠れた部分を「…」で示す
-        (この3つはセットで使うのがお約束です)
-        */
-        #now-playing{
-            margin:0 0 6px;
-            font-size:0.85rem;
-            font-weight:bold;
-            white-space:nowrap;
-            overflow:hidden;
-            text-overflow:ellipsis;
-        }
-
-        audio{
-            width:100%;
-            height:40px;
         }
 
     </style>
@@ -1461,9 +1831,51 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
 <div id="app" style="display:none;">
 
     <!-- ============ 上半分：操作エリア ============ -->
-    <div id="upper-area">
+    <!--
+        【v88でこの上半分を作り替えました(竹弘の設計)】
 
-        <div class="card header-card">
+        以前は「タイトル」「再生エリア」「今後の空きエリア」の
+        丸角カード3枚を縦に積んでいましたが、カードの境目で
+        画面が分断されて見え、再生エリアが出入りするたびに
+        レイアウトが動いてしまう問題がありました。
+
+        そこで上半分そのものを丸角カード1枚(class="card")にし、
+        その中を縦10等分して、各エリアに表示とボタンを
+        配置していく構成へ変更しています。
+
+        【なぜ「10等分」なのか】
+
+        走りながら操作するアプリなので、ボタンの位置が
+        端末ごとにズレると押し間違いのもとになります。
+        高さを画面に対する割合(10分の1)で決めておくと、
+        画面の大きい端末でも小さい端末でも
+        「上から何番目」の位置関係が変わりません。
+
+        10等分の実現には CSS Grid を使っています(CSSの解説を参照)。
+        各エリアの中身は .ua-slot、2エリア分を使うものは
+        .ua-span2 を付けています(ua = upper area の略)。
+
+        【現在の状態(v88)】
+
+        竹弘の手順に従い、まずは「レイアウトの確認」だけを目的に
+        枠と見た目を組み立てた段階です。動くのは再生中の曲情報
+        (エリア3〜4)だけで、シークバー・ピッチ定規・各ボタンは
+        まだ見た目のみで、機能はこの後1つずつ付けていきます。
+    -->
+    <div id="upper-area" class="card">
+
+        <!-- ===== エリア1〜2：解析ランプ + タイトル ===== -->
+        <!--
+            竹弘の指定:
+              1エリア        … 右上に解析ランプ
+              1エリア下半分〜2エリア上半分 … タイトル「ノリRun」
+              2エリア下半分  … 「メインメニュー」
+
+            タイトルと副題のまとまりをこのブロックの中央に置くと、
+            タイトルが中央より少し上(=1エリアの下半分)、
+            副題が中央より下(=2エリアの下半分)に自然と収まります。
+        -->
+        <div class="ua-slot ua-span2 ua-header">
 
             <!--
                 解析状況ランプ。起動時は非表示で、
@@ -1479,21 +1891,128 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             <p class="sub-title">メインメニュー</p>
         </div>
 
-        <!-- 再生エリア。曲を再生した時だけ表示します -->
-        <div class="card" id="player-box">
-            <p id="now-playing">再生中：</p>
-            <audio id="audio-player" controls></audio>
+        <!-- ===== エリア3〜4：再生中の曲情報 ===== -->
+        <!--
+            曲一覧の行とわざと同じクラス名(.text-block / .info-line /
+            .scroll-text / .artist-text / .duration-text)を使っています。
+            こうすると、竹弘の指定通り「曲一覧と同じ見た目」が
+            CSSを1行も足さずに揃い、将来どちらかの文字サイズを
+            変えた時も勝手に片方だけズレることがありません。
+
+            2行目だけは曲一覧と役割が違います。曲一覧は「曲の長さ」を
+            出しますが、ここは再生位置(何分何秒中の何分何秒)を出します。
+            ※シーク表示の更新は次の機能実装で繋ぎます(今は 0.00 / 0.00)。
+        -->
+        <div class="ua-slot ua-span2 ua-nowplaying">
+
+            <span class="ua-note-mark">♪</span>
+
+            <div class="text-block">
+                <div class="info-line">
+                    <span class="scroll-text" id="np-title">曲を選ぶとここに表示されます</span>
+                </div>
+                <div class="info-line">
+                    <span class="artist-text">
+                        <span class="duration-text" id="np-seek">0.00 / 0.00</span>
+                        <span id="np-artist"></span>
+                    </span>
+                </div>
+            </div>
+
+            <!--
+                ジャケット画像の置き場所。曲一覧と同じく右端に寄せ、
+                エリア3〜4の高さいっぱいの正方形で表示します。
+                画像が無い間は灰色の枠だけが見えます。
+            -->
+            <div class="ua-jacket" id="np-jacket"></div>
         </div>
 
-        <!-- 今後、ここにBPM設定やビートマッチングのボタンを追加していきます -->
-        <div class="card" id="future-area">
-            <p class="future-note">
-                ここは今後の操作エリアです。<br>
-                (BPM設定・ビートマッチング等のボタンを追加予定)
-            </p>
+        <!-- ===== エリア5：シークバー + ミュートボタン ===== -->
+        <!--
+            input type="range" は、つまみを左右に動かして数値を選ぶ
+            HTML標準の部品です。曲の再生位置を動かすのに使います。
+            今はまだ音とは繋がっていない「見た目だけ」の状態です。
+        -->
+        <div class="ua-slot ua-seek">
+            <input type="range" id="seek-bar" class="ua-range"
+                   min="0" max="100" value="0">
+            <button type="button" id="mute-btn" class="ua-icon-btn">🔈</button>
+        </div>
+
+        <!-- ===== エリア6：現在のピッチ + 元ピッチボタン ===== -->
+        <!--
+            「元ピッチ」は、曲を自動解析して分かった本来のBPMへ
+            戻すボタンです(v8.5と同じ機能)。
+        -->
+        <div class="ua-slot ua-pitch-row">
+            <span class="ua-pitch-label">ピッチ</span>
+            <span class="ua-pitch-value" id="pitch-value">---</span>
+            <span class="ua-pitch-unit">BPM</span>
+            <button type="button" id="reset-pitch-btn" class="ua-pill-btn">元ピッチ</button>
+        </div>
+
+        <!-- ===== エリア7〜8：ピッチ変更の定規 ===== -->
+        <!--
+            再生中の曲のピッチを、指で左右にスワイプして
+            リアルタイムに変えるための定規です(v8.5と同じ機能)。
+
+            初期設定画面の定規(#ruler-container)は高さ160pxの
+            <canvas> にJSで目盛りを描いていますが、ここは
+            2エリア分の高さに収める必要があるため、CSSを
+            このエリアに合わせて作り直しています(竹弘の指示)。
+
+            今は目盛りをCSSの背景で描いた「仮の見た目」です。
+            機能を付ける時に <canvas> へ差し替えます。
+        -->
+        <div class="ua-slot ua-span2 ua-ruler">
+            <div class="ua-ruler-line"></div>
+        </div>
+
+        <!-- ===== エリア9：マイピッチ設定 / ノリノリRun再生 ===== -->
+        <div class="ua-slot ua-btn-row">
+            <button type="button" id="mypitch-btn" class="ua-wide-btn">マイピッチ設定</button>
+            <button type="button" id="norirun-play-btn" class="ua-wide-btn ua-btn-accent">🏃‍ノリノリRun再生</button>
+        </div>
+
+        <!-- ===== エリア10：プレイリスト作成 / 停止・設定 ===== -->
+        <!--
+            右半分の丸ボタンは、竹弘の指示で
+            「当たり判定は四角、見た目は丸」にしています。
+
+            ボタン(<button>)自体は四角のままにして、中に入れた
+            <span class="ua-circle"> だけを丸くしているのがその仕組みです。
+            ボタン自体を丸くする(border-radius:50%)と、タップの
+            判定まで丸くなり、走りながらだと角を押した時に
+            反応しないことがあるためです。
+        -->
+        <div class="ua-slot ua-btn-row">
+            <button type="button" id="playlist-btn" class="ua-wide-btn">🏃‍ノリノリプレイリスト作成</button>
+
+            <div class="ua-circle-group">
+                <button type="button" id="stop-btn" class="ua-circle-btn">
+                    <span class="ua-circle">■</span>
+                </button>
+                <button type="button" id="settings-btn" class="ua-circle-btn">
+                    <span class="ua-circle">⚙️</span>
+                </button>
+            </div>
         </div>
 
     </div>
+
+    <!--
+        再生の実体である <audio> です。
+
+        v87までは上半分に controls 付きで表示していましたが、
+        v88からは再生位置をエリア5の自作シークバーで操作する
+        設計になったため、画面には出さずに隠しています
+        (CSSの #audio-player を参照)。
+
+        隠しても再生そのものには影響ありません。「音を鳴らす部品」と
+        「操作するボタン」を分けた形で、js/player.js からは
+        今まで通りこの要素を使って再生します。
+    -->
+    <audio id="audio-player"></audio>
 
     <!-- ============ 下半分：曲一覧 ============ -->
     <div class="card" id="list-area">
@@ -1737,6 +2256,8 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
    sort      … 曲一覧の並び替え(メニューと並び順の判定)
    undo      … 曲順を一つ前に戻す(↩ボタン)
    list-view … 曲一覧の描画
+   upper-area… 上半分(操作エリア)の表示。list-view の関数を
+               借りているので、必ずその後に読み込むこと
    player    … 曲の再生
    drag-sort … 並び替え(OFS)
    lamp      … 解析状況ランプの表示
@@ -1774,6 +2295,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
 <script src="js/sort.js"></script>
 <script src="js/undo.js"></script>
 <script src="js/list-view.js"></script>
+<script src="js/upper-area.js"></script>
 <script src="js/player.js"></script>
 <script src="js/drag-sort.js"></script>
 <script src="js/lamp.js"></script>
