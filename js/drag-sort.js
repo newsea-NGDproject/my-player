@@ -224,6 +224,95 @@ const AUTO_SCROLL_ZONE = 55;
 // 自動スクロールの最高速度(1フレームあたり何px動かすか)
 const AUTO_SCROLL_MAX_SPEED = 18;
 
+/*
+==========================================================
+ 指を一覧の外まで出した時の「追い加速」(v117)
+==========================================================
+
+竹弘の指摘:
+    「ドラック曲が元位置から離れれば離れるほどスピードが上がる仕様だが、
+      そのスピード設定がスクロール速度に限界を設けていないか」
+
+**設けていました。** v116まではこう書いてありました。
+
+    Math.min(ratio, 1) * AUTO_SCROLL_MAX_SPEED
+
+ratio は「自動スクロールのゾーンにどれだけ深く入り込んだか」を
+0〜1で表した割合です。ratio が 1 になるのは指が一覧の端に届いた時で、
+**そこから先へ指を出しても、min(ratio,1) で1に抑えられるため
+まったく速くなりませんでした。**
+
+    18px × 60コマ = 1秒に1,080px = 1秒に約17行
+
+369曲を端から端まで動かすのに22秒かかる計算です。処理の重さ以前に、
+単純に頭打ちで止められていたことになります。
+
+【なぜ1に抑えてあったのか(元の意図)】
+
+曲一覧が画面の半分になった時、指が一覧の外(画面の上半分)まで
+簡単に出てしまうようになり、割合が際限なく大きくなって
+スクロールが暴走したためです。歯止め自体は必要でした。
+
+【v117でどう変えたか】
+
+歯止めは残したまま、**上限を1倍から3倍へ引き上げます。**
+
+    一覧の中で端に近づく      … 今まで通り、最大18px(目で追える速さ)
+    一覧の外へ指を出す        … そこからさらに加速し、最大54px
+
+54px × 60コマ = 1秒に3,240px = 1秒に約50行。369曲を7秒ほどで
+走破できます。「もっと早くスクロールしたい時は指を外へ出す」という、
+指の位置で速さを選べる操作になりました。
+
+まだ物足りなければ、この数字を上げてください(4なら72px、5なら90px)。
+*/
+const AUTO_SCROLL_TURBO_RATIO = 3;
+
+/*
+==========================================================
+ 速く流れている間は、入れ替え表示を省く(v117)
+==========================================================
+
+竹弘の提案:
+    「おそらく人間の目では、入れ替え表示はスクロールが早くて確認
+      できないので不要だと思う。スクロールスピードが遅くなってきたら
+      (=人間の目で入れ替え表示している事がわかるスピード)
+      また入れ替え表示を行う作りとすることはできないか」
+
+**この読みは正しく、しかも一番効く場所でした。**
+
+ドラッグ中に残っている重い作業は、もう「差し込みスロット(点線の枠)を
+一覧の中で動かすこと」だけです。スロットを動かすと一覧の並びが
+変わるので、ブラウザは行の位置を計算し直して描き直します。
+
+ところが1秒に50行も流れている場面では、**その描き直しは人の目に
+届きません。** 見えないもののために、一番重い作業をしていたわけです。
+
+そこで、この速さを超えている間は **「どこに入るか」の計算だけを続け、
+枠を動かす作業を省きます。** 速度が落ちたら、覚えておいた位置へ
+すぐに枠を戻すので、目で確かめられる場面では今まで通り見えます。
+
+18 という値は、一覧の中での最高速度(AUTO_SCROLL_MAX_SPEED)と
+同じです。つまり **「指を一覧の外へ出して加速している間だけ省く」**
+ことになり、竹弘が挙げた「曲一覧範囲を超えた場合」という区切りと
+自然に一致します。
+*/
+const FAST_SCROLL_SKIP_SPEED = 18;
+
+/*
+今フレームのスクロール速度(px)。上のしきい値と比べるために持ちます。
+指で普通に動かしているだけの時は0です。
+*/
+let currentScrollSpeed = 0;
+
+/*
+入れ替え表示を省いている間、本来スロットがあるべき位置を覚えておきます。
+
+-1 は「省いているものは無い」という印です。速度が落ちた時や指を
+離した時に、ここに残っている位置を画面へ反映します。
+*/
+let pendingPlaceholderIndex = -1;
+
 
 // ==========================================================
 // 2. ドラッグ操作の受け付け
@@ -455,18 +544,60 @@ function updatePlaceholderPosition(clientY){
     insertBefore を呼ぶと、ブラウザは「一覧を書き換えた」と受け取って
     見た目を計算し直します。番号が同じなら、ここで引き返します。
     */
-    if(targetIndex === placeholderIndex){ return; }
+    if(targetIndex === placeholderIndex){
+
+        // 画面と一致しているので、省いていたものは何も残っていません
+        pendingPlaceholderIndex = -1;
+
+        return;
+
+    }
 
     /*
-    【⑤ 実際に差し込む】
+    【⑤ 速く流れている間は、枠を動かす作業を省く】(v117)
 
-    除外中の曲(グレー表示)より下へは着地させません(v110の約束)。
+    ここまでの計算(割り算1回)はごく軽い作業です。重いのはこの先の
+    「差し込みスロットを一覧の中で動かす」処理で、動かすたびに
+    ブラウザが行の位置を計算し直して描き直します。
 
-    除外曲そのものはドラッグを受け付けないので指では持てませんが、
-    それだけだと **普通の曲を除外曲より下へ運べてしまいます。**
-    通常曲の最後まで来た時は、一覧の末尾ではなく「最初の除外行の
-    すぐ手前」へ差し込むことで、除外曲を必ず一番下に保ちます。
+    1秒に50行も流れている場面では、その描き直しは人の目に届きません。
+    そこで速く流れている間は、**どこに入るかを覚えておくだけにして、
+    実際に動かすのは後回しにします。**
+
+    速度が落ちれば下の movePlaceholderTo() がすぐ呼ばれ、指を離した時も
+    flushPendingPlaceholder() が必ず反映するので、**着地する場所は
+    省いても省かなくても同じです。** 変わるのは「途中の動きが見えるか
+    どうか」だけです。
     */
+    if(Math.abs(currentScrollSpeed) >= FAST_SCROLL_SKIP_SPEED){
+
+        pendingPlaceholderIndex = targetIndex;
+
+        return;
+
+    }
+
+    movePlaceholderTo(targetIndex);
+
+}
+
+/**
+ * 差し込みスロット(点線の枠)を、指定の位置へ実際に動かします。
+ *
+ * 【除外曲より下へ着地させない仕組み】(v110の約束)
+ *
+ * 除外曲そのものはドラッグを受け付けないので指では持てませんが、
+ * それだけだと **普通の曲を除外曲より下へ運べてしまいます。**
+ * 通常曲の最後まで来た時は、一覧の末尾ではなく「最初の除外行の
+ * すぐ手前」へ差し込むことで、除外曲を必ず一番下に保ちます。
+ */
+function movePlaceholderTo(targetIndex){
+
+    if(targetIndex === placeholderIndex){
+        pendingPlaceholderIndex = -1;
+        return;
+    }
+
     if(targetIndex < dragCandidates.length){
         menuListEl.insertBefore(placeholder,dragCandidates[targetIndex]);
     }
@@ -479,6 +610,8 @@ function updatePlaceholderPosition(clientY){
 
     // スロットの居場所を更新します(次回の④の判定に使います)
     placeholderIndex = targetIndex;
+
+    pendingPlaceholderIndex = -1;
 
 }
 
@@ -583,29 +716,43 @@ function startAutoScrollLoop(){
            menuListEl.scrollTop > 0){
 
             /*
-            ratio は「ゾーンにどれだけ深く入り込んだか」を
-            0〜1で表した割合です。端に近いほど1に近づき、速く動きます。
+            ratio は「ゾーンにどれだけ深く入り込んだか」を表す割合です。
+            端に近いほど大きくなり、速く動きます。
 
-            Math.min(ratio,1) で1を超えないように制限しているのは、
-            指が曲一覧エリアの外(画面の上半分)まで出た時に
-            割合が1を超えてスクロールが暴走するのを防ぐためです。
-            (エリアが画面の半分になったことで、
-              指が外に出るケースが起きやすくなったため追加しました)
+              ratio = 1 … 指が一覧の端にちょうど届いた状態
+              ratio > 1 … 指が一覧の外(画面の上半分)まで出た状態
+
+            v116まではここを Math.min(ratio,1) として1倍で頭打ちに
+            していました。指が外へ出ても速くならなかったのはこのためです
+            (元々は、割合が際限なく大きくなってスクロールが暴走するのを
+              防ぐための歯止めでした)。
+
+            v117では歯止めを残したまま上限を3倍へ引き上げ、指を外へ
+            出すほど速くなるようにしています(詳しくは
+            AUTO_SCROLL_TURBO_RATIO の解説を参照)。
             */
             const ratio = (rect.top + AUTO_SCROLL_ZONE - currentClientY) / AUTO_SCROLL_ZONE;
-            speed = -Math.ceil(Math.min(ratio,1) * AUTO_SCROLL_MAX_SPEED);
+            speed = -Math.ceil(Math.min(ratio,AUTO_SCROLL_TURBO_RATIO) * AUTO_SCROLL_MAX_SPEED);
             setGlow("top");
         }
         else if(currentClientY > rect.bottom - AUTO_SCROLL_ZONE &&
                 menuListEl.scrollTop < currentScrollMax){
 
             const ratio = (currentClientY - (rect.bottom - AUTO_SCROLL_ZONE)) / AUTO_SCROLL_ZONE;
-            speed = Math.ceil(Math.min(ratio,1) * AUTO_SCROLL_MAX_SPEED);
+            speed = Math.ceil(Math.min(ratio,AUTO_SCROLL_TURBO_RATIO) * AUTO_SCROLL_MAX_SPEED);
             setGlow("bottom");
         }
         else{
             setGlow("");
         }
+
+        /*
+        今フレームの速さを控えておきます(v117)。
+
+        この直後に呼ばれる updatePlaceholderPosition() が、この値を見て
+        「今は速すぎるから、枠を動かす作業は省こう」と判断します。
+        */
+        currentScrollSpeed = speed;
 
         if(speed !== 0){
             // ページ全体ではなく、曲一覧エリアの中だけを動かします。
@@ -614,8 +761,22 @@ function startAutoScrollLoop(){
             requestAnimationFrame(scrollLoop);
         }
         else{
+
             autoScrollActive = false;
+            currentScrollSpeed = 0;
             stopAutoScrollGlow();
+
+            /*
+            自動スクロールが止まった時点で、省いていた入れ替え表示を
+            画面へ反映します(v117)。
+
+            ここで反映しないと、指を止めたまま動かさない間、枠が
+            古い位置に残って見えてしまいます(指が動けば
+            updatePlaceholderPosition が呼ばれて直りますが、
+            動かさなければ呼ばれないためです)。
+            */
+            flushPendingPlaceholder();
+
         }
 
     }
@@ -655,12 +816,45 @@ function stopAutoScrollGlow(){
     setGlow("");
 }
 
+/**
+ * 速すぎて省いていた入れ替え表示を、画面へ反映します(v117)。
+ *
+ * 呼ばれるのは次の2か所です。
+ *
+ *   ・自動スクロールが止まった時(指を端から戻した / 一覧の端に着いた)
+ *   ・指を離した時(clearAllDraggingStates)
+ *
+ * **特に2つ目が大事です。** 指を離した瞬間の枠の位置が、そのまま
+ * 曲の着地先になります。ここで反映を忘れると、省いている間に
+ * 通り過ぎたぶんが失われ、**狙った場所と違うところへ曲が入って
+ * しまいます。**
+ */
+function flushPendingPlaceholder(){
+
+    if(pendingPlaceholderIndex < 0){ return; }
+
+    movePlaceholderTo(pendingPlaceholderIndex);
+
+}
+
 
 // ==========================================================
 // 4. 指を離した時の後始末と保存
 // ==========================================================
 
 function clearAllDraggingStates(){
+
+    /*
+    まず、省いていた入れ替え表示を画面へ反映します(v117)。
+
+    **必ずこの位置(下の処理より前)で呼ぶこと。** この後の処理は
+    「差し込みスロットのある場所へ曲を着地させ、その並びを保存する」
+    というものなので、スロットが本来の位置に無いまま進むと、
+    狙った場所と違うところへ曲が入り、そのまま保存されてしまいます。
+    */
+    flushPendingPlaceholder();
+
+    currentScrollSpeed = 0;
 
     let needSave = false;
 
@@ -699,6 +893,7 @@ function clearAllDraggingStates(){
     */
     dragCandidates = [];
     dragFirstExcludedRow = null;
+    pendingPlaceholderIndex = -1;
 
     if(needSave){
         saveNewOrderFromDOM();
