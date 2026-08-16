@@ -69,6 +69,20 @@ let currentTrackId = null;
  * c013の権限バグと同じ理由(ページ遷移でJSの実行コンテキストが
  * リセットされるため)で、ここでも必ず権限を確認し直してから
  * ファイルを読み込みます。
+ *
+ * ------------------------------------------------------------------
+ * 【戻り値について(v112で追加)】
+ *
+ *   true  … 音が鳴り始めた
+ *   false … 鳴らせなかった(形式非対応・権限切れ・曲データが無い)
+ *
+ * 連続再生(js/queue.js)が「この曲は駄目だったから次へ進もう」と
+ * 判断するために使います。
+ *
+ * 曲一覧をタップした時の呼び出し(js/list-view.js)は、戻り値を
+ * 受け取らずに無視しています。**呼び出す側が使わない戻り値を足しても
+ * 何も壊れない**ので、既存のコードは1文字も変えずに済みました。
+ * ------------------------------------------------------------------
  */
 async function playTrack(trackId){
 
@@ -78,7 +92,7 @@ async function playTrack(trackId){
 
         if(!track || !track.file_handle){
             alert("曲データが見つかりませんでした。c013で再登録してください。");
-            return;
+            return false;
         }
 
         /*
@@ -105,7 +119,8 @@ async function playTrack(trackId){
 
             console.log("すでに再生中です(そのまま続けます) :",track.file_name);
 
-            return;
+            // 鳴っていることに変わりはないので、成功として返します
+            return true;
 
         }
 
@@ -118,7 +133,7 @@ async function playTrack(trackId){
 
         if(permission !== "granted"){
             alert("この曲へのアクセスが許可されませんでした。");
-            return;
+            return false;
         }
 
         const file = await track.file_handle.getFile();
@@ -168,6 +183,8 @@ async function playTrack(trackId){
             */
             clearExclusion(trackId);
 
+            return true;
+
         }
         catch(playError){
 
@@ -207,6 +224,8 @@ async function playTrack(trackId){
 
             }
 
+            return false;
+
         }
 
     }
@@ -217,6 +236,8 @@ async function playTrack(trackId){
             error.message
         );
         alert("再生に失敗しました。ブラウザのファイル権限が切れている可能性があります。");
+
+        return false;
     }
 
 }
