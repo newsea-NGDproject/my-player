@@ -102,6 +102,95 @@ let dragFirstExcludedRow = null;
 let dragScrollMax = 0;
 
 /*
+==========================================================
+ 着地位置を「算数」で出すための決まり(v116)
+==========================================================
+
+【なぜこうしたのか】
+
+v115では、着地位置を探す時にブラウザへ「この行は今どこ?」と
+尋ねていました(getBoundingClientRect)。尋ねる回数を368回から
+9回まで減らしたのに、体感がほとんど変わりませんでした。
+
+理由は、**この命令は1回呼ぶだけで369行すべての位置計算が走る**
+ことにあります。368回でも9回でも、最初の1回で全体の計算が
+発生してしまうため、回数を減らしても削れていなかったのです。
+
+つまり **0回にしない限り解決しません。**
+
+【0回にできる理由】
+
+曲一覧は、全部の行がまったく同じ高さでできています。
+
+    行の高さ  56px  (.music-row の height)
+    行の間隔   8px  (.music-list の gap)
+    ----------------------
+    1行あたり  64px
+
+同じ間隔で並んでいるなら、**尋ねなくても算数で分かります。**
+
+    (指の位置 - 一覧の上端 + スクロール量) ÷ 64 = 何番目
+
+割り算1回で答えが出ます。ブラウザへの問い合わせは0回、
+つまりレイアウトの計算そのものが発生しません。
+
+【★ 将来ここを触る人へ(最重要)】
+
+**この計算は「全行が64px間隔で並んでいる」ことだけを頼りにして
+います。** c014.html の
+
+    .music-row      の height:56px
+    .music-list     の gap:8px
+    .drag-placeholder の height:56px
+
+このどれか1つでも変えたら、**下の ROW_HEIGHT / ROW_GAP も必ず
+一緒に変えてください。** 忘れると、掴んだ曲が1行ずれた場所に
+着地するようになります。
+
+竹弘とは「この3つの値は今後崩さない」と約束済みです(2026-08-16)。
+
+【端末が変わっても大丈夫な理由】
+
+CSSの px は画面の粒(ドット)ではなく「端末に依存しない単位」です。
+画面が細かい端末でも粗い端末でも、56px は 56px。JavaScriptが受け取る
+指の座標も同じ単位なので、どの端末でも同じ計算で合います。
+
+画面の大きい端末では「一度に見える行数」が増えるだけで、1行の
+高さは変わりません。一覧の上端の位置も実測するので、表示エリアの
+高さや位置が端末ごとに違っても自動的に合います。
+*/
+const ROW_HEIGHT = 56;
+const ROW_GAP = 8;
+
+// 1行が占める縦の長さ(行そのもの + 下の隙間)
+const ROW_STRIDE = ROW_HEIGHT + ROW_GAP;
+
+/*
+行の「上半分か下半分か」を分ける境目です。
+
+指が行の上半分にあればその行の前へ、下半分にあれば後ろへ着地
+させます(v115までの判定と同じ考え方を、算数に置き換えたものです)。
+*/
+const ROW_HALF = ROW_HEIGHT / 2;
+
+/*
+一覧の上端と下端が、画面のどこにあるか(掴んだ時に1回だけ測ります)。
+
+上端は着地位置の計算に、上端と下端の両方は「指が端に近づいたら
+自動スクロールを始める」判定に使います。
+*/
+let dragListTop = 0;
+let dragListBottom = 0;
+
+/*
+差し込みスロット(placeholder)が今どこにいるかを、番号で覚えます。
+
+DOMを調べ直さずに「動かす必要があるか」を判断するためのものです。
+番号が変わらなければ、insertBefore を呼びません。
+*/
+let placeholderIndex = 0;
+
+/*
 上下の光る帯です。
 
 毎フレーム document.getElementById で探し直していたものを、
@@ -232,34 +321,70 @@ function bindDragAndDropEvents(row,handle){
  */
 function cacheDragTargets(){
 
-    const siblings = menuListEl.querySelectorAll(".music-row:not(.dragging)");
-
     dragCandidates = [];
     dragFirstExcludedRow = null;
+    placeholderIndex = 0;
 
-    for(const sibling of siblings){
+    /*
+    一覧に並んでいるものを、上から順に1回だけ見ていきます。
 
-        if(sibling.classList.contains("excluded")){
+    placeholder(差し込みスロット)にたどり着いたら印を立て、
+    それより前にあった通常曲の数を placeholderIndex とします。
+    これが「スロットは今、上から何番目にいるか」になります。
+
+    掴んで浮いている行(draggingRow)は position:fixed で一覧の
+    流れから外れているので、数に入れません。
+    */
+    let seenPlaceholder = false;
+
+    for(const child of menuListEl.children){
+
+        if(child === placeholder){
+            seenPlaceholder = true;
+            continue;
+        }
+
+        if(child === draggingRow){ continue; }
+
+        if(!child.classList.contains("music-row")){ continue; }
+
+        if(child.classList.contains("excluded")){
 
             // 一番上の除外行だけ覚えておけば十分です
             if(!dragFirstExcludedRow){
-                dragFirstExcludedRow = sibling;
+                dragFirstExcludedRow = child;
             }
 
         }
         else{
-            dragCandidates.push(sibling);
+
+            if(!seenPlaceholder){ placeholderIndex++; }
+
+            dragCandidates.push(child);
+
         }
 
     }
 
     /*
-    あと何pxスクロールできるかも、ここで測っておきます。
+    一覧の上端が画面のどこにあるかを、ここで1回だけ測ります(v116)。
 
-    scrollHeight(中身全体の高さ)を読むと、ブラウザはその場で
-    レイアウトを計算し直します。掴んでいる間は行数が変わらないので
-    値も変わりません。毎フレーム測り直す意味がありませんでした。
+    【ドラッグ中に測り直さなくてよい理由】
+
+    普通のWebページは、スクロールするとアドレスバーが隠れて表示位置が
+    ずれます。しかしノリRunは固定1画面で、ページ全体はスクロールしません
+    (動くのは曲一覧の中だけ)。そのためアドレスバーは出たままで、
+    一覧の上端が掴んでいる最中にずれることがありません。
+
+    あと何pxスクロールできるかも同じく1回だけです。scrollHeight を読むと
+    ブラウザはレイアウトを計算し直しますが、掴んでいる間は行数が変わらない
+    ので値も変わりません。
     */
+    const listRect = menuListEl.getBoundingClientRect();
+
+    dragListTop = listRect.top;
+    dragListBottom = listRect.bottom;
+
     dragScrollMax = menuListEl.scrollHeight - menuListEl.clientHeight;
 
 }
@@ -270,104 +395,90 @@ function updatePlaceholderPosition(clientY){
 
     /*
     ==========================================================
-     着地位置を「二分探索」で探します(v115)
+     着地位置を「算数」で出します(v116)
     ==========================================================
 
-    【v114までのやり方と、その問題】
+    ブラウザへの問い合わせは **0回** です。詳しい理由はファイル上部の
+    ROW_STRIDE の解説を読んでください。要点だけ書くと、
+    「この行はどこ?」と1回でも尋ねると369行ぶんの計算が走ってしまう
+    ため、尋ねること自体をやめました。
 
-    上の行から順に位置を測っていき、指より下にある最初の行を
-    探していました。素直な方法ですが、**一覧の下の方へ運ぶほど
-    測る回数が増えます。** 369曲の一番下だと、指を1回動かすたびに
-    368回も位置を測ることになっていました。
+    【① 指が一覧の先頭から何px下にいるか】
 
-    しかも位置を測る命令(getBoundingClientRect)は、ブラウザに
-    レイアウトの計算をやり直させます。v114で「画面の外は計算しない」
-    ようにしたのに、この命令がその省略を打ち消してしまうため、
-    通常のスクロールだけが速くなり、ドラッグ中は遅いまま残りました。
+        指の画面上の位置 - 一覧の上端 = 見えている範囲での位置
+        + スクロール量                 = 一覧の先頭から数えた位置
 
-    【二分探索とは】
-
-    辞書で単語を引く時、1ページ目からめくらずに、真ん中を開いて
-    「もっと後ろだ」と見当をつけますよね。あれと同じです。
-
-        1. 候補のちょうど真ん中の行の位置を測る
-        2. 指がそれより上なら、下半分は見なくてよい
-           指がそれより下なら、上半分は見なくてよい
-        3. 残った半分について、また同じことをくり返す
-
-    一度調べるたびに候補が半分に減るので、**368行でも9回ほど**で
-    答えにたどり着きます。368回が9回になる、という計算です。
-
-    【なぜこれが正しく動くのか】
-
-    行は必ず上から下へ順番に並んでいます(位置が飛び飛びになったり
-    順序が入れ替わったりしない)。この「並んでいる」性質があるから、
-    半分を見ずに切り捨てられます。曲一覧はまさにこの形です。
-
-    lo(下限)と hi(上限)で「まだ調べていない範囲」を表し、
-    その範囲が無くなるまでくり返します。
+    スクロールで隠れている上の部分も足すのがポイントです。
     */
-    let lo = 0;
-    let hi = dragCandidates.length - 1;
-    let nextSibling = null;
-
-    while(lo <= hi){
-
-        // 真ん中の位置。>> 1 は「2で割って小数を捨てる」という書き方です
-        const mid = (lo + hi) >> 1;
-
-        const box = dragCandidates[mid].getBoundingClientRect();
-
-        if(clientY <= box.top + box.height / 2){
-
-            /*
-            指がこの行の上半分より上にある = ここが着地先になりうる。
-            ただし、もっと上に条件を満たす行があるかもしれないので、
-            いったん覚えておいて、上半分を探し続けます。
-            */
-            nextSibling = dragCandidates[mid];
-            hi = mid - 1;
-
-        }
-        else{
-
-            // 指はもっと下。この行より上は見なくてよい
-            lo = mid + 1;
-
-        }
-
-    }
+    const offsetY = clientY - dragListTop + menuListEl.scrollTop;
 
     /*
-    差し込む先が今と同じなら、何もしません(v115)。
+    【② 何番目に差し込むかを求める】
 
-    同じ場所へ insertBefore を呼び直しても結果は変わりませんが、
-    ブラウザは「一覧を書き換えた」と受け取って見た目を計算し直します。
-    指を少し動かしただけで着地先が変わらないことは多いので、
-    ここで止めるだけでも無駄な作業がかなり減ります。
+    v115までは「指が行の上半分にあれば、その行の前に入れる」という
+    判定をしていました。同じ結果を割り算で出します。
+
+    行は64pxごとに並び、各行の境目(上半分と下半分の境)は
+    先頭から 28px, 92px, 156px … と64px刻みで並びます。
+    そこで28pxを引いてから64で割り、切り上げれば番号が出ます。
+
+        指が  0〜28px  → 0番目(先頭)に入る
+        指が 29〜92px  → 1番目に入る
+        指が 93〜156px → 2番目に入る
+
+    Math.ceil は「小数を切り上げる」命令です。
     */
-    if(nextSibling){
+    const rawIndex = Math.ceil((offsetY - ROW_HALF) / ROW_STRIDE);
 
-        if(placeholder.nextSibling !== nextSibling){
-            menuListEl.insertBefore(placeholder,nextSibling);
-        }
+    /*
+    【③ 差し込みスロット自身のぶんを差し引く】
 
+    ここが少しだけややこしい部分です。
+
+    ②で出した番号は「今の見た目の並び」での位置ですが、その並びには
+    **差し込みスロット(点線の枠)自身も1行分の場所を取って混ざって
+    います。** スロットより下を指している時は、その1行分だけ番号が
+    ずれるので引き算で戻します。
+
+    dragCandidates(通常の曲だけの並び)での番号に揃えるための補正です。
+    */
+    let targetIndex = (rawIndex > placeholderIndex) ? rawIndex - 1 : rawIndex;
+
+    // 一覧の外を指していても、端で止まるようにします
+    if(targetIndex < 0){ targetIndex = 0; }
+    if(targetIndex > dragCandidates.length){ targetIndex = dragCandidates.length; }
+
+    /*
+    【④ 動かす必要が無ければ、DOMには一切触れない】
+
+    指を少し動かしただけでは着地先は変わりません。それでも
+    insertBefore を呼ぶと、ブラウザは「一覧を書き換えた」と受け取って
+    見た目を計算し直します。番号が同じなら、ここで引き返します。
+    */
+    if(targetIndex === placeholderIndex){ return; }
+
+    /*
+    【⑤ 実際に差し込む】
+
+    除外中の曲(グレー表示)より下へは着地させません(v110の約束)。
+
+    除外曲そのものはドラッグを受け付けないので指では持てませんが、
+    それだけだと **普通の曲を除外曲より下へ運べてしまいます。**
+    通常曲の最後まで来た時は、一覧の末尾ではなく「最初の除外行の
+    すぐ手前」へ差し込むことで、除外曲を必ず一番下に保ちます。
+    */
+    if(targetIndex < dragCandidates.length){
+        menuListEl.insertBefore(placeholder,dragCandidates[targetIndex]);
     }
     else if(dragFirstExcludedRow){
-
-        // 通常曲の一番後ろ = 最初の除外行のすぐ手前
-        if(placeholder.nextSibling !== dragFirstExcludedRow){
-            menuListEl.insertBefore(placeholder,dragFirstExcludedRow);
-        }
-
+        menuListEl.insertBefore(placeholder,dragFirstExcludedRow);
     }
     else{
-
-        if(menuListEl.lastElementChild !== placeholder){
-            menuListEl.appendChild(placeholder);
-        }
-
+        menuListEl.appendChild(placeholder);
     }
+
+    // スロットの居場所を更新します(次回の④の判定に使います)
+    placeholderIndex = targetIndex;
 
 }
 
@@ -411,8 +522,14 @@ function startAutoScrollLoop(){
 
     if(autoScrollActive){ return; }
 
-    // 曲一覧エリアが、今画面のどの位置にあるかを測ります。
-    const listRect = menuListEl.getBoundingClientRect();
+    /*
+    曲一覧エリアの位置は、掴んだ時に測ったものを使います(v116)。
+
+    この関数は指が動くたびに呼ばれます。ここで毎回位置を測ると、
+    そのたびにブラウザが369行ぶんのレイアウトを計算し直すため、
+    着地位置の計算を算数に変えた意味が無くなってしまいます。
+    */
+    const listRect = { top: dragListTop, bottom: dragListBottom };
 
     /*
     このエリアが「あと何pxスクロールできるか」の上限値です。
@@ -447,13 +564,19 @@ function startAutoScrollLoop(){
         let speed = 0;
 
         /*
-        エリアの位置だけは毎回測り直します。アドレスバーの伸縮などで
-        画面内の位置が動くことがあるためです(1回だけなので軽い作業です)。
+        エリアの位置も残りスクロール量も、掴んだ時に測ったものを
+        使い回します(v116)。
 
-        残りスクロール量は、掴んだ時に測ったものを使い回します(v115)。
-        光る帯も、毎回 getElementById で探し直すのをやめました。
+        このループは1秒間に60回走ります。v115まではここで毎回
+        getBoundingClientRect を呼んでいたため、**指を端に置いて
+        自動スクロールさせている間ずっと、毎フレーム369行ぶんの
+        レイアウト計算が走っていました。** ドラッグ中だけ重かった
+        本当の原因はここです。
+
+        ノリRunは固定1画面でページ全体がスクロールしないため、
+        掴んでいる最中に一覧の位置がずれることはありません。
         */
-        const rect = menuListEl.getBoundingClientRect();
+        const rect = { top: dragListTop, bottom: dragListBottom };
         const currentScrollMax = dragScrollMax;
 
         if(currentClientY < rect.top + AUTO_SCROLL_ZONE &&
