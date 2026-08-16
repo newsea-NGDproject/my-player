@@ -190,6 +190,67 @@ const excludeFilesEl = document.getElementById("exclude-files");
 const excludeNoteEl = document.getElementById("exclude-note");
 const excludeOkBtn = document.getElementById("exclude-ok");
 
+/*
+日本語の文を「意味の塊」で改行させるための部品です(v111)。
+
+【何を直したのか】
+
+v110では、狭い画面で次のような不格好な改行が起きていました。
+
+    このブラウザが対応していない形式のようで
+    す。                                    ← 「で」と「す。」が分断された
+
+    一覧の一番下へグレー表示で移します(削除はしませ
+    ん)。                                  ← 括弧の中で切れた
+
+竹弘の指摘:
+    「『形式のようです。』の一塊を次の行にした方が見栄えがよいのでは」
+
+【なぜこうなるのか】
+
+英語は単語と単語の間に空白があるため、ブラウザはそこで改行します。
+ところが日本語には空白が無いので、ブラウザは**どこで切ってもよい**と
+判断し、枠の右端に来た文字でそのまま折り返してしまいます。
+
+【どう直すか】
+
+意味の塊を <span> で囲み、CSSで display:inline-block を掛けます。
+inline-block は「1つのかたまり」として扱われ、**途中では改行されず、
+入りきらない時は塊ごと次の行へ送られます。**
+
+    <span>このブラウザが</span><span>対応していない</span><span>形式のようです。</span>
+      ↓
+    このブラウザが対応していない
+    形式のようです。            ← 塊ごと次の行へ
+
+【注意すること】
+
+・塊を長くしすぎないこと。1つの塊が枠の幅より長いと、結局その中で
+  折り返されてしまいます(目安は10文字程度まで)。
+・**ファイル名など、曲のデータから来る文字には使わないこと。**
+  この関数は受け取った文字をHTMLとして扱うため、曲名に < や > が
+  入っていると表示が壊れます。ファイル名は今まで通り textContent
+  (文字としてそのまま入れる方法)で表示しています。
+
+@param {string[]} chunks - 塊に分けた文字の配列
+*/
+function buildWrappedText(chunks){
+
+    /*
+    map() で1つずつ<span>に包み、join("") で隙間なく繋ぎます。
+
+    join に空文字("")を渡しているのが地味に大事です。ここに改行や
+    空白が入ると、その隙間が画面上でも空白として表示されてしまい、
+    文字と文字の間が不自然に空いてしまいます。
+    */
+    return chunks.map(function(chunk){
+
+        return "<span class='text-chunk'>" + chunk + "</span>";
+
+    }).join("");
+
+}
+
 /**
  * 了承待ちの曲を並べて、⚠️パネルを表示します。
  */
@@ -216,13 +277,26 @@ function showExcludePanel(){
     });
 
     // ---- 1. 本文(何が起きたか) ----
+    /*
+    文を意味の塊に分けて渡します(v111)。ここで切った単位が、
+    そのまま「改行してよい場所」になります。
+    */
     if(hasNewOne){
-        excludeMessageEl.textContent =
-            "このブラウザが対応していない形式のようです。";
+
+        excludeMessageEl.innerHTML = buildWrappedText([
+            "このブラウザが",
+            "対応していない",
+            "形式のようです。"
+        ]);
+
     }
     else{
-        excludeMessageEl.textContent =
-            "やはり再生できませんでした。";
+
+        excludeMessageEl.innerHTML = buildWrappedText([
+            "やはり",
+            "再生できませんでした。"
+        ]);
+
     }
 
     // ---- 2. 対象のファイル名 ----
@@ -243,14 +317,37 @@ function showExcludePanel(){
     }).join("\n");
 
     // ---- 3. これからどうなるか ----
+    /*
+    ここも意味の塊で区切ります(v111)。
+
+    2つの文の間だけは <br> で必ず改行させています。「これからどうなるか」と
+    「どうすれば戻せるか」は別の話なので、画面の幅によって1行に繋がって
+    しまわないようにするためです。
+    */
     if(hasNewOne){
-        excludeNoteEl.textContent =
-            "一覧の一番下へグレー表示で移します(削除はしません)。\n" +
-            "タップすればもう一度試せます。";
+
+        excludeNoteEl.innerHTML =
+            buildWrappedText([
+                "一覧の一番下へ",
+                "グレー表示で移します",
+                "(削除はしません)。"
+            ]) +
+            "<br>" +
+            buildWrappedText([
+                "タップすれば",
+                "もう一度試せます。"
+            ]);
+
     }
     else{
-        excludeNoteEl.textContent =
-            "このまま一覧の一番下に残します(削除はしません)。";
+
+        excludeNoteEl.innerHTML = buildWrappedText([
+            "このまま",
+            "一覧の一番下に",
+            "残します",
+            "(削除はしません)。"
+        ]);
+
     }
 
     excludePanel.style.display = "flex";
