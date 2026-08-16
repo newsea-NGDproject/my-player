@@ -9,8 +9,9 @@
  曲が最後まで流れ終わった時に、自動で次の曲を鳴らします。
  「次は何を鳴らすか」の判断を、まとめてここが受け持ちます。
 
-   findNextTrackId()   … 次に鳴らすべき曲を探す
+   findNextTrackId()   … 次に鳴らすべき曲を探す(自動再生用)
    playNextTrack()     … 次の曲を鳴らす(駄目ならさらに次へ)
+   skipTrack()         … ⏭ ⏮ が押された時に隣の曲を鳴らす
    buildShuffleOrder() … ランダム再生用の順番を作る
    loadPlayModeSetting() … 前回選んだ再生モードを復元する
 
@@ -437,7 +438,142 @@ async function playNextTrack(){
 
 
 // ==========================================================
-// 6. 曲が終わったら次へ
+// 6. 曲送り / 曲戻し(v119)
+// ==========================================================
+/*
+曲一覧の見出しにある ⏭ ⏮ を押した時の処理です。
+
+【自動再生の「次の曲」と、なぜ別の関数なのか】
+
+上の findNextTrackId() は曲が終わった時に呼ばれるもので、1曲リピート
+なら同じ曲を返します。しかし **⏭ を押したのに同じ曲が鳴り直したら、
+竹弘は「壊れている」と感じます。**
+
+ボタンを押すのは「今の曲はもういい、隣へ行きたい」という
+はっきりした意思表示です。そのため1曲リピート中でも、こちらは
+必ず隣の曲へ進みます(一般的な音楽プレイヤーと同じ振る舞いです)。
+
+竹弘の指示で、⏮ は **いつでも前の曲へ** 戻ります(「3秒以上聴いて
+いたら今の曲の頭出し」という作りにはしていません。押した時に何が
+起きるかが毎回同じ方が、走りながらでも迷わないためです)。
+*/
+
+/**
+ * 今の曲の1つ隣を探します。
+ *
+ * @param  {number} step - +1 なら次の曲、-1 なら前の曲
+ * @return {string|null} 見つかった曲のtrack_id
+ */
+function findNeighborTrackId(step){
+
+    /*
+    ランダム再生の時は、シャッフルした順番の中で隣を探します。
+    そうしないと「⏭ で進んだ曲」と「自動で流れる曲」が食い違います。
+    */
+    const list = (currentPlayMode === PLAY_MODE_SHUFFLE)
+        ? shuffleOrder
+        : currentOrderList;
+
+    if(list.length === 0){ return null; }
+
+    const currentIndex = list.indexOf(currentTrackId);
+
+    // 今の曲が見当たらない時は、先頭の鳴らせる曲を返します
+    if(currentIndex === -1){
+
+        for(const trackId of list){
+            if(!isExcluded(libraryMap[trackId])){ return trackId; }
+        }
+
+        return null;
+
+    }
+
+    /*
+    隣へ1つずつ動きながら、鳴らせる曲を探します。
+    除外された曲は飛ばすので、隣が必ず「1つ先」とは限りません。
+    */
+    for(let i = currentIndex + step; i >= 0 && i < list.length; i += step){
+
+        const trackId = list[i];
+
+        if(libraryMap[trackId] && !isExcluded(libraryMap[trackId])){
+            return trackId;
+        }
+
+    }
+
+    /*
+    端に着いた時の扱いです。
+
+    全曲ループとランダムの時は、反対の端へ回り込みます(一覧の
+    最後で ⏭ を押したら先頭へ、先頭で ⏮ を押したら最後へ)。
+    OFFと1曲リピートの時は、端で止まります。
+    */
+    if(currentPlayMode === PLAY_MODE_ALL || currentPlayMode === PLAY_MODE_SHUFFLE){
+
+        const wrapStart = (step > 0) ? 0 : list.length - 1;
+
+        for(let i = wrapStart; i >= 0 && i < list.length; i += step){
+
+            const trackId = list[i];
+
+            if(libraryMap[trackId] && !isExcluded(libraryMap[trackId])){
+                return trackId;
+            }
+
+        }
+
+    }
+
+    return null;
+
+}
+
+/**
+ * ⏭ / ⏮ が押された時に、隣の曲を鳴らします。
+ */
+async function skipTrack(step){
+
+    // まだ1曲も選んでいない時は、鳴らすものがないので何もしません
+    if(!currentTrackId){ return; }
+
+    const trackId = findNeighborTrackId(step);
+
+    if(!trackId){
+
+        console.log("これ以上、進める曲がありません");
+
+        return;
+
+    }
+
+    /*
+    鳴らせなかった場合の追いかけはしません。
+
+    ここは竹弘が自分で押したボタンなので、⚠️パネルが出た時点で
+    「この曲は駄目だった」と分かります。勝手に次々と飛ばしていくと、
+    どこまで進んだのか分からなくなってしまいます
+    (自動再生の時に飛ばし続けるのは、画面を見ていないためです)。
+    */
+    await playTrack(trackId);
+
+}
+
+const prevBtn = document.getElementById("prev-btn");
+const nextBtn = document.getElementById("next-btn");
+
+prevBtn.addEventListener("click",function(){
+    skipTrack(-1);
+});
+
+nextBtn.addEventListener("click",function(){
+    skipTrack(1);
+});
+
+
+// ==========================================================
+// 7. 曲が終わったら次へ
 // ==========================================================
 /*
 ended は「曲が最後まで流れ終わった」時に起きる、audio要素の
@@ -466,7 +602,7 @@ audioPlayer.addEventListener("ended",function(){
 
 
 // ==========================================================
-// 7. 再生モードのボタン(v113)
+// 8. 再生モードのボタン(v113)
 // ==========================================================
 
 const playModeBtn = document.getElementById("play-mode-btn");
@@ -533,7 +669,7 @@ function updatePlayModeButton(){
 
 
 // ==========================================================
-// 8. 再生モードの保存と復元
+// 9. 再生モードの保存と復元
 // ==========================================================
 /*
 選んだモードは settings ストアに残し、次にアプリを開いた時も
