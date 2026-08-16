@@ -81,6 +81,26 @@ function createRowElement(trackId){
     row.className = "music-row";
     row.dataset.trackId = trackId;
 
+    /*
+    再生できないと分かっている曲は、行ごと薄いグレーにします(v110)。
+
+    竹弘の指示:
+        「可能なら薄いグレーアウトを絵文字含むその1曲に掛けて欲しい」
+
+    CSSの .excluded は行全体の透明度を下げる指定なので、中にある
+    絵文字(🛌)もジャケット画像も、まとめて薄くなります。文字色を
+    1つずつ変えていく必要はありません。
+
+    excluded という状態を「クラス名」で表しておくと、見た目の調整は
+    CSS側だけで完結します。JSは「この曲は除外中である」と伝える
+    だけで済み、両者の役割がはっきり分かれます。
+    */
+    const excluded = isExcluded(track);
+
+    if(excluded){
+        row.classList.add("excluded");
+    }
+
     row.innerHTML =
         "<button class='square-btn norinori-btn'>" + buildNoriIcon(track) + "</button>" +
         "<div class='info-area'>" +
@@ -108,9 +128,31 @@ function createRowElement(trackId){
     🕺(踊っている)へ変わり、その曲がノリ注入済みであることを表します。
     */
     const noriBtn = row.querySelector(".norinori-btn");
-    noriBtn.addEventListener("click",function(){
-        injectNori(trackId,noriBtn);
-    });
+
+    /*
+    除外中の曲には、ノリ注入ボタンを働かせません(v110、竹弘の指示)。
+
+    鳴らない曲にノリを注入しても意味がないうえ、ノリ注入は
+    一度きりで取り消せない操作(nori.js の一方通行)なので、
+    間違って押してしまうと元に戻せなくなるためです。
+
+    押しても何も起きないよう、そもそも click の受付を登録して
+    いません。あわせて disabled を付けているのは、ブラウザに
+    「このボタンは今使えない」と伝えるためです。押した時の
+    色の変化も止まるので、反応しないことが指先で伝わります。
+    */
+    if(excluded){
+
+        noriBtn.disabled = true;
+
+    }
+    else{
+
+        noriBtn.addEventListener("click",function(){
+            injectNori(trackId,noriBtn);
+        });
+
+    }
 
     /*
     曲情報エリア(1行目のタイトル / 2行目の曲長+アーティスト)を
@@ -157,8 +199,24 @@ function createRowElement(trackId){
         infoArea.appendChild(createJacketImage(track.cover_art));
     }
 
-    const sortHandle = row.querySelector(".sort-handle");
-    bindDragAndDropEvents(row,sortHandle);
+    /*
+    除外中の曲は、ドラッグで動かせないようにします(v110、竹弘の指示)。
+
+    「常に一覧の一番下」という約束を、手で動かして破れてしまっては
+    意味がないためです。掴めるのに離すと戻される作りにすると、
+    操作しているのに言うことを聞かない、という嫌な感触になります。
+    最初から掴めない方が、はっきりしていて分かりやすい。
+
+    やり方は単純で、ドラッグの受付(bindDragAndDropEvents)を
+    登録しないだけです。ボタン自体は残しますが、上の .excluded に
+    よって薄く表示されるので、触れないことは見て分かります。
+    */
+    if(!excluded){
+
+        const sortHandle = row.querySelector(".sort-handle");
+        bindDragAndDropEvents(row,sortHandle);
+
+    }
 
     return row;
 

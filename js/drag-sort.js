@@ -134,13 +134,48 @@ function updatePlaceholderPosition(clientY){
         menuListEl.querySelectorAll(".music-row:not(.dragging)")
     );
 
-    const nextSibling = siblings.find(function(sibling){
+    /*
+    除外中の曲(グレー表示)より下へは、着地できないようにします(v110)。
+
+    【なぜ、掴めなくするだけでは足りないのか】
+
+    除外曲そのものは list-view.js でドラッグを受け付けないように
+    したので、指で持ち上げることはできません。
+
+    しかしそれだけだと、**普通の曲を除外曲より下へ運べてしまいます。**
+    それを許すと「除外曲は常に一番下」という約束が破れてしまうため、
+    着地先(placeholder=差し込みスロット)の側にも歯止めが要ります。
+
+    やり方は2つの組み合わせです。
+
+      ① 着地先を探す時、除外行は候補から外す
+      ② 通常曲の中に着地先が無い(＝一番下まで運ばれた)時は、
+         一覧の末尾ではなく「最初の除外行の直前」へ差し込む
+
+    ②が肝で、これが無いと appendChild で一覧の一番最後 ——
+    つまり除外曲より下 —— へ着地してしまいます。
+    */
+    const firstExcludedRow = siblings.find(function(sibling){
+        return sibling.classList.contains("excluded");
+    });
+
+    const candidates = siblings.filter(function(sibling){
+        return !sibling.classList.contains("excluded");
+    });
+
+    const nextSibling = candidates.find(function(sibling){
         const box = sibling.getBoundingClientRect();
         return clientY <= box.top + box.height / 2;
     });
 
     if(nextSibling){
         menuListEl.insertBefore(placeholder,nextSibling);
+    }
+    else if(firstExcludedRow){
+
+        // 通常曲の一番後ろ = 最初の除外行のすぐ手前
+        menuListEl.insertBefore(placeholder,firstExcludedRow);
+
     }
     else{
         menuListEl.appendChild(placeholder);

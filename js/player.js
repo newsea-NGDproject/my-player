@@ -157,6 +157,17 @@ async function playTrack(trackId){
 
             console.log("再生開始 :",track.file_name);
 
+            /*
+            無事に鳴った曲が、以前に除外されていたものなら解除します(v110)。
+
+            竹弘の仕様「再生できるようになった時は、グレーアウトが外れ、
+            通常曲と同じ扱いとなる」を実現している箇所です。
+
+            除外されていない曲では、clearExclusion() の中で何もせずに
+            戻るので、毎回呼んでも無駄にはなりません。
+            */
+            clearExclusion(trackId);
+
         }
         catch(playError){
 
@@ -166,11 +177,35 @@ async function playTrack(trackId){
                 playError.message
             );
 
-            alert(
-                "この曲は再生できませんでした。\n" +
-                "ファイル形式(コーデック)がこの端末で対応していない可能性があります。\n" +
-                "(" + track.file_name + ")"
-            );
+            /*
+            コーデックが原因の失敗だけを、除外の対象にします(v110)。
+
+            【ここで種類を選り分ける理由】
+
+            play() の失敗には、自動再生がブラウザに止められた場合
+            (NotAllowedError)なども含まれます。それを除外にすると、
+            曲は何も悪くないのにグレーになってしまいます。
+
+            判定は js/exclude.js の isCodecFailure() に任せています。
+            安全装置を1箇所にまとめておくためです。
+
+            なお alert ではなく専用パネルに変えたのは、alert が
+            「押されるまでJavaScriptを丸ごと止める」ためです。
+            連続再生(v111)で次の曲へ進めなくなってしまいます。
+            */
+            if(isCodecFailure(playError)){
+
+                reportPlaybackFailure(trackId);
+
+            }
+            else{
+
+                alert(
+                    "この曲は再生できませんでした。\n" +
+                    "(" + track.file_name + ")"
+                );
+
+            }
 
         }
 
@@ -207,15 +242,36 @@ audioPlayer.onerror = function(){
         audioPlayer.error.message
     );
 
-    let reason = "不明なエラーです。";
+    /*
+    コーデックが原因なら、除外のしくみへ渡します(v110)。
 
-    if(audioPlayer.error.code === audioPlayer.error.MEDIA_ERR_DECODE){
-        reason = "ファイル形式(コーデック)がこの端末で対応していない可能性があります。";
-    }
-    else if(audioPlayer.error.code === audioPlayer.error.MEDIA_ERR_SRC_NOT_SUPPORTED){
-        reason = "この形式のファイルは、このブラウザでは再生できません。";
+    【なぜ play() の失敗と両方で受けているのか】
+
+    再生できない曲を選んだ時、ブラウザは2つの経路で失敗を知らせて
+    きます。play() が失敗するのと、このイベントが起きるのと、その
+    両方です。どちらが先に来るかは端末やファイルによって変わるため、
+    両方で受け止めています。
+
+    二重にパネルが出ることはありません。exclude.js の
+    reportPlaybackFailure() が、同じ曲を2回は受け付けないためです。
+
+    currentTrackId は、このファイルが持っている「今どの曲を選んだか」
+    です。エラーイベント自体は曲を教えてくれないので、こちらで
+    覚えている値を使います。
+    */
+    if(isCodecMediaError(audioPlayer.error) && currentTrackId){
+
+        reportPlaybackFailure(currentTrackId);
+
+        return;
+
     }
 
-    alert("再生できませんでした。\n" + reason);
+    /*
+    コーデック以外の原因(読み込みの中断など)は、これまで通り
+    その場で知らせるだけにします。曲そのものに問題があるとは
+    限らないので、除外はしません。
+    */
+    alert("再生できませんでした。");
 
 };
