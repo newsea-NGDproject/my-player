@@ -469,7 +469,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v109)ノリRun
+        (v110)ノリRun
         メインメニュー
 
     </title>
@@ -1905,6 +1905,54 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             background:#e6f6ff;
         }
 
+        /*
+        ================================================
+         除外中の曲(再生できなかった曲)の見た目
+        ================================================
+
+        竹弘の指示:
+            「可能なら薄いグレーアウトを絵文字含むその1曲に掛けて欲しい」
+
+        【opacity 1つで、行の中身が丸ごと薄くなる理由】
+
+        opacity(不透明度)は、指定した要素だけでなく **その中に
+        入っているもの全部** にまとめて掛かります。そのため文字色や
+        絵文字を1つずつ薄い色に指定して回る必要がなく、この1行で
+        🛌の絵文字も、ジャケット画像も、両端のボタンも一緒に薄くなります。
+
+        0.4 は「40%だけ見える」という意味です。何が書いてあるかは
+        読み取れるが、周りの曲とは明らかに違う、という濃さを狙って
+        います(完全に薄くすると曲名が読めず、タップして再挑戦する
+        時に困るためです)。
+
+        背景も少しだけグレーに寄せているのは、透明度だけだと白い
+        背景に埋もれて「へこんだ」ように見えないためです。
+        */
+        .music-row.excluded{
+            opacity:0.4;
+            background:#ebebeb;
+        }
+
+        /*
+        除外中の曲では、両端のボタンを「押せる感じ」に見せません。
+
+        cursor:default はパソコンで見た時に指の形(押せる印)を
+        出さないための指定です。スマホには関係ありませんが、
+        竹弘がPCのブラウザで確認する時に効きます。
+
+        ノリ注入ボタンは JS 側で disabled にしてあり、押しても
+        何も起きません。ここでは、押した瞬間に色が変わる演出
+        (.norinori-btn:active)も打ち消して、反応しないことを
+        指先にも伝えます。
+        */
+        .music-row.excluded .square-btn{
+            cursor:default;
+        }
+
+        .music-row.excluded .norinori-btn:active{
+            background:#ffffff;
+        }
+
         /* 空中浮遊モード(ドラッグ中の行) */
         .music-row.dragging{
             position:fixed;
@@ -2374,6 +2422,139 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         }
 
         .pitch-input-ok:active{
+            background:#0062cc;
+        }
+
+        /* ======================================================
+           再生できなかった曲のお知らせ(⚠️除外パネル / v110)
+
+           画面いっぱいを覆う作りは、上の再生ピッチ入力パネルと
+           まったく同じです。同じ形のものは同じ作りに揃えておくと、
+           片方を直した時にもう片方も直しやすくなります。
+
+           【なぜ alert() をやめて、これを作ったのか】
+
+           alert() は、押されるまでJavaScriptの動きを丸ごと止めます。
+           走行中にポケットの中で出てしまうと、竹弘が画面を見て
+           ボタンを押すまで **次の曲へ進めなくなり、無音のまま
+           走り続けることになります。**
+
+           このパネルなら、出したまま再生を先へ進められます。
+           連続再生(v111で追加予定)に必要な土台です。
+        ====================================================== */
+        #exclude-panel{
+            position:fixed;
+            top:0;
+            right:0;
+            bottom:0;
+            left:0;
+            z-index:2000;
+
+            background:rgba(0,0,0,0.4);
+
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            padding:20px;
+            box-sizing:border-box;
+        }
+
+        .exclude-box{
+            width:100%;
+            max-width:320px;
+            box-sizing:border-box;
+            padding:20px;
+
+            background:var(--card-bg);
+            border-radius:18px;
+            box-shadow:0 8px 24px rgba(0,0,0,0.25);
+
+            text-align:center;
+        }
+
+        .exclude-title{
+            margin:0 0 12px;
+            font-size:1rem;
+            font-weight:bold;
+            color:var(--text-main);
+        }
+
+        .exclude-message{
+            margin:0 0 12px;
+            font-size:0.85rem;
+            line-height:1.5;
+            color:var(--text-main);
+        }
+
+        /*
+        再生できなかったファイルの名前です。
+
+        【white-space:pre-line とは】
+
+        HTMLは通常、文字の中の改行を無視してしまいます。この指定を
+        しておくと、JS側で入れた改行(\n)がそのまま改行として
+        表示されます。失敗した曲が2曲以上ある時に、1行ずつ縦に
+        並べるために使っています。
+
+        【word-break:break-all とは】
+
+        長いファイル名を、箱の幅で強制的に折り返す指定です。
+        これが無いと、区切りの無い長い名前が箱をはみ出します。
+
+        max-height と overflow-y は、万一たくさんの曲が失敗した時に
+        パネルが画面を突き抜けないための歯止めです。中だけが
+        スクロールするようになります。
+        */
+        .exclude-files{
+            margin:0 0 14px;
+            padding:8px 10px;
+            box-sizing:border-box;
+
+            font-size:0.8rem;
+            line-height:1.5;
+            color:var(--text-main);
+            white-space:pre-line;
+            word-break:break-all;
+
+            background:#f2f2f7;
+            border-radius:10px;
+
+            max-height:120px;
+            overflow-y:auto;
+        }
+
+        .exclude-note{
+            margin:0 0 18px;
+            font-size:0.75rem;
+            line-height:1.6;
+            color:var(--text-sub);
+            white-space:pre-line;
+        }
+
+        /*
+        了承ボタン。
+
+        押されて初めて除外が確定する「主役のボタン」なので、
+        再生ピッチ入力パネルの決定ボタンと同じ青にしています。
+        幅を100%にしているのは、走った後の汗ばんだ指でも
+        確実に押せるようにするためです。
+        */
+        .exclude-btn{
+            width:100%;
+            padding:12px 0;
+            box-sizing:border-box;
+
+            font-size:0.9rem;
+            font-weight:bold;
+            color:#ffffff;
+
+            background:var(--main-blue);
+            border:1px solid var(--main-blue);
+            border-radius:10px;
+            cursor:pointer;
+        }
+
+        .exclude-btn:active{
             background:#0062cc;
         }
 
@@ -2869,6 +3050,45 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
 </div>
 
 <!-- ================================================================
+ 再生できなかった曲のお知らせ(⚠️除外パネル / v110)
+
+ 曲が再生できなかった時に、画面全体を覆って開きます。
+ 制御は js/exclude.js です。
+
+ 【このパネルが出た後、何が起きるか】
+
+     「了承」を押す
+        → その曲をグレー表示にして、曲一覧の一番下へ移す
+        → 一度タップすれば再挑戦でき、鳴ればグレーが外れる
+
+ 押すまでは除外されません(竹弘の指示)。走行中に画面を見ていない
+ うちに曲が勝手に動いていた、という状況を作らないためです。
+
+ 【中身が空っぽなのはなぜか】
+
+ メッセージとファイル名は、その時の状況によって変わるので
+ js/exclude.js が実行時に書き込みます。ここには入れ物だけを
+ 用意しています(解析ランプの表示と同じ考え方です)。
+================================================================ -->
+<div id="exclude-panel" style="display:none;">
+
+    <div class="exclude-box">
+
+        <p class="exclude-title">⚠️ 再生できませんでした</p>
+
+        <p class="exclude-message" id="exclude-message"></p>
+
+        <p class="exclude-files" id="exclude-files"></p>
+
+        <p class="exclude-note" id="exclude-note"></p>
+
+        <button type="button" id="exclude-ok" class="exclude-btn">了承</button>
+
+    </div>
+
+</div>
+
+<!-- ================================================================
  ライセンス表示画面
 
  設定メニューの「📜 ライセンス」を選ぶと、画面全体を覆って開きます。
@@ -3171,6 +3391,7 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
 <script src="js/setup.js"></script>
 <script src="js/scanner.js"></script>
 <script src="js/nori.js"></script>
+<script src="js/exclude.js"></script>
 <script src="js/sort.js"></script>
 <script src="js/undo.js"></script>
 <script src="js/list-view.js"></script>
