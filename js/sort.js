@@ -7,9 +7,10 @@
 【このファイルの役割】
 
  曲一覧の見出し横にある ⇅ ボタンを押すとメニューが開き、
- 5つの並び順から選べます。
+ 6つの並び順から選べます。
 
    🕺 ノリ注入順     … 最近ノリを注入した曲を上に
+   ⭐ お気に入り順   … 最近お気に入りにした曲を上に
    🆕 登録日時順     … 最近登録した曲を上に
    🔤 タイトル順     … 曲名のあいうえお順
    🎤 アーティスト順 … アーティスト名のあいうえお順
@@ -64,6 +65,7 @@
 */
 const SORT_DEFINITIONS = [
     { key:"nori_injected_at", icon:"🕺", label:"ノリ注入順",     defaultOrder:"desc" },
+    { key:"favorited_at",     icon:"⭐", label:"お気に入り順",   defaultOrder:"desc" },
     { key:"registered_at",    icon:"🆕", label:"登録日時順",     defaultOrder:"desc" },
     { key:"title",            icon:"🔤", label:"タイトル順",     defaultOrder:"asc"  },
     { key:"artist",           icon:"🎤", label:"アーティスト順", defaultOrder:"asc"  },
@@ -95,6 +97,19 @@ function compareTracks(trackA,trackB,key){
 
     if(key === "nori_injected_at"){
         return compareByNori(trackA,trackB);
+    }
+
+    if(key === "favorited_at"){
+
+        /*
+        お気に入りにしていない曲は favorited_at が未設定(undefined)なので
+        0として扱われます。お気に入りにした日時は必ずそれより大きい数に
+        なるため、compareByNori のような特別な分岐は不要です
+        (この機能は最初からON/OFFの印を favorited_at 1つに統一しているため、
+         「印はあるのに日時が無い」という食い違いが起こり得ません)。
+        */
+        return (trackA.favorited_at || 0) - (trackB.favorited_at || 0);
+
     }
 
     if(key === "title"){

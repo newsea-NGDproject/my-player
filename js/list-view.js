@@ -103,6 +103,7 @@ function createRowElement(trackId){
 
     row.innerHTML =
         "<button class='square-btn norinori-btn'>" + buildNoriIcon(track) + "</button>" +
+        "<button class='favorite-btn'>" + buildFavoriteIcon(track) + "</button>" +
         "<div class='info-area'>" +
             "<div class='text-block'>" +
                 "<div class='info-line line-title'>" +
@@ -153,6 +154,16 @@ function createRowElement(trackId){
         });
 
     }
+
+    /*
+    お気に入りボタン(☆/⭐)は favorite.js が担当します。
+    ノリ注入と違い、何度でもON/OFFを切り替えられます。
+    */
+    const favoriteBtn = row.querySelector(".favorite-btn");
+
+    favoriteBtn.addEventListener("click",function(){
+        toggleFavorite(trackId,favoriteBtn);
+    });
 
     /*
     曲情報エリア(1行目のタイトル / 2行目の曲長+アーティスト)を
