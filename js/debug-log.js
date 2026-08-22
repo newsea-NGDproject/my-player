@@ -1,25 +1,27 @@
 /*
 ======================================================================
  【開発用・調査専用】debug-log.js ── 画面ロック中に音楽が止まる
- 不具合を調査するための一時的なログ機能
+ 不具合を調査するための一時的なログ記録
 
 ----------------------------------------------------------------------
 
 【このファイルの役割】
 
  竹弘の報告(2026-08-22): スマホの電源ボタンを1回押して画面ロック
- (時計やカレンダーが出る節電状態)にすると、曲が2曲ほど鳴った後に
+ (時計やカレンダーが出る節電状態)にすると、曲が何曲か鳴った後に
  完全に止まる。これまでに試した対策(Media Session API・alertの撤去・
  バッテリー制限の変更)はどれも効果が無かった。
 
- USBデバッグでPCから直接ログを見ようとしたが、接続がうまく確立
- できなかった。そこで console.log の代わりに、**スマホの中に残る
- 保存領域(localStorage)へ出来事を書き残す**方式に変更した。
+ このアプリには既にc014.html末尾に「開発用デバッグログパネル」
+ (console.log/console.errorを横取りして画面に表示する仕組み、左上の
+ 🐛アイコン)があるので、**そのパネルの中身を増やすだけ**にする。
 
- console.logは画面を閉じたりページが固まったりすると消えてしまうが、
- localStorageはブラウザを閉じても消えない。画面ロックが解除された
- 後にこのファイルが用意するパネルを開けば、「止まる直前に何が
- 起きていたか」をPC無しで読める。
+ 【v130の失敗、v131で作り直した経緯】
+ 最初は自分専用の別パネルを新設したが、既存パネルとHTMLのID
+ (id="debug-log-panel")が重複し、画面が壊れてしまった(竹弘の報告)。
+ 既存のパネルがすでに console.log を横取りして表示してくれるので、
+ このファイルは logDebugEvent() から console.log を呼ぶだけの
+ 薄い作りに直した。新しい画面は増やさない。
 
 ----------------------------------------------------------------------
 
@@ -34,10 +36,14 @@
      (Chrome 68+ の専用イベント。これが記録されていれば「ブラウザが
       意図的に止めた」ことの動かぬ証拠になる)
    ・audio要素の play/pause/ended/stalled/waiting/suspend/abort/error
-   ・js/player.js・js/queue.js の要所(権限確認・play()呼び出しの前後)
 
  を記録する。あわせて js/player.js と js/queue.js にも、この
- logDebugEvent() を呼ぶ行を数か所だけ足してある。
+ logDebugEvent() を呼ぶ行を数か所だけ足してある(権限確認・
+ play()呼び出しの前後など)。
+
+ localStorageにも同じ内容を残しているのは保険です。万が一ページが
+ 完全に再読み込みされて既存パネルの表示が消えてしまっても、
+ 「止まる直前に何が起きていたか」の記録自体は端末に残ります。
 
 ----------------------------------------------------------------------
 
@@ -49,15 +55,17 @@
 
    ・このファイル(js/debug-log.js)
    ・c014.html内の対応するscriptタグ
-   ・c014.html内の「【開発用デバッグログパネル】」のHTML/CSSブロック
    ・sw.jsのASSETSへの登録
    ・js/player.js・js/queue.jsに足した logDebugEvent(...) の行
+
+ ※ console.log/console.errorを横取りする既存の「開発用デバッグログ
+   パネル」自体は、このファイルより前からある別物なので触らないこと。
 ======================================================================
 */
 
 
 // ==========================================================
-// 1. ログを書き残す
+// ログを書き残す
 // ==========================================================
 
 const DEBUG_LOG_KEY = "norirun_debug_log";
@@ -66,13 +74,19 @@ const DEBUG_LOG_KEY = "norirun_debug_log";
 const DEBUG_LOG_MAX = 300;
 
 /**
- * 出来事を1行、localStorageへ追記します。
+ * 出来事を記録します。
+ *
+ * 既存の「開発用デバッグログパネル」がconsole.logを横取りして
+ * 画面に表示してくれるので、ここではconsole.logを呼ぶだけです。
+ * あわせてlocalStorageにも同じ内容を保険として残します。
  *
  * js/player.js・js/queue.js からも呼ばれます。
  *
  * @param {string} message - 記録したい内容
  */
 function logDebugEvent(message){
+
+    console.log("[調査ログ] " + message);
 
     try{
 
@@ -121,7 +135,7 @@ function formatDebugTimestamp(){
 
 
 // ==========================================================
-// 2. ブラウザ・OS側の合図を記録する
+// ブラウザ・OS側の合図を記録する
 // ==========================================================
 
 // 画面が見えなくなった/見えるようになった瞬間(画面ロックの合図)
@@ -166,40 +180,3 @@ stalled/waiting/suspend/abort/error もまとめて記録します。
 });
 
 logDebugEvent("=== ページ読み込み ===");
-
-
-// ==========================================================
-// 3. ログを見るためのパネル(画面右下の🐛ボタン)
-// ==========================================================
-
-const debugLogPanel = document.getElementById("debug-log-panel");
-const debugLogText = document.getElementById("debug-log-text");
-const debugLogOpenBtn = document.getElementById("debug-log-open-btn");
-const debugLogCloseBtn = document.getElementById("debug-log-close-btn");
-const debugLogClearBtn = document.getElementById("debug-log-clear-btn");
-
-debugLogOpenBtn.addEventListener("click",function(){
-
-    const stored = localStorage.getItem(DEBUG_LOG_KEY);
-    const lines = stored ? JSON.parse(stored) : [];
-
-    /*
-    textareaに入れているのは、スマホでも指で長押し→全選択→コピーが
-    しやすいためです(pre/divだと機種によって全選択がやりにくい)。
-    */
-    debugLogText.value = lines.length > 0
-        ? lines.join("\n")
-        : "(まだ記録がありません)";
-
-    debugLogPanel.style.display = "flex";
-
-});
-
-debugLogCloseBtn.addEventListener("click",function(){
-    debugLogPanel.style.display = "none";
-});
-
-debugLogClearBtn.addEventListener("click",function(){
-    localStorage.removeItem(DEBUG_LOG_KEY);
-    debugLogText.value = "(まだ記録がありません)";
-});
