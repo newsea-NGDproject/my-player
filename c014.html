@@ -469,7 +469,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v140)ノリRun
+        (v141)ノリRun
         メインメニュー
 
     </title>
@@ -760,6 +760,33 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
 
         #search-close-btn:active{
             background:#e5e5ea;
+        }
+
+        /*
+        検索にマッチしない曲の行を隠します(v141)。
+
+        js/search.js の applySearchFilter() が、曲名・アーティスト名に
+        入力文字が含まれない .music-row へこのクラスを付けます。
+        並び順(currentOrderList)自体は変えていないので、検索を
+        終えればクラスが外れて元の並びのまま全曲が戻ります。
+        */
+        .music-row.search-hidden{
+            display:none;
+        }
+
+        /*
+        検索結果が0件の時の案内です(v141)。
+        #list-viewport が position:relative なので、その中央に
+        絶対配置で重ねられます。
+        */
+        #search-no-results{
+            position:absolute;
+            top:50%;
+            left:50%;
+            transform:translate(-50%,-50%);
+
+            color:var(--text-sub);
+            font-size:0.9rem;
         }
 
         /*
@@ -3685,6 +3712,14 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             <div id="menu-list" class="music-list"></div>
             <div id="glow-top" class="glow-indicator glow-top"></div>
             <div id="glow-bottom" class="glow-indicator glow-bottom"></div>
+
+            <!--
+                検索で1曲もヒットしなかった時の案内(v141)。
+                js/search.js の applySearchFilter() が表示/非表示を
+                切り替えます。#list-viewport が position:relative
+                なので、ここに絶対配置で中央に重ねられます。
+            -->
+            <div id="search-no-results" style="display:none;">見つかりませんでした</div>
         </div>
 
     </div>
