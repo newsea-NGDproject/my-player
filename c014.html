@@ -469,7 +469,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v129)ノリRun
+        (v130)ノリRun
         メインメニュー
 
     </title>
@@ -3030,6 +3030,107 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             background:#0062cc;
         }
 
+        /* ================================================================
+           【開発用デバッグログパネル】ここから
+
+           画面ロック中に音楽が止まる不具合を調査するための一時的な
+           画面です(2026-08-22)。原因が判明したら、この<style>ブロックと
+           HTML本体側の対応するブロックをまとめて削除してください
+           (CLAUDE.mdの「本番リリース前に削除するもの」に登録済み)。
+        ================================================================ */
+
+        /* 画面右下に置く、ログパネルを開くための小さなボタン */
+        #debug-log-open-btn{
+            position:fixed;
+            right:10px;
+            bottom:10px;
+            z-index:3000;
+
+            width:36px;
+            height:36px;
+            border-radius:50%;
+
+            background:rgba(0,0,0,0.35);
+            border:1px solid rgba(255,255,255,0.4);
+            color:#ffffff;
+            font-size:1rem;
+
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            cursor:pointer;
+        }
+
+        #debug-log-panel{
+            display:none;
+
+            position:fixed;
+            top:0;
+            right:0;
+            bottom:0;
+            left:0;
+            z-index:3001;
+
+            background:rgba(0,0,0,0.6);
+
+            flex-direction:column;
+            padding:16px;
+            box-sizing:border-box;
+        }
+
+        .debug-log-title{
+            margin:0 0 8px;
+            color:#ffffff;
+            font-size:0.9rem;
+            font-weight:bold;
+        }
+
+        /*
+        readonlyのtextareaにしているのは、スマホでも指の長押しで
+        全選択→コピーがしやすいためです(pre/divだと機種によって
+        全選択の操作がやりにくいことがあります)。
+        */
+        #debug-log-text{
+            flex:1;
+            width:100%;
+            box-sizing:border-box;
+            margin-bottom:10px;
+
+            background:#111111;
+            color:#7CFC90;
+            font-family:monospace;
+            font-size:0.7rem;
+            line-height:1.4;
+
+            border:1px solid #444444;
+            border-radius:8px;
+            padding:10px;
+
+            resize:none;
+        }
+
+        .debug-log-btn-row{
+            display:flex;
+            gap:10px;
+        }
+
+        .debug-log-btn{
+            flex:1;
+            padding:10px 0;
+            box-sizing:border-box;
+
+            font-size:0.85rem;
+            font-weight:bold;
+            color:#ffffff;
+
+            background:#333333;
+            border:1px solid #555555;
+            border-radius:8px;
+            cursor:pointer;
+        }
+
+        /* 【開発用デバッグログパネル】ここまで */
+
     </style>
 
     <!--
@@ -3676,6 +3777,23 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
 
 </div>
 
+<!-- 【開発用デバッグログパネル】ここから(CLAUDE.mdの削除チェックリスト参照) -->
+<button type="button" id="debug-log-open-btn">🐛</button>
+
+<div id="debug-log-panel">
+
+    <p class="debug-log-title">🐛 デバッグログ(開発用・調査専用)</p>
+
+    <textarea id="debug-log-text" readonly></textarea>
+
+    <div class="debug-log-btn-row">
+        <button type="button" id="debug-log-clear-btn" class="debug-log-btn">クリア</button>
+        <button type="button" id="debug-log-close-btn" class="debug-log-btn">閉じる</button>
+    </div>
+
+</div>
+<!-- 【開発用デバッグログパネル】ここまで -->
+
 <!-- ================================================================
  ライセンス表示画面
 
@@ -3991,6 +4109,8 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
 <script src="js/player.js"></script>
 <script src="js/queue.js"></script>
 <script src="js/media-session.js"></script>
+<!-- 【開発用・調査専用】原因判明後に削除(CLAUDE.md参照) -->
+<script src="js/debug-log.js"></script>
 <script src="js/drag-sort.js"></script>
 <script src="js/jump.js"></script>
 <script src="js/lamp.js"></script>
