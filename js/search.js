@@ -15,17 +15,33 @@
 
 ----------------------------------------------------------------------
 
-【第1段階(v140)でできること】
+【第1段階(v140)】
 
- 竹弘の指示どおり、まず
+ 左フリックで検索モードに入る/✕で終える、上半分が縮み曲一覧が
+ 広がる演出、検索欄をタップすると標準キーボードが立ち上がる、
+ という「ジェスチャーと見た目の切り替え」を実装しました。
 
-   ・左フリックで検索モードに入る/✕で終える
-   ・上半分が縮み、曲一覧が広がる演出
-   ・検索欄をタップすると標準キーボードが立ち上がる
+【第2段階(v141)】
 
- という「ジェスチャーと見た目の切り替え」までを実装しています。
- 打った文字で曲を実際に絞り込む機能は、次の段階で
- このファイルに追加します(今はまだ何も絞り込みません)。
+ 打った文字で、実際に曲一覧を絞り込む機能を追加しました。
+
+   applySearchFilter() … 入力文字に合わない曲の行を隠す
+
+ 竹弘の狙いどおり「打つたびにどんどん曲が絞られていく」ように、
+ 1文字打つたびに(inputイベント)即座に絞り込み直します。
+
+ 【絞り込みの判定】
+ 曲名(タイトルが無ければファイル名)・アーティスト名のどちらかに、
+ 入力文字が含まれていれば一致とみなします。大文字/小文字、
+ 半角/全角カタカナの違いは吸収します(js/sort.js の
+ normalizeForSort() を再利用)。読み仮名では判定できません
+ (漢字の読みをコンピュータは知らないため。並び替え機能と同じ制約)。
+
+ 【行を作り直さず、隠すだけにした理由】
+ すでに描画済みの .music-row(369個)を毎回作り直すと重くなります。
+ 曲順(currentOrderList)そのものは変えず、CSSクラス
+ (.search-hidden)を付け外しして見た目だけ隠す方式にしたので、
+ 検索を終えれば元の並びのまま何も変わらずに戻ります。
 
 ----------------------------------------------------------------------
 
@@ -92,8 +108,98 @@ function closeSearchMode(){
     */
     searchInput.blur();
 
+    /*
+    検索欄を空にして、絞り込みも解除します(v141)。
+    次に検索モードを開いた時に、前回の続きが残っていると
+    分かりにくいためです。
+    */
+    searchInput.value = "";
+    applySearchFilter("");
+
 }
 
 searchCloseBtn.addEventListener("click",function(){
     closeSearchMode();
 });
+
+
+// ==========================================================
+// 絞り込み(v141)
+// ==========================================================
+
+const searchNoResultsEl = document.getElementById("search-no-results");
+
+/*
+1文字打つたびに(input イベント)絞り込み直します。
+「打つたびにどんどん曲が絞られていく」という竹弘の狙いどおり、
+確定操作(Enter等)を待たずに即座に反映します。
+*/
+searchInput.addEventListener("input",function(){
+    applySearchFilter(searchInput.value);
+});
+
+/**
+ * 入力文字に合わない曲の行を隠します。
+ *
+ * @param {string} query - 検索欄に打たれている文字
+ */
+function applySearchFilter(query){
+
+    /*
+    normalizeForSort() は js/sort.js の関数です。半角/全角カタカナの
+    表記ゆれを揃えます。並び替えの時と同じ理由で、比較の前に
+    かけておきます。toLowerCase() は英字の大文字/小文字を揃えます。
+    */
+    const normalizedQuery = normalizeForSort(query).toLowerCase();
+
+    const rows = menuListEl.querySelectorAll(".music-row");
+
+    // 何か1件でも見えているかを数えます(0件だった時の案内に使います)
+    let visibleCount = 0;
+
+    for(const row of rows){
+
+        const track = libraryMap[row.dataset.trackId];
+
+        if(!track){ continue; }
+
+        /*
+        検索欄が空の時は、判定するまでもなく全曲を表示します
+        (indexOfで空文字を探すと必ず0番目で見つかってしまい、
+         全曲一致になるのでこれ自体でも動作はしますが、意図を
+         はっきりさせるため明示しています)。
+        */
+        const matched = (normalizedQuery === "") || trackMatchesSearch(track,normalizedQuery);
+
+        row.classList.toggle("search-hidden",!matched);
+
+        if(matched){ visibleCount++; }
+
+    }
+
+    /*
+    1件も見つからなかった時だけ案内を出します。
+    検索欄が空の時(まだ何も打っていない時)には出しません。
+    */
+    if(searchNoResultsEl){
+        searchNoResultsEl.style.display =
+            (normalizedQuery !== "" && visibleCount === 0) ? "block" : "none";
+    }
+
+}
+
+/**
+ * 1曲が、検索文字にマッチするかを判定します。
+ *
+ * @param {Object} track          - libraryMap から取り出した1曲分のデータ
+ * @param {string} normalizedQuery - normalizeForSort + toLowerCase 済みの検索文字
+ */
+function trackMatchesSearch(track,normalizedQuery){
+
+    const title = normalizeForSort(track.title || track.file_name || "").toLowerCase();
+    const artist = normalizeForSort(track.artist || "").toLowerCase();
+
+    return title.indexOf(normalizedQuery) !== -1 ||
+           artist.indexOf(normalizedQuery) !== -1;
+
+}
