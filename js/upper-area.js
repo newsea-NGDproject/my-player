@@ -445,10 +445,24 @@ stopBtn.addEventListener("click",function(){
 */
 audioPlayer.addEventListener("play",function(){
     stopBtn.textContent = STOP_ICON_PLAYING;
+    stopBtn.classList.remove("paused-icon");
 });
 
 audioPlayer.addEventListener("pause",function(){
     stopBtn.textContent = STOP_ICON_PAUSED;
+
+    /*
+    ▶ の記号だけ、丸ボタンの中で左右の余白を微調整するためのクラスです
+    (v126、竹弘の指摘)。■ は正方形で左右対称ですが、▶ は先端が
+    尖った三角形のため、Unicode文字の送り幅どおりに中央寄せすると
+    「先端側(右)の余白が広く見える」というズレが出ます。
+    このクラスがある間だけ、CSS側(c014.html)で右へ少し寄せます。
+
+    ■ とは違うCSSを当てたいので、記号の書き換えと同時にこのクラスも
+    付け外しします。付け忘れを防ぐため、テキストを書き換えている
+    この場所にまとめています。
+    */
+    stopBtn.classList.add("paused-icon");
 });
 
 
