@@ -59,6 +59,16 @@ let currentObjectUrl = null;
 */
 let currentTrackId = null;
 
+/*
+「今のpauseが、こちらが意図して呼んだものか」を覚えておく旗印です(v133)。
+
+停止ボタン(js/upper-area.js)とMedia Sessionのpause操作
+(js/media-session.js)が audioPlayer.pause() を呼ぶ直前に true にします。
+下の「予期しないpauseから立て直す」処理が、意図した停止まで
+「立て直そう」としてしまわないようにするための目印です。
+*/
+let intentionalPause = false;
+
 
 /**
  * 指定したtrack_idの曲を再生します。
@@ -350,3 +360,89 @@ audioPlayer.onerror = function(){
     console.error("再生できませんでした(コーデック以外のaudio要素エラー) :",currentTrackId);
 
 };
+
+
+/*
+============================================================
+予期しない一時停止から立て直す(v133)
+============================================================
+
+竹弘の報告(2026-08-22)を、開発用デバッグログ(js/debug-log.js)で
+実機調査した結果、判明した不具合です。
+
+画面ロック中、こちらのコードが何も指示していないのに audioPlayer が
+勝手に一時停止し、そのまま二度と再生が進まなくなる現象が起きていました。
+ログにあった AbortError のメッセージ
+「The play() request was interrupted because a pause was requested
+  by the browser.」が示すとおり、Android/Chromeが「オーディオの
+主導権(オーディオフォーカス)を一時的に失った」と判断した時、
+ブラウザが自分の判断で audio要素を pause することがあります。
+
+これはこちらのコードが呼んだ pause() ではないため、既存のどの安全網
+(queue.jsのwhileループ・1曲リピートのcatch)にも引っかからず、
+再生成功のログが出た直後に無言で止まっていました。
+
+対策として、pause イベントそのものを監視します。
+
+    ・こちらが意図して止めた(停止ボタン・Media Sessionのpause操作)
+      → intentionalPause の目印で判定し、何もしません
+    ・曲が最後まで流れ切った
+      → audioPlayer.ended で判定し、queue.jsのendedハンドラに任せます
+    ・上記どちらでもない
+      → ブラウザ側の都合で横から止められたとみなし、再生の再開を試みます
+*/
+
+// 連続で立て直しに失敗し続けるのを防ぐための回数カウンタです
+let unexpectedPauseRetryCount = 0;
+
+audioPlayer.addEventListener("pause",function(){
+
+    if(intentionalPause){
+        intentionalPause = false;
+        unexpectedPauseRetryCount = 0;
+        return;
+    }
+
+    if(audioPlayer.ended){
+        unexpectedPauseRetryCount = 0;
+        return;
+    }
+
+    /*
+    ここに来るのは「ブラウザ側の都合で、指示していないのに
+    止められた」場合です。何度もこの状態を繰り返す端末もありえるため、
+    無限に再挑戦し続けないよう5回で打ち切ります。
+    */
+    if(unexpectedPauseRetryCount >= 5){
+
+        console.error("予期しないpauseが繰り返し発生したため、立て直しを諦めます");
+        logDebugEvent("予期しないpause:5回失敗したため立て直しを諦めました");
+
+        return;
+
+    }
+
+    unexpectedPauseRetryCount++;
+
+    logDebugEvent("予期しないpauseを検知、再開を試みます(" + unexpectedPauseRetryCount + "回目)");
+
+    /*
+    間を置かず再挑戦すると、ブラウザ側の一時的な都合とまた
+    ぶつかりやすいため、少し待ってから再開を試みます。
+    */
+    setTimeout(function(){
+
+        audioPlayer.play().then(function(){
+
+            unexpectedPauseRetryCount = 0;
+            logDebugEvent("予期しないpauseからの再開に成功");
+
+        }).catch(function(error){
+
+            logDebugEvent("予期しないpauseからの再開に失敗 :" + error.name + " / " + error.message);
+
+        });
+
+    },500);
+
+});

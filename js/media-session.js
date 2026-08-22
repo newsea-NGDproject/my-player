@@ -159,7 +159,12 @@ if(mediaSessionSupported){
     });
 
     navigator.mediaSession.setActionHandler("pause",function(){
+
+        // 意図した停止であることを js/player.js へ伝えます(v133、理由はそちらのコメント参照)
+        intentionalPause = true;
+
         audioPlayer.pause();
+
     });
 
     navigator.mediaSession.setActionHandler("previoustrack",function(){

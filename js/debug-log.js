@@ -86,14 +86,21 @@ const DEBUG_LOG_MAX = 300;
  */
 function logDebugEvent(message){
 
-    console.log("[調査ログ] " + message);
+    /*
+    時刻を付けています(v133で追加)。前回、既存パネル(console.log
+    横取り)にはタイムスタンプが出ず、イベントの前後関係を追うのに
+    苦労したための改善です。
+    */
+    const timestamp = formatDebugTimestamp();
+
+    console.log("[調査ログ " + timestamp + "] " + message);
 
     try{
 
         const stored = localStorage.getItem(DEBUG_LOG_KEY);
         const lines = stored ? JSON.parse(stored) : [];
 
-        lines.push(formatDebugTimestamp() + " | " + message);
+        lines.push(timestamp + " | " + message);
 
         // 古い行から間引きます(shiftは配列の先頭を1つ取り除く命令です)
         while(lines.length > DEBUG_LOG_MAX){

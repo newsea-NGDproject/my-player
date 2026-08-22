@@ -426,7 +426,17 @@ stopBtn.addEventListener("click",function(){
         audioPlayer.play();
     }
     else{
+
+        /*
+        意図した停止であることを、js/player.js の
+        「予期しないpauseから立て直す」処理(v133)へ伝えます。
+        これが無いと、竹弘がこのボタンで止めた瞬間に
+        「勝手に止められた」と誤解して再生を再開しようとしてしまいます。
+        */
+        intentionalPause = true;
+
         audioPlayer.pause();
+
     }
 
 });
