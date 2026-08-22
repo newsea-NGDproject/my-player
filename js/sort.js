@@ -689,21 +689,30 @@ function openSortMenu(){
     renderSortMenu();
 
     /*
-    メニューの位置を、ボタンの位置に合わせて決めます(v86)。
+    メニューの位置を、ボタンの位置に合わせて決めます(v86。v137で
+    「上/下」方式から「右」方式に変更)。
 
     【なぜJSで位置を決めるのか】
     メニューは position:fixed(画面が基準)にしてあります。曲一覧
     エリアの中に置くと、はみ出した分が隠れる設定のせいで下の項目が
-    切れてしまうためです。画面基準にした代わりに、「ボタンのすぐ下」
-    という位置は自分で計算する必要があります。
+    切れてしまうためです。画面基準にした代わりに、位置は自分で
+    計算する必要があります。
 
     getBoundingClientRect() は「その要素が今、画面のどこに見えて
     いるか」を返す命令です。ドラッグ並び替えの自動スクロールでも
     同じものを使っています。
+
+    【v137で「ボタンの右」に変更した理由】
+    竹弘の報告(2026-08-23): 並び順が7つに増えてメニューが縦に長く
+    なった結果、「画面の下に収まらなければ上に開く」という以前の
+    方式では、上にも収まりきらずボタン自体に被ってしまっていました。
+    項目数が増えるたびに上下方向の余白と競争するのは無理があるため、
+    横(ボタンの右)にずらす方式に変えます。ボタンは曲一覧見出しの
+    左寄りにあるので、右方向には十分な余白があります。
     */
 
     /*
-    高さを測るために、いったん表示します。
+    高さ・幅を測るために、いったん表示します。
     visibility:hidden は「場所は取るが見えない」状態で、
     display:none(場所も取らない)と違って大きさを測れます。
     測ってから位置を決めるので、一瞬ちらつくこともありません。
@@ -713,25 +722,35 @@ function openSortMenu(){
 
     const buttonRect = button.getBoundingClientRect();
     const menuHeight = menu.offsetHeight;
+    const menuWidth = menu.offsetWidth;
 
-    // 基本はボタンのすぐ下
-    let top = buttonRect.bottom + 6;
+    // 縦位置は、ボタンの上端に合わせます
+    let top = buttonRect.top;
 
-    /*
-    画面の下からはみ出してしまう場合は、ボタンの上側に開きます。
-    (曲一覧エリアが狭い端末や、横向きにした時のための保険)
-    */
+    // 画面の下からはみ出す場合は、画面の下端に揃えます
     if(top + menuHeight > window.innerHeight - 8){
-        top = buttonRect.top - menuHeight - 6;
+        top = window.innerHeight - 8 - menuHeight;
     }
 
-    // 上にも収まらないほど画面が狭い場合は、画面内に押し込みます
+    // それでも上に収まらないほど画面が狭い場合は、画面内に押し込みます
     if(top < 8){
         top = 8;
     }
 
+    // 横位置は、ボタンのすぐ右
+    let left = buttonRect.right + 6;
+
+    /*
+    画面の右からはみ出す場合は、ボタンの左側に開きます(保険)。
+    ⇅ ボタンは通常左寄りにあるため実際には起こりにくいですが、
+    横向き表示など画面が狭い場合に備えています。
+    */
+    if(left + menuWidth > window.innerWidth - 8){
+        left = buttonRect.left - menuWidth - 6;
+    }
+
     menu.style.top = top + "px";
-    menu.style.left = buttonRect.left + "px";
+    menu.style.left = left + "px";
 
     menu.style.visibility = "visible";
 
