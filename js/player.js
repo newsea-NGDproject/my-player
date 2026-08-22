@@ -91,8 +91,15 @@ async function playTrack(trackId){
         const track = libraryMap[trackId];
 
         if(!track || !track.file_handle){
-            alert("曲データが見つかりませんでした。c013で再登録してください。");
+
+            /*
+            alert をやめて console.error だけにしました(v129)。
+            理由は下の catch ブロックのコメントにまとめています。
+            */
+            console.error("曲データが見つかりませんでした(c013で再登録が必要) :",trackId);
+
             return false;
+
         }
 
         /*
@@ -132,8 +139,11 @@ async function playTrack(trackId){
         }
 
         if(permission !== "granted"){
-            alert("この曲へのアクセスが許可されませんでした。");
+
+            console.error("この曲へのアクセスが許可されませんでした :",track.file_name);
+
             return false;
+
         }
 
         const file = await track.file_handle.getFile();
@@ -212,8 +222,8 @@ async function playTrack(trackId){
             判定は js/exclude.js の isCodecFailure() に任せています。
             安全装置を1箇所にまとめておくためです。
 
-            なお alert ではなく専用パネルに変えたのは、alert が
-            「押されるまでJavaScriptを丸ごと止める」ためです。
+            なお alert ではなく専用パネルやconsole.errorに変えたのは、
+            alert が「押されるまでJavaScriptを丸ごと止める」ためです。
             連続再生(v111)で次の曲へ進めなくなってしまいます。
             */
             if(isCodecFailure(playError)){
@@ -223,9 +233,24 @@ async function playTrack(trackId){
             }
             else{
 
-                alert(
-                    "この曲は再生できませんでした。\n" +
-                    "(" + track.file_name + ")"
+                /*
+                コーデック以外の原因での再生失敗です(v129、alertをやめました)。
+
+                竹弘の報告(2026-08-22): 画面ロック中に1曲リピート・連続再生が
+                何度か完全に止まる不具合があり、突き止めた原因がこれでした。
+                alert は「押されるまでJavaScriptを丸ごと止める」命令ですが、
+                画面ロック中は誰もOKを押せません。押されるまでページ全体が
+                **永遠に固まる**ため、それ以降は1曲も再生されなくなります。
+
+                console.errorだけにすれば、この関数はfalseを返して
+                すぐ戻り、queue.js のwhileループが次の曲へ進めます
+                (この if/else の上にある isCodecFailure の側は、v110の
+                 時点ですでに同じ理由でalertをやめていました。今回はまだ
+                 alertが残っていたこちら側を揃えた形です)。
+                */
+                console.error(
+                    "この曲は再生できませんでした(コーデック以外の原因) :",
+                    track.file_name
                 );
 
             }
@@ -236,12 +261,13 @@ async function playTrack(trackId){
 
     }
     catch(error){
+
+        // alertをやめた理由は上のplay()失敗時のコメントと同じです(v129)
         console.error(
             "再生失敗(権限/ファイル取得) :",
             error.name,
             error.message
         );
-        alert("再生に失敗しました。ブラウザのファイル権限が切れている可能性があります。");
 
         return false;
     }
@@ -295,10 +321,11 @@ audioPlayer.onerror = function(){
     }
 
     /*
-    コーデック以外の原因(読み込みの中断など)は、これまで通り
-    その場で知らせるだけにします。曲そのものに問題があるとは
-    限らないので、除外はしません。
+    コーデック以外の原因(読み込みの中断など)は除外しませんが、
+    alert も使いません(v129)。理由は playTrack() 側の同種の
+    修正コメントを参照してください。ここで止めてしまうと、
+    次の曲へ進むはずの処理(queue.js)まで一緒に固まってしまいます。
     */
-    alert("再生できませんでした。");
+    console.error("再生できませんでした(コーデック以外のaudio要素エラー) :",currentTrackId);
 
 };
