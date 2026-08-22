@@ -412,6 +412,24 @@ seekBar.addEventListener("change",function(){
 const STOP_ICON_PLAYING = "■";
 const STOP_ICON_PAUSED = "▶";
 
+/*
+「今のpauseが、竹弘が停止ボタン(またはロック画面の一時停止)で
+意図して止めたものか」を覚えておく旗印です(v135)。
+
+竹弘の指摘(2026-08-23):「ユーザーが止める意思がない場合は、停止
+ボタン固定表示としたい」
+
+Googleマップなど他のアプリがオーディオの主導権を求めた時、Chromeが
+こちらの意図とは無関係にaudioPlayerをpauseすることがあります
+(v133〜v134の調査で判明済み)。この時もpauseイベントは飛んでくる
+ため、何も区別しないと記号が■→▶と勝手に切り替わり、ちらつきの
+原因になっていました。
+
+この旗印がtrueの時だけ記号を切り替え、それ以外(ブラウザ都合の
+意図しない一時停止)は記号を今のまま(■)に固定します。
+*/
+let intentionalPause = false;
+
 const stopBtn = document.getElementById("stop-btn");
 
 stopBtn.addEventListener("click",function(){
@@ -426,6 +444,7 @@ stopBtn.addEventListener("click",function(){
         audioPlayer.play();
     }
     else{
+        intentionalPause = true;
         audioPlayer.pause();
     }
 
@@ -449,6 +468,23 @@ audioPlayer.addEventListener("play",function(){
 });
 
 audioPlayer.addEventListener("pause",function(){
+
+    /*
+    意図した停止でなければ、記号は今のまま(■)に固定します(v135)。
+    詳しい理由は intentionalPause の定義部分のコメントを参照。
+
+    再生そのものが止まっていることは変わりませんが、竹弘が「止める
+    つもりがない」場面で記号だけがちらつくのを防ぐための処理です。
+    ボタンを押した時の動きは audioPlayer.paused の実際の値を見て
+    決めているので(上のclickハンドラ)、記号が■のままでもボタンの
+    機能自体はズレません。
+    */
+    if(!intentionalPause){
+        return;
+    }
+
+    intentionalPause = false;
+
     stopBtn.textContent = STOP_ICON_PAUSED;
 
     /*

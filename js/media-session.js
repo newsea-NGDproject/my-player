@@ -159,7 +159,16 @@ if(mediaSessionSupported){
     });
 
     navigator.mediaSession.setActionHandler("pause",function(){
+
+        /*
+        意図した停止であることを js/upper-area.js の停止ボタン記号
+        表示(v135)へ伝えます。ロック画面からの一時停止も、竹弘が
+        自分で選んだ操作なので「意図した停止」として扱います。
+        */
+        intentionalPause = true;
+
         audioPlayer.pause();
+
     });
 
     navigator.mediaSession.setActionHandler("previoustrack",function(){
