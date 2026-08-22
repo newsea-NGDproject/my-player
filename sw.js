@@ -1,4 +1,4 @@
-const CACHE_NAME = 'norirun-v139';
+const CACHE_NAME = 'norirun-v140';
 
 const ASSETS = [
   'index.html',
@@ -48,6 +48,7 @@ const ASSETS = [
   'js/debug-log.js',
   'js/drag-sort.js',
   'js/jump.js',
+  'js/search.js',
   'js/lamp.js',
   'js/metadata.js',
   'js/main.js'

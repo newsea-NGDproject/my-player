@@ -469,7 +469,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v139)ノリRun
+        (v140)ノリRun
         メインメニュー
 
     </title>
@@ -643,6 +643,123 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             grid-template-rows:repeat(10,1fr);
             row-gap:4px;
             overflow:hidden;
+
+            /*
+            検索モード(v140)で #search-panel を position:absolute で
+            重ねるための基準にします。これが無いと、absoluteの子は
+            画面全体を基準に配置されてしまいます。
+            */
+            position:relative;
+
+            /*
+            検索モードに入る/出る時、この高さの変化を滑らかにします。
+            「素早く」という竹弘の要望に沿って0.28秒にしています。
+            */
+            transition:flex-basis 0.28s ease;
+        }
+
+        /*
+        検索モード中は、上半分を検索欄1行ぶんまで縮めます(v140)。
+
+        竹弘の要望(2026-08-23):「下半分の曲一覧が上半分側に滑らかに
+        素早くスクロール移動し、上半分側を曲一覧で隠す」という演出の
+        実現方法です。実際は「上半分が縮み、下半分(#list-area)が
+        その分伸びる」という仕組みで、詳しい理由は js/search.js の
+        コメントを参照してください。
+        */
+        #app.search-mode #upper-area{
+            flex-basis:64px;
+        }
+
+        #app.search-mode #list-area{
+            flex-basis:calc(100% - 64px);
+        }
+
+        /*
+        検索欄そのものです(v140)。
+
+        #upper-area の中に position:absolute + inset:0 で重ねています。
+        #upper-area 自体が64pxまで縮むアニメーションに合わせて、
+        検索欄も自動でその大きさに追従します(別にアニメーションを
+        書く必要がありません)。
+
+        普段は display:none で存在しないのと同じにしておき、
+        .search-mode の間だけ display:flex にします。不透明な背景
+        (.cardと同じ色)を敷いているので、縮んで隠れる普段の操作
+        エリアの中身が透けて見えることもありません。
+        */
+        #search-panel{
+            display:none;
+
+            position:absolute;
+            inset:0;
+            z-index:10;
+
+            align-items:center;
+            gap:8px;
+            padding:0 8px;
+
+            background:var(--card-bg);
+            border-radius:18px;
+            box-sizing:border-box;
+        }
+
+        #app.search-mode #search-panel{
+            display:flex;
+        }
+
+        .search-icon{
+            flex-shrink:0;
+            font-size:1.2rem;
+        }
+
+        #search-input{
+            flex:1;
+            min-width:0;
+
+            height:40px;
+            box-sizing:border-box;
+            padding:0 10px;
+
+            font-size:1rem;
+            color:var(--text-main);
+
+            border:1px solid var(--border-color);
+            border-radius:10px;
+            background:#ffffff;
+
+            /*
+            iOS/Androidのブラウザは、input要素の見た目を勝手に
+            装飾することがあります。appearance:none で消し、
+            他のボタン類と統一した見た目にしています。
+            */
+            -webkit-appearance:none;
+            appearance:none;
+        }
+
+        #search-close-btn{
+            flex-shrink:0;
+
+            width:40px;
+            height:40px;
+            padding:0;
+
+            display:flex;
+            align-items:center;
+            justify-content:center;
+
+            font-size:1.1rem;
+            color:var(--text-main);
+
+            border:1px solid var(--border-color);
+            border-radius:10px;
+            background:#ffffff;
+            cursor:pointer;
+            box-sizing:border-box;
+        }
+
+        #search-close-btn:active{
+            background:#e5e5ea;
         }
 
         /*
@@ -1492,6 +1609,12 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         #list-area{
             flex:1 1 50%;
             min-height:0;
+
+            /*
+            検索モード(v140)で #upper-area と連動して大きさが
+            変わる時、こちらも同じ速さで滑らかに動かします。
+            */
+            transition:flex-basis 0.28s ease;
 
             display:flex;
             flex-direction:column;
@@ -3412,6 +3535,23 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             </div>
         </div>
 
+        <!--
+            ===== 検索モードの検索欄(v140) =====
+
+            🐇ジャンプボタンを左にフリックすると表示されます。
+            #upper-area の中に絶対配置で重ね、#upper-area 自体が
+            縮むアニメーションに検索欄も一緒に追従させています
+            (詳しい理由は js/search.js の冒頭コメント参照)。
+
+            普段は非表示(CSSの#search-panelがdisplay:none)なので、
+            この位置にあっても他のエリアの見た目には影響しません。
+        -->
+        <div id="search-panel">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="search-input" placeholder="曲名・アーティストで検索" autocomplete="off">
+            <button type="button" id="search-close-btn">✕</button>
+        </div>
+
     </div>
 
     <!--
@@ -3634,6 +3774,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <button type="button" class="jump-option" data-jump="top">↑</button>
     <button type="button" class="jump-option" data-jump="mid">→</button>
     <button type="button" class="jump-option" data-jump="end">↓</button>
+    <button type="button" class="jump-option" data-jump="search">🔍</button>
 
 </div>
 
@@ -4036,6 +4177,7 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
 <script src="js/debug-log.js"></script>
 <script src="js/drag-sort.js"></script>
 <script src="js/jump.js"></script>
+<script src="js/search.js"></script>
 <script src="js/lamp.js"></script>
 <script src="js/metadata.js"></script>
 <script src="js/main.js"></script>
