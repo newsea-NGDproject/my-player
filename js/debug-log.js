@@ -180,3 +180,44 @@ stalled/waiting/suspend/abort/error もまとめて記録します。
 });
 
 logDebugEvent("=== ページ読み込み ===");
+
+
+// ==========================================================
+// 定期的に再生状態を記録する(心拍ログ)
+// ==========================================================
+/*
+竹弘の報告(2026-08-22):「ログだと最後の行で再生開始と出ているのに、
+実際は鳴っていない」
+
+これは重要な手がかりです。audioPlayer.play() は成功した(エラーが
+出ていない)のに、実際の音は出ていない、という状態を意味します。
+play/pause/endedなどの「変化した瞬間」のイベントだけでは、
+この食い違いを捉えられません。
+
+そこで10秒おきに、今の状態をまるごと記録します。
+
+    currentTime   … 今何秒目を再生していることになっているか。
+                    これが時間とともに進んでいれば「ブラウザの中では
+                    ちゃんと再生が進んでいる」ことになり、鳴らない原因は
+                    もっと下(OS側の音声出力)にあると分かります。
+                    逆に増えていなければ、再生そのものが止まっています。
+    paused        … 一時停止中かどうか
+    muted         … ミュート状態かどうか(意図せずミュートされていないか)
+    volume        … 音量(0になっていないか)
+    readyState    … データがどこまで読み込めているか(0〜4の数値)
+    networkState  … データの取得状況(0〜3の数値)
+    visibilityState … 画面がロック中かどうか(同時に見比べるため)
+*/
+setInterval(function(){
+
+    logDebugEvent(
+        "心拍: currentTime=" + audioPlayer.currentTime.toFixed(2) +
+        " paused=" + audioPlayer.paused +
+        " muted=" + audioPlayer.muted +
+        " volume=" + audioPlayer.volume +
+        " readyState=" + audioPlayer.readyState +
+        " networkState=" + audioPlayer.networkState +
+        " visibility=" + document.visibilityState
+    );
+
+},10000);
