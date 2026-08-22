@@ -469,7 +469,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v120)ノリRun
+        (v122)ノリRun
         メインメニュー
 
     </title>
@@ -2204,6 +2204,39 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             background:#e5e5ea;
         }
 
+        /*
+        お気に入りボタン(☆/⭐、v122)。
+
+        竹弘の指定:「ノリ注入ボタンの次、曲名の前に設置。丸ボタン
+        (少し控えめなサイズ)」。左右のノリ注入ボタン・並び替えハンドルが
+        44px角(.square-btn)なので、それより小さい32pxの丸にして
+        「控えめ」を出しています。
+
+        margin-leftだけ指定しているのは、右側は .info-area 自身の
+        padding:0 8px が曲名との間隔を作ってくれるためです
+        (.music-row の子要素どうしはgapを持たない作りなので、
+         左側だけこのボタンで明示的に隙間を作る必要があります)。
+        */
+        .favorite-btn{
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            width:32px;
+            height:32px;
+            margin-left:6px;
+            border:1px solid var(--border-color);
+            border-radius:50%;
+            background:#ffffff;
+            font-size:1.1rem;
+            cursor:pointer;
+            box-sizing:border-box;
+            flex-shrink:0;
+        }
+
+        .favorite-btn:active{
+            background:#e5e5ea;
+        }
+
         /* 右端の並び替えボタンだけ、スクロール操作を完全ブロックします */
         .sort-handle{
             color:#b1b1b6;
@@ -3864,6 +3897,7 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
 <script src="js/scanner.js"></script>
 <script src="js/nori.js"></script>
 <script src="js/exclude.js"></script>
+<script src="js/favorite.js"></script>
 <script src="js/sort.js"></script>
 <script src="js/undo.js"></script>
 <script src="js/list-view.js"></script>
