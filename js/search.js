@@ -135,6 +135,8 @@ const searchNoResultsEl = document.getElementById("search-no-results");
 確定操作(Enter等)を待たずに即座に反映します。
 */
 searchInput.addEventListener("input",function(){
+    // 【一時デバッグ】原因判明後に削除
+    console.log("[検索デバッグ] inputイベント発火 :",searchInput.value);
     applySearchFilter(searchInput.value);
 });
 
@@ -145,6 +147,9 @@ searchInput.addEventListener("input",function(){
  */
 function applySearchFilter(query){
 
+    // 【一時デバッグ】原因判明後に削除
+    console.log("[検索デバッグ] applySearchFilter開始 query=",query);
+
     /*
     normalizeForSort() は js/sort.js の関数です。半角/全角カタカナの
     表記ゆれを揃えます。並び替えの時と同じ理由で、比較の前に
@@ -153,6 +158,9 @@ function applySearchFilter(query){
     const normalizedQuery = normalizeForSort(query).toLowerCase();
 
     const rows = menuListEl.querySelectorAll(".music-row");
+
+    // 【一時デバッグ】原因判明後に削除
+    console.log("[検索デバッグ] 対象の行数 :",rows.length);
 
     // 何か1件でも見えているかを数えます(0件だった時の案内に使います)
     let visibleCount = 0;
@@ -176,6 +184,9 @@ function applySearchFilter(query){
         if(matched){ visibleCount++; }
 
     }
+
+    // 【一時デバッグ】原因判明後に削除
+    console.log("[検索デバッグ] 絞り込み完了 表示中=",visibleCount,"/",rows.length);
 
     /*
     1件も見つからなかった時だけ案内を出します。
