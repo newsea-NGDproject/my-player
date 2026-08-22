@@ -368,6 +368,10 @@ async function playNextTrack(){
             logDebugEvent("1曲リピート:play()成功");
             console.log("1曲リピート:同じ曲を頭から鳴らします");
 
+            // 再生回数を1増やします(v136。js/play-count.js)。
+            // playTrack()を経由しない軽い再生なので、ここで別途呼びます
+            incrementPlayCount(currentTrackId);
+
         }
         catch(error){
 

@@ -203,6 +203,9 @@ async function playTrack(trackId){
 
             console.log("再生開始 :",track.file_name);
 
+            // 再生回数を1増やします(v136。js/play-count.js)
+            incrementPlayCount(trackId);
+
             /*
             無事に鳴った曲が、以前に除外されていたものなら解除します(v110)。
 

@@ -7,10 +7,11 @@
 【このファイルの役割】
 
  曲一覧の見出し横にある ⇅ ボタンを押すとメニューが開き、
- 6つの並び順から選べます。
+ 7つの並び順から選べます。
 
    🕺 ノリ注入順     … 最近ノリを注入した曲を上に
    ⭐ お気に入り順   … 最近お気に入りにした曲を上に
+   🔥 再生回数順     … よく聴いた曲を上に
    🆕 登録日時順     … 最近登録した曲を上に
    🔤 タイトル順     … 曲名のあいうえお順
    🎤 アーティスト順 … アーティスト名のあいうえお順
@@ -66,6 +67,7 @@
 const SORT_DEFINITIONS = [
     { key:"nori_injected_at", icon:"🕺", label:"ノリ注入順",     defaultOrder:"desc" },
     { key:"favorited_at",     icon:"⭐", label:"お気に入り順",   defaultOrder:"desc" },
+    { key:"play_count",       icon:"🔥", label:"再生回数順",     defaultOrder:"desc" },
     { key:"registered_at",    icon:"🆕", label:"登録日時順",     defaultOrder:"desc" },
     { key:"title",            icon:"🔤", label:"タイトル順",     defaultOrder:"asc"  },
     { key:"artist",           icon:"🎤", label:"アーティスト順", defaultOrder:"asc"  },
@@ -110,6 +112,11 @@ function compareTracks(trackA,trackB,key){
         */
         return (trackA.favorited_at || 0) - (trackB.favorited_at || 0);
 
+    }
+
+    if(key === "play_count"){
+        // registered_atと同じ、単純な数値比較です(未再生の曲は0扱い)
+        return (trackA.play_count || 0) - (trackB.play_count || 0);
     }
 
     if(key === "title"){
