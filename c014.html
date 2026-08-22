@@ -469,7 +469,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v124)ノリRun
+        (v125)ノリRun
         メインメニュー
 
     </title>
@@ -1656,7 +1656,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         }
 
         /*
-        ⏮⏭(曲送り・曲戻り)だけ、記号を少し上へ補正します(v123)。
+        ⏮⏭(曲送り・曲戻り)だけ、記号を少し上へ補正します(v123→v125で修正)。
 
         竹弘の指摘: 「⏮ ■ ⏭ 」の並びで、■/▶(stop-btn)と比べて
         ⏮⏭だけ気持ち下にずれて見える。赤い十字線で実測して確認済み。
@@ -1666,11 +1666,26 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         微妙に違うためです。line-height:1は文字の「行の高さ」を揃える
         指定であって、グリフ自体が枠内のどこに描かれるかまでは
         揃えてくれません。■/▶は正しい位置(竹弘の確認済み)なので、
-        ⏮⏭の2つだけをtransformで少し引き上げて合わせます。
+        ⏮⏭の2つだけを少し引き上げて合わせます。
+
+        【v123での誤り、v125で修正】
+        最初 transform:translateY(-2px) で直そうとしましたが、これは
+        ボタン(丸ごと)を2px押し上げてしまう指定でした。中の記号だけで
+        なく丸自体が他のボタンより上にずれるという、別の不具合を
+        生みました(竹弘の指摘、青い線での再検証で発覚)。
+
+        正しくは、ボタンの外枠(width/height/位置)はそのままに、
+        内側の余白(padding)だけ上下非対称にして中身を押し上げます。
+        box-sizing:border-box なので、paddingを増やしてもボタンの
+        外側の大きさ・位置は一切変わりません(.round-btn の
+        width:40px/height:40px はそのまま)。変わるのは内側の
+        「記号を配置できる面積」だけで、align-items:centerがその
+        狭くなった面積の中で記号を中央寄せするため、下の余白を
+        広げた分だけ記号が上へ動きます。
         */
         #prev-btn,
         #next-btn{
-            transform:translateY(-2px);
+            padding:0 0 4px 0;
         }
 
         /* ======================================================
@@ -2235,9 +2250,16 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         (.music-row の子要素どうしはgapを持たない作りなので、
          左側だけこのボタンで明示的に隙間を作る必要があります)。
 
-        line-height:1 と transform は v123 で追加しました。竹弘の指摘
-        (☆⭐の記号が丸の中で気持ち下にずれる)を受けての補正で、
-        #prev-btn/#next-btn の補正と理由は同じです(下のコメント参照)。
+        line-height:1 と、記号を上へ補正する指定は v123 で追加しました。
+        竹弘の指摘(☆⭐の記号が丸の中で気持ち下にずれる)を受けての
+        補正で、#prev-btn/#next-btn の補正と理由は同じです
+        (詳しい理由は上の #prev-btn/#next-btn のコメント参照)。
+
+        【v123での誤り、v125で修正】
+        最初 transform:translateY(-1px) で直そうとしましたが、これは
+        中の記号だけでなくボタン(丸ごと)を1px押し上げてしまう指定
+        でした。#prev-btn/#next-btn と全く同じ誤りだったため、
+        同じやり方(padding)で直しています。
 
         color:var(--border-color) も v123 で追加しました。竹弘の指摘
         「☆が黒だと存在感が出すぎている」を受けての変更で、ボタンの
@@ -2258,13 +2280,13 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             width:32px;
             height:32px;
             margin-left:6px;
+            padding:0 0 2px 0;
             border:1px solid var(--border-color);
             border-radius:50%;
             background:#ffffff;
             color:var(--border-color);
             font-size:1.1rem;
             line-height:1;
-            transform:translateY(-1px);
             cursor:pointer;
             box-sizing:border-box;
             flex-shrink:0;
