@@ -469,7 +469,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v131)ノリRun
+        (v132)ノリRun
         メインメニュー
 
     </title>
@@ -3767,6 +3767,7 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
         background:rgba(255,255,255,0.1);
         color:#fff;
     }
+    #debug-log-copy,
     #debug-log-clear,
     #debug-log-toggle{
         width:auto; margin-top:0; padding:4px 12px; font-size:0.75rem;
@@ -3802,6 +3803,7 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
         opacity:0.7;
     }
     #debug-log-panel.minimized #debug-log-body,
+    #debug-log-panel.minimized #debug-log-copy,
     #debug-log-panel.minimized #debug-log-clear{
         display:none;
     }
@@ -3815,6 +3817,7 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
     <div id="debug-log-header">
         <span id="debug-log-title">開発用デバッグログ</span>
         <span>
+            <button id="debug-log-copy">コピー</button>
             <button id="debug-log-clear">クリア</button>
             <button id="debug-log-toggle">▲</button>
         </span>
@@ -3862,6 +3865,43 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
 
     document.getElementById("debug-log-clear").onclick = function(){
         logBody.innerHTML = "";
+    };
+
+    /*
+    「コピー」ボタン(2026-08-22追加)。
+
+    竹弘の要望: 「ログをTXTコピーできるようにしてもらえないかな。
+    キャプチャーだとログが長いと大変で」
+
+    logBody の中身(1行ずつのdiv)を集めてテキストにまとめ、
+    navigator.clipboard.writeText() でクリップボードへ直接コピーします。
+    ボタンを押した瞬間(ユーザー操作の中)で呼んでいるので、
+    ブラウザの許可なく実行できます。
+    */
+    document.getElementById("debug-log-copy").onclick = function(){
+
+        const lines = Array.prototype.map.call(logBody.children,function(lineEl){
+            return lineEl.textContent;
+        });
+
+        const allText = lines.join("\n");
+        const copyBtn = document.getElementById("debug-log-copy");
+        const originalLabel = copyBtn.textContent;
+
+        navigator.clipboard.writeText(allText).then(function(){
+
+            // 押した実感が持てるよう、一瞬だけボタンの文字を変えます
+            copyBtn.textContent = "コピーOK";
+            setTimeout(function(){ copyBtn.textContent = originalLabel; },1500);
+
+        }).catch(function(error){
+
+            copyBtn.textContent = "失敗";
+            setTimeout(function(){ copyBtn.textContent = originalLabel; },1500);
+            console.error("ログのコピーに失敗 :",error.name,error.message);
+
+        });
+
     };
 
     // ---- パネルの開閉(最小化)処理 ----
