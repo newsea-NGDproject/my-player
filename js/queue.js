@@ -341,6 +341,9 @@ function findNextInShuffle(fromTrackId){
  */
 async function playNextTrack(){
 
+    // 【開発用調査ログ】原因判明後に削除(CLAUDE.md参照)
+    logDebugEvent("playNextTrack開始 (mode=" + currentPlayMode + ")");
+
     /*
     ---- 1曲リピートは、ここで完結させます ----
 
@@ -356,14 +359,20 @@ async function playNextTrack(){
 
         try{
 
+            // 【開発用調査ログ】
+            logDebugEvent("1曲リピート:play()呼び出し前");
             audioPlayer.currentTime = 0;
 
             await audioPlayer.play();
 
+            logDebugEvent("1曲リピート:play()成功");
             console.log("1曲リピート:同じ曲を頭から鳴らします");
 
         }
         catch(error){
+
+            // 【開発用調査ログ】
+            logDebugEvent("1曲リピート:play()失敗 :" + error.name + " / " + error.message);
 
             /*
             軽い再生(currentTime=0 + play()だけ)が失敗した時の

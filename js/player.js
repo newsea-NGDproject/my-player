@@ -86,6 +86,9 @@ let currentTrackId = null;
  */
 async function playTrack(trackId){
 
+    // 【開発用調査ログ】原因判明後に削除(CLAUDE.md参照)
+    logDebugEvent("playTrack開始 :" + trackId);
+
     try{
 
         const track = libraryMap[trackId];
@@ -132,11 +135,17 @@ async function playTrack(trackId){
         }
 
         // --- 権限を確認し直します(c013と同じパターン) ---
+        // 【開発用調査ログ】ここから
+        logDebugEvent("queryPermission呼び出し前");
         let permission = await track.file_handle.queryPermission({mode:"read"});
+        logDebugEvent("queryPermission結果 :" + permission);
 
         if(permission !== "granted"){
+            logDebugEvent("requestPermission呼び出し前(ユーザー操作が無い状態で呼ぶと失敗しやすい箇所)");
             permission = await track.file_handle.requestPermission({mode:"read"});
+            logDebugEvent("requestPermission結果 :" + permission);
         }
+        // 【開発用調査ログ】ここまで
 
         if(permission !== "granted"){
 
@@ -146,7 +155,10 @@ async function playTrack(trackId){
 
         }
 
+        // 【開発用調査ログ】
+        logDebugEvent("getFile呼び出し前");
         const file = await track.file_handle.getFile();
+        logDebugEvent("getFile完了");
 
         if(currentObjectUrl){
             URL.revokeObjectURL(currentObjectUrl);
@@ -184,7 +196,10 @@ async function playTrack(trackId){
         */
         try{
 
+            // 【開発用調査ログ】
+            logDebugEvent("audioPlayer.play()呼び出し前 :" + track.file_name);
             await audioPlayer.play();
+            logDebugEvent("audioPlayer.play()成功 :" + track.file_name);
 
             console.log("再生開始 :",track.file_name);
 
@@ -203,6 +218,9 @@ async function playTrack(trackId){
 
         }
         catch(playError){
+
+            // 【開発用調査ログ】
+            logDebugEvent("audioPlayer.play()失敗 :" + playError.name + " / " + playError.message);
 
             console.error(
                 "再生失敗(play) :",
@@ -261,6 +279,9 @@ async function playTrack(trackId){
 
     }
     catch(error){
+
+        // 【開発用調査ログ】
+        logDebugEvent("playTrack外側catch :" + error.name + " / " + error.message);
 
         // alertをやめた理由は上のplay()失敗時のコメントと同じです(v129)
         console.error(
