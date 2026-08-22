@@ -724,15 +724,22 @@ function openSortMenu(){
     const menuHeight = menu.offsetHeight;
     const menuWidth = menu.offsetWidth;
 
-    // 縦位置は、ボタンの上端に合わせます
-    let top = buttonRect.top;
+    /*
+    縦位置は、ボタンを基準に「上側」へ開きます(v139)。
 
-    // 画面の下からはみ出す場合は、画面の下端に揃えます
-    if(top + menuHeight > window.innerHeight - 8){
-        top = window.innerHeight - 8 - menuHeight;
-    }
+    竹弘の指摘(2026-08-23、v138への訂正):「位置追従はわかりやすくて
+    よいのでその方針でいい。上半分側と言いたかった」。画面上部への
+    固定(v138)ではなく、ボタンを基準にした位置は保ったまま、開く
+    向きを「下」ではなく常に「上」にすることで、結果的に上半分側
+    (画面の上の方)に開くようにします。
 
-    // それでも上に収まらないほど画面が狭い場合は、画面内に押し込みます
+    これから並び替える曲一覧を見ながら選びたい、という竹弘の狙い
+    どおり、下半分の曲一覧には重ならず、かつボタンとの位置関係は
+    分かりやすいまま(=ボタンが動けばメニューも一緒に動く)です。
+    */
+    let top = buttonRect.top - menuHeight - 6;
+
+    // 上に収まらないほど画面が狭い場合は、画面内に押し込みます
     if(top < 8){
         top = 8;
     }
