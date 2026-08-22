@@ -159,6 +159,12 @@ async function playTrack(trackId){
         showNowPlaying(track);
 
         /*
+        ロック画面・バックグラウンド再生の連携用に、今の曲情報を
+        Media Sessionへ登録します(v128)。詳細はjs/media-session.js。
+        */
+        updateMediaSessionMetadata(track);
+
+        /*
         ここから下は、権限やファイル取得ではなく
         「実際に音として再生できるか」の問題です。
 
