@@ -13,6 +13,11 @@
 
  もともと c012.html の中に書かれていたものを、そのまま持ってきました。
 
+ 【v145で追加】①のマイ・ピッチ設定は、メインメニュー上半分エリア9の
+ 「マイピッチ設定」ボタンからも開けるようになりました。**同じ画面を
+ 使い回し**、開き方によって文言2か所と「設定」ボタンの行き先だけを
+ 差し替えます。担当は下の方にある openMyPitchSetting() 一式です。
+
 ----------------------------------------------------------------------
 
 【なぜメインメニューと同じページにまとめたのか(v77)】
@@ -213,8 +218,41 @@ function handleStart(x) {
             state.nextTickTime = state.audioCtx.currentTime;
             scheduler();
         });
-    } else if (state.audioCtx.state === 'suspended') {
-        state.audioCtx.resume();
+    } else {
+
+        /*
+        【v145で修正】2回目以降に開いた時、メトロノームを鳴らし直します。
+
+        【何が起きていたか】
+        画面を閉じる時に呼ぶ stopRuler() は state.isPlaying を false に
+        します。scheduler() は先頭で「isPlaying が false なら return」と
+        しており、しかも requestAnimationFrame で自分自身を呼び続ける
+        作りなので、**一度 false になるとカチカチを鳴らすループそのものが
+        止まって、二度と復活しません。**
+
+        以前はここが suspend の解除(resume)しかしていませんでした。
+        初期設定は起動時に1回通るだけで、閉じた後に戻ってくることが
+        無かったため、これで足りていたのです。
+
+        v145でメインメニューから何度でも開けるようになったため、
+        「音の出口(audioCtx)を開け直す」だけでなく「鳴らす係
+        (scheduler)を動かし直す」必要が出てきました。
+
+        2つの if を分けているのは、前からある resume の動きを
+        変えないためです。上の if だけなら以前とまったく同じ動作で、
+        下の if は「ループが止まっている時だけ」動きます。
+        */
+
+        if (state.audioCtx.state === 'suspended') {
+            state.audioCtx.resume();
+        }
+
+        if (!state.isPlaying) {
+            state.isPlaying = true;
+            state.nextTickTime = state.audioCtx.currentTime;
+            scheduler();
+        }
+
     }
     state.isDragging = true;
     state.lastX = x;
@@ -325,6 +363,337 @@ async function saveAndNext() {
 
 document.getElementById('save-btn').onclick = saveAndNext;
 document.getElementById("folder-btn").onclick = handleFolderSetupButton;
+
+
+// ==========================================================
+// マイピッチ設定(メインメニューから開く / v145)
+// ==========================================================
+/*
+上半分エリア9の「マイピッチ設定」ボタンから、この初期設定画面を
+もう一度開くための処理です。
+
+【なぜ新しい画面を作らないのか(竹弘の指示)】
+
+    「これは、既存の初期設定画面と機能は同じもの。
+      このノリRunが、他のプレイヤーとはちょっと違うプレイヤーだと
+      いうことを感じ取ってもらうため、わざと初期設定に入れたもの
+      なので、機能や使用用途は同じなのです。
+      文言が合わない所だけ変更して使いまわしでok」
+
+同じ画面を2つ作ると、片方だけ直して食い違う事故が必ず起きます。
+1つの画面を使い回し、**開き方によって変わるのは文言2か所と
+「設定」ボタンの行き先だけ**にしています。
+
+    見出し     「ノリRun 初期設定」 → 「マイピッチ設定」
+    注意書き   「(※メニュー画面から後で変更できます)」 → 消す
+               (メニューから開いたのだから、案内する必要がない)
+    設定ボタン saveAndNext(初期設定の続きへ) → saveMyPitchOnly(戻る)
+
+【なぜ saveAndNext を書き換えずに onclick を差し替えるのか】
+
+saveAndNext は起動時の初期設定という、すでに完成して動いている
+流れの一部です。そこに「今どっちのモードか」を判定する分岐を足すと、
+初期設定そのものを壊す危険があります。
+
+ボタンの行き先(onclick)を丸ごと入れ替える方式なら、saveAndNext は
+1文字も触らずに済みます。初期設定の流れは今までと完全に同じです。
+*/
+
+/*
+【v146】マイピッチ設定を開いた時に、曲が鳴っていたかどうかの覚え書きです。
+
+竹弘の指示(2026-08-23):
+    「マイピッチ設定を開いた時は、もし曲を流していたら、曲は一時停止
+      して欲しい。ランナーが走る為の自分のピッチを決める大事な所だから。
+      裏で曲が流れていると、集中して自分の走りたいピッチを設定しにくい。
+      戻ったら続きの再生として欲しい」
+
+「戻ったら続きから」を実現するには、**開いた時に鳴っていたのかどうか**を
+覚えておく必要があります。もともと止まっていた場合に戻り際で勝手に
+鳴り出すと、竹弘が意図していない再生になってしまうためです。
+
+停止には audioPlayer.pause() を使います。currentTime(何秒目か)は
+そのまま残るので、play() を呼べば続きから鳴ります。
+*/
+let wasPlayingBeforeMyPitch = false;
+
+/**
+ * マイピッチ設定画面を開きます(メインメニューのボタンから呼ばれます)。
+ *
+ * 先に「今保存されているマイピッチ」を読み込んでから画面を出します。
+ *
+ * 【なぜ読み込みが要るのか】
+ * この state.bpm は初期値が170です。2回目以降の起動ではルートBを通り、
+ * 初期設定画面を通らないので、170のままになっています。読み込まずに
+ * 画面を出すと、**竹弘が以前185に設定していても定規は170を指し、
+ * そのまま「設定」を押すと170で上書きしてしまいます。**
+ */
+async function openMyPitchSetting() {
+
+    try {
+
+        const db = await openNoriRunDB();
+
+        const tx = db.transaction("settings", "readonly");
+        const getRequest = tx.objectStore("settings").get("my_pitch");
+
+        getRequest.onsuccess = function () {
+
+            const saved = getRequest.result;
+
+            /*
+            保存されている値が「数字で、定規の範囲(100〜250)に収まって
+            いる」時だけ受け入れます。DBが空だったり、将来範囲を変えた
+            後に古い値が残っていた場合でも、定規が壊れないようにする
+            ための用心です(再生モードの復元と同じ考え方)。
+            */
+            if (typeof saved === "number" &&
+                saved >= state.minBpm &&
+                saved <= state.maxBpm) {
+
+                state.bpm = saved;
+                state.targetBpm = saved;
+
+            }
+
+            db.close();
+
+            showMyPitchScreen();
+
+        };
+
+        getRequest.onerror = function () {
+
+            db.close();
+
+            // 読めなくても画面は開きます(今の値のまま調整できます)
+            console.error("マイピッチの読み込みに失敗しました");
+
+            showMyPitchScreen();
+
+        };
+
+    } catch (error) {
+
+        console.error("マイピッチの読み込みに失敗 :", error.name, error.message);
+
+        showMyPitchScreen();
+
+    }
+
+}
+
+/**
+ * 画面をマイピッチ設定の見た目にして表示します。
+ */
+function showMyPitchScreen() {
+
+    /*
+    ---- 曲が鳴っていたら一時停止する(v146) ----
+
+    自分の走るピッチを決める大事な画面なので、裏で音楽が流れたまま
+    だとメトロノームに集中できません(竹弘の指示)。
+
+    paused は「止まっている時に true」になる標準の値です。
+    もともと止まっていた場合は false のままにしておき、戻り際に
+    勝手に鳴り出さないようにします。
+
+    【停止ボタンの記号(■ ⇄ ▶)をわざと触っていない理由】
+    js/upper-area.js は「竹弘が自分で押した停止」の時だけ記号を
+    ▶ に変えます(v135の intentionalPause)。ここはすぐ戻して
+    続きを鳴らす一時的な停止なので、その旗は立てません。おかげで
+    記号は ■ のまま動かず、開いて閉じただけでボタンがちらつく
+    ことがありません。
+    */
+    wasPlayingBeforeMyPitch = !audioPlayer.paused;
+
+    if (wasPlayingBeforeMyPitch) {
+        audioPlayer.pause();
+    }
+
+    // ---- 文言をメニューから開いた時のものに差し替える ----
+    document.getElementById("init-screen-title").textContent = "マイピッチ設定";
+    document.getElementById("init-later-note").style.display = "none";
+
+    // ---- 「設定」ボタンの行き先を差し替える ----
+    document.getElementById("save-btn").onclick = saveMyPitchOnly;
+
+    // ---- 画面を切り替える ----
+    showSetupWrapper();
+
+    /*
+    display に空文字("")を入れると、HTMLに直接書かれた指定が外れて
+    CSSファイル側の指定(#init-screen は display:flex)に戻ります。
+    "flex" と直接書かないのは、CSSを直した時にここも直す必要が
+    出るのを避けるためです。
+
+    初期設定を通った直後にこのボタンを押した場合、#init-screen は
+    showFolderSetupScreen() によって "none" にされたままなので、
+    ここで戻さないと画面が真っ白になります。
+    */
+    document.getElementById("init-screen").style.display = "";
+    document.getElementById("folder-setup-screen").style.display = "none";
+
+    /*
+    定規を描き始めます。**必ず画面を表示した後に測ること。**
+    表示していない要素は幅を測れず、canvasの大きさが0になります
+    (startRouteA と同じ順番・同じ理由です)。
+    */
+    const container = document.getElementById("ruler-container");
+
+    canvas.width = container.clientWidth;
+    canvas.height = container.clientHeight;
+
+    rulerActive = true;
+
+    render();
+
+}
+
+/**
+ * マイピッチだけを保存して、メインメニューへ戻ります。
+ *
+ * 【saveAndNext との違い】
+ * saveAndNext は初期設定用なので、my_pitch と一緒に volume や
+ * main_sort_order など「最初の1回だけ書き込む初期値」もまとめて
+ * 保存します。こちらでそれをやると、**竹弘が選んだ並び順などが
+ * 設定を開くたびに初期値へ戻ってしまいます。**
+ *
+ * 再設定で書き換えてよいのは my_pitch ただ1つです。
+ */
+async function saveMyPitchOnly() {
+
+    state.isPlaying = false;
+
+    try {
+
+        const db = await openNoriRunDB();
+
+        const tx = db.transaction("settings", "readwrite");
+
+        tx.objectStore("settings").put(Math.round(state.bpm), "my_pitch");
+
+        tx.oncomplete = function () {
+
+            db.close();
+
+            console.log("マイピッチを保存しました :", Math.round(state.bpm));
+
+            closeMyPitchSetting();
+
+        };
+
+        tx.onerror = function () {
+
+            db.close();
+
+            /*
+            alert は使いません(v129以降のこのアプリの方針)。
+            押されるまでJavaScriptが丸ごと止まるためです。
+            保存に失敗しても画面は閉じて、メインメニューへ戻します。
+            */
+            console.error("マイピッチの保存に失敗しました");
+
+            closeMyPitchSetting();
+
+        };
+
+    } catch (error) {
+
+        console.error("マイピッチの保存に失敗 :", error.name, error.message);
+
+        closeMyPitchSetting();
+
+    }
+
+}
+
+/**
+ * マイピッチ設定画面を閉じて、メインメニューへ戻します。
+ */
+function closeMyPitchSetting() {
+
+    // 定規の描画とメトロノームを止めます(裏で回り続けると重くなります)
+    stopRuler();
+
+    /*
+    文言と「設定」ボタンの行き先を、初期設定用に戻しておきます。
+
+    この画面はアプリ内で1つしかない共有の部品なので、**借りたら
+    元の状態に戻す**のが決まりです。戻し忘れると、dbclr.htmlで
+    DBを消して初期設定をやり直した時に、見出しが「マイピッチ設定」の
+    ままになります。
+    */
+    document.getElementById("init-screen-title").textContent = "ノリRun 初期設定";
+    document.getElementById("init-later-note").style.display = "";
+    document.getElementById("save-btn").onclick = saveAndNext;
+
+    /*
+    メインメニューへ戻します。
+
+    【なぜ showMainMenu() を呼ばないのか】
+    showMainMenu() は曲一覧の読み込み(369曲)からやり直す、起動用の
+    重い処理です。ここで呼ぶと戻るたびに一覧が作り直され、スクロール
+    位置も戻ってしまいます。設定を変えただけで曲一覧に用は無いので、
+    画面の表示を切り替えるだけにします。
+
+    "flex" で戻すのは、#app が上下2分割のflexレイアウトだからです。
+    "block" にすると分割が崩れます。
+    */
+    document.getElementById("setup-screen").style.display = "none";
+    document.getElementById("app").style.display = "flex";
+
+    /*
+    ---- 止めておいた曲を、続きから鳴らし直す(v146) ----
+
+    画面を先に戻してから鳴らしています。曲一覧が見えている状態で
+    音が戻る方が、竹弘から見て「戻ってきた」と分かりやすいためです。
+
+    audioPlayer.pause() は再生位置(currentTime)を消さないので、
+    play() を呼ぶだけで続きから鳴ります。1曲リピート中の loop 属性も
+    そのまま保たれます。
+
+    【なぜ catch を付けているのか】
+    play() は「鳴らせたかどうか」を後から知らせる約束(Promise)を
+    返します。ここは「設定」ボタンを押してから保存を待った後なので、
+    ブラウザから見ると「ユーザーが今まさに押した」瞬間ではありません。
+    画面が点いていて直前に操作しているので、まず弾かれることは
+    ありませんが、万一断られた時に赤いエラーがコンソールへ流れる
+    だけで済むようにしておきます(alert は使わない方針。押されるまで
+    JavaScriptが丸ごと止まるため)。
+    */
+    if (wasPlayingBeforeMyPitch) {
+
+        wasPlayingBeforeMyPitch = false;
+
+        const resumed = audioPlayer.play();
+
+        if (resumed && typeof resumed.catch === "function") {
+
+            resumed.catch(function (error) {
+
+                console.error(
+                    "マイピッチ設定から戻った時の再生再開に失敗 :",
+                    error.name,
+                    error.message
+                );
+
+            });
+
+        }
+
+    }
+
+}
+
+/*
+上半分エリア9の「マイピッチ設定」ボタンに繋ぎます。
+
+この画面の開け閉めに関わるものを1か所にまとめておきたいので、
+ボタンの割り当てもこのファイルに置いています(このファイルの名前
+どおり「マイ・ピッチ設定」はもともと setup.js の担当です)。
+*/
+document.getElementById("mypitch-btn").onclick = openMyPitchSetting;
 
 /*
   ルートA
