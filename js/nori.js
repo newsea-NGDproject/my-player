@@ -110,18 +110,46 @@ async function injectNori(trackId,buttonElement){
     if(!track){ return; }
 
     /*
-    すでに注入済みの曲は何もしません(一方通行のため)。
+    ---- v147から、ここがタップ補正画面の入口になりました ----
 
-    タップ補正ツールができたら、ここが
-    「その曲の補正画面を開く」入口になります。
+    以前はボタンを押すと「注入済みの印」を付けるだけの仮の作りで、
+    注入済みの曲は何もせず素通りしていました(一方通行のため)。
+
+    本物のタップ補正ツール(js/tap.js)ができたので、押されたら
+    その曲の補正画面を開きます。
+
+    【注入済みの曲でも開く理由(竹弘の指示、2026-08-23)】
+    耳で測る作業は失敗することがあるので、**何度でも測り直せる**
+    必要があります。1回きりだと怖くて押せません。
+
+    ただし **アイコンは一方通行のまま** です。一度🕺になった曲を
+    🛌に戻すことはできません(竹弘の指示)。測り直しても🕺のままです。
+
+    印を付ける処理は、この下の markNoriInjected() に切り出しました。
+    v148で、タップ補正がB地点まで終わった時点で tap.js から呼びます。
     */
-    if(track.is_analyzed){
+    openTapCorrection(trackId);
 
-        console.log("この曲はすでにノリ注入済みです :",track.file_name);
+}
 
-        return;
 
-    }
+/**
+ * その曲に「ノリ注入済み」の印を付けます(🛌 → 🕺)。
+ *
+ * v147で injectNori() から切り出しました。
+ *
+ * ⚠️ **呼ぶのはタップ補正が最後まで完了した時だけ**にしてください。
+ *    途中でやめた曲に🕺が付くと、補正データが無いのに「注入済み」に
+ *    見える食い違いが起きます。
+ *
+ * @param {string} trackId        - 対象の曲
+ * @param {Element} buttonElement - 曲一覧のボタン本体(あれば表示も変えます)
+ */
+async function markNoriInjected(trackId,buttonElement){
+
+    const track = libraryMap[trackId];
+
+    if(!track){ return; }
 
     try{
 
@@ -147,8 +175,17 @@ async function injectNori(trackId,buttonElement){
 
         await idbPut(STORE_MUSIC,track);
 
-        // 保存が成功してから表示を変えます
-        buttonElement.textContent = NORI_ICON_DANCING;
+        /*
+        保存が成功してから表示を変えます。
+
+        ボタンを受け取っていない場合(タップ補正画面から呼ばれた時など)は
+        書き換えをとばします。そのままだと buttonElement が無い時に
+        エラーで止まってしまうためです。画面へは戻った時に
+        renderList() で反映されます。
+        */
+        if(buttonElement){
+            buttonElement.textContent = NORI_ICON_DANCING;
+        }
 
         /*
         日時も一緒にログへ出しています。画面には出ない情報なので、
