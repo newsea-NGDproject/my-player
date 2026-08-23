@@ -1,43 +1,360 @@
 <!DOCTYPE html>
 <html lang="ja">
-
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-    <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#007aff">
-    <title>NoriRun Launcher</title>
-
-    <script>
-    /* サービスワーカーの登録スクリプト（PWA化用）*/
-    if ('serviceWorker' in navigator) {
-
-        navigator.serviceWorker
-        .register('sw.js')
-        .then(function () {
-
-            console.log("Service Worker登録完了");
-
-            /* Service Worker登録完了後に
-               起動オープニング(c011.html)へ移動する */
-            window.location.href = "c011.html";
-        });
-    } else {
-
-        /* Service Worker非対応ブラウザでも
-           起動オープニングへ進む */   
-        window.location.href = "c011.html";
-    
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>実験1: audio.loopテスト</title>
+<style>
+    body{
+        font-family:sans-serif;
+        background:#111;
+        color:#eee;
+        padding:16px;
+        margin:0;
     }
-    </script>
-
+    h1{ font-size:1.1rem; }
+    p{ font-size:0.85rem; color:#aaa; line-height:1.5; }
+    button{
+        display:block;
+        width:100%;
+        box-sizing:border-box;
+        font-size:1rem;
+        padding:14px;
+        margin:8px 0;
+        border-radius:8px;
+        border:1px solid #555;
+        background:#222;
+        color:#eee;
+    }
+    button:disabled{ opacity:0.4; }
+    #status{ font-size:0.95rem; margin:10px 0; color:#7cf; }
+    #log{
+        white-space:pre-wrap;
+        word-break:break-all;
+        background:#000;
+        color:#7CFC90;
+        font-family:monospace;
+        font-size:0.7rem;
+        line-height:1.4;
+        padding:10px;
+        height:45vh;
+        overflow-y:auto;
+        border:1px solid #444;
+        border-radius:8px;
+        margin-top:12px;
+    }
+</style>
 </head>
-
 <body>
 
-    <p>Loading NoriRun...</p>
+<!--
+======================================================================
+ 実験1: audio.loop属性を使った、画面ロック中の再生継続テスト
 
+----------------------------------------------------------------------
+
+【これは何か】
+
+ ノリRun本体(リポジトリ直下のindex.html〜c014.html)とは完全に
+ 切り離した、検証専用の使い捨てページです。sandbox/ フォルダの
+ 中に置いているので、本体のコードには一切影響しません。
+
+ ★このファイルは sandbox/index.html です。リポジトリ直下(ルート)
+ のindex.html(ノリRun本体の入口)とは別物です。GitHub Pagesは
+ フォルダごとにindex.htmlを「そのフォルダの代表ページ」として
+ 開けるため、sandbox/ フォルダにアクセスするだけでこのページが
+ 開きます。ルート直下のindex.htmlは絶対に上書きしないでください
+ (本体が壊れます)。
+
+ 竹弘の発見(2026-08-23):「画面ロック後、曲の長さに関わらず
+ 必ず3曲目の再生に入ろうとすると止まる」→ 曲の長さではなく、
+ 「JSがplay()を呼んだ回数」のようなカウントベースの制限がある
+ のではないか、という仮説を検証します。
+
+【検証すること】
+
+ ノリRun本体の「1曲リピート」は、曲が終わるたびに
+ JS(こちらのコード)が明示的に play() を呼び直しています。
+ これはすでに試して、同じパターンで止まることが分かっています。
+
+ このページでは、<audio> 要素の loop 属性を使います。これを
+ 付けると、曲が終わってもJSは一切関与せず、ブラウザ自身が
+ 内部で頭出しして鳴らし続けます。最初の1回しか play() を
+ 呼ばない状態を作れます。
+
+ もし「JSが繰り返しplay()を呼ぶこと」自体が制限の引き金なら、
+ このやり方なら制限を避けられるかもしれません。逆にこれでも
+ 同じように止まるなら、原因はもっと根本的な話だと分かります。
+
+【使い方】
+
+ 1. 「①曲ファイルを選ぶ」で 010 クイズ開始_1.mp3 を選ぶ
+ 2. 「②再生開始」をタップ(ここで最初で最後のplay()を呼びます)
+ 3. 画面をロックして放置
+ 4. 時々ロックを解除して、下のログを確認
+ 5. 記録は localStorage に残るので、途中でタブが再読み込み
+    されてしまっても、ページを開き直せば続きが見られます
+    (これ自体も「タブが再読み込みされたかどうか」の証拠になります)
+ 6. 「ログをコピー」でクリップボードにコピーできます
+======================================================================
+-->
+
+<h1>実験1: audio.loop テスト</h1>
+<p>
+    010 クイズ開始_1.mp3 を選んで再生。loop属性で、JSからは
+    最初の1回しかplay()を呼ばない状態を作り、画面ロック後に
+    何周ループできるかを記録します。
+</p>
+
+<button id="pick-btn">① 曲ファイルを選ぶ</button>
+<button id="play-btn" disabled>② 再生開始(loop ON)</button>
+<button id="copy-btn">ログをコピー</button>
+<button id="clear-btn">ログをクリア</button>
+
+<div id="status">未選択</div>
+
+<audio id="audio-player"></audio>
+
+<div id="log"></div>
+
+<script>
+
+// ==========================================================
+// ログ(localStorageに残す。ページが作り直されても消えない)
+// ==========================================================
+
+const LOG_KEY = "loop_test_log";
+const LOG_MAX = 500;
+
+const logEl = document.getElementById("log");
+
+function pad(value,length){
+    return String(value).padStart(length || 2,"0");
+}
+
+function timestamp(){
+    const d = new Date();
+    return pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds()) +
+        "." + pad(d.getMilliseconds(),3);
+}
+
+function log(message){
+
+    const stored = localStorage.getItem(LOG_KEY);
+    const lines = stored ? JSON.parse(stored) : [];
+
+    lines.push(timestamp() + " | " + message);
+
+    while(lines.length > LOG_MAX){
+        lines.shift();
+    }
+
+    localStorage.setItem(LOG_KEY,JSON.stringify(lines));
+
+    renderLog();
+
+}
+
+function renderLog(){
+
+    const stored = localStorage.getItem(LOG_KEY);
+    const lines = stored ? JSON.parse(stored) : [];
+
+    logEl.textContent = lines.join("\n");
+    logEl.scrollTop = logEl.scrollHeight;
+
+}
+
+// ページを開いた/開き直した瞬間に、前回までの記録をまず表示します
+renderLog();
+log("=== ページ読み込み ===");
+
+
+// ==========================================================
+// 画面部品
+// ==========================================================
+
+const statusEl = document.getElementById("status");
+const audioPlayer = document.getElementById("audio-player");
+const pickBtn = document.getElementById("pick-btn");
+const playBtn = document.getElementById("play-btn");
+const copyBtn = document.getElementById("copy-btn");
+const clearBtn = document.getElementById("clear-btn");
+
+let fileHandle = null;
+
+
+// ==========================================================
+// ①曲ファイルを選ぶ
+// ==========================================================
+/*
+showOpenFilePicker() は「ファイルを1つ選ぶ」標準の命令です。
+ノリRun本体のようにフォルダ全体をスキャンする必要はなく、
+このページでは1曲だけ選べれば十分なので、こちらを使っています。
+*/
+pickBtn.addEventListener("click",async function(){
+
+    try{
+
+        const [handle] = await window.showOpenFilePicker({
+            types:[{
+                description:"音楽ファイル",
+                accept:{"audio/*":[".mp3",".m4a",".wav"]}
+            }]
+        });
+
+        fileHandle = handle;
+        statusEl.textContent = "選択済み: " + handle.name;
+        playBtn.disabled = false;
+
+        log("ファイル選択 : " + handle.name);
+
+    }
+    catch(error){
+
+        log("ファイル選択キャンセル/失敗 : " + error.name);
+
+    }
+
+});
+
+
+// ==========================================================
+// ②再生開始(ここが実験の本体)
+// ==========================================================
+playBtn.addEventListener("click",async function(){
+
+    if(!fileHandle){ return; }
+
+    const file = await fileHandle.getFile();
+    const url = URL.createObjectURL(file);
+
+    audioPlayer.src = url;
+
+    /*
+    ★ここが今回の実験の肝です。
+    loop = true にすると、曲が終わってもJSは何もせず、
+    ブラウザが内部で頭出しして鳴らし続けます。
+    */
+    audioPlayer.loop = true;
+
+    try{
+
+        await audioPlayer.play();
+
+        log("再生開始(loop=true) : " + fileHandle.name);
+        statusEl.textContent = "再生中(ロックして様子を見てください)";
+
+    }
+    catch(error){
+
+        log("再生開始 失敗 : " + error.name + " / " + error.message);
+        statusEl.textContent = "再生に失敗しました";
+
+    }
+
+});
+
+
+// ==========================================================
+// ログのコピー/クリア
+// ==========================================================
+copyBtn.addEventListener("click",function(){
+
+    const stored = localStorage.getItem(LOG_KEY);
+    const text = stored ? JSON.parse(stored).join("\n") : "";
+
+    navigator.clipboard.writeText(text).then(function(){
+
+        const original = copyBtn.textContent;
+        copyBtn.textContent = "コピーしました";
+        setTimeout(function(){ copyBtn.textContent = original; },1500);
+
+    }).catch(function(error){
+
+        copyBtn.textContent = "コピー失敗";
+        console.error("コピー失敗 :",error.name,error.message);
+
+    });
+
+});
+
+clearBtn.addEventListener("click",function(){
+    localStorage.removeItem(LOG_KEY);
+    renderLog();
+});
+
+
+// ==========================================================
+// ブラウザ・OS側の合図を記録する(ノリRun本体の調査と同じ考え方)
+// ==========================================================
+
+document.addEventListener("visibilitychange",function(){
+    log("visibilitychange → " + document.visibilityState);
+});
+
+window.addEventListener("pagehide",function(event){
+    log("pagehide (persisted=" + event.persisted + ")");
+});
+
+window.addEventListener("pageshow",function(event){
+    log("pageshow (persisted=" + event.persisted + ")");
+});
+
+document.addEventListener("freeze",function(){
+    log("★ document 'freeze' イベント発火(ブラウザがページを凍結しました)");
+});
+
+document.addEventListener("resume",function(){
+    log("★ document 'resume' イベント発火(凍結から復帰しました)");
+});
+
+[
+    "play","pause","ended","stalled","waiting","suspend","abort","error",
+    "seeking","seeked"
+].forEach(function(eventName){
+
+    audioPlayer.addEventListener(eventName,function(){
+        log("audio '" + eventName + "' currentTime=" + audioPlayer.currentTime.toFixed(2));
+    });
+
+});
+
+
+// ==========================================================
+// 心拍ログ + ループ回数の推定
+// ==========================================================
+/*
+loop=true の時、曲の終わりに達しても ended イベントは発火しません
+(仕様上、loopがtrueだと発火しない決まりのため)。そこで
+currentTime を定期的に見張り、「前回より大きく巻き戻っていたら
+1周した」とみなして数えます。
+*/
+
+let previousTime = 0;
+let loopCount = 0;
+
+setInterval(function(){
+
+    const currentTime = audioPlayer.currentTime;
+
+    if(currentTime < previousTime - 1){
+        loopCount++;
+        log("🔁 ループ " + loopCount + "周目に突入");
+    }
+
+    previousTime = currentTime;
+
+    log(
+        "心拍: currentTime=" + currentTime.toFixed(2) +
+        " paused=" + audioPlayer.paused +
+        " ended=" + audioPlayer.ended +
+        " readyState=" + audioPlayer.readyState +
+        " visibility=" + document.visibilityState
+    );
+
+},5000);
+
+</script>
 </body>
-
 </html>
