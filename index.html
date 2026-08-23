@@ -1,375 +1,43 @@
 <!DOCTYPE html>
 <html lang="ja">
+
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>実験3: loop+ピッチ維持テスト</title>
-<style>
-    body{
-        font-family:sans-serif;
-        background:#111;
-        color:#eee;
-        padding:16px;
-        margin:0;
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#007aff">
+    <title>NoriRun Launcher</title>
+
+    <script>
+    /* サービスワーカーの登録スクリプト（PWA化用）*/
+    if ('serviceWorker' in navigator) {
+
+        navigator.serviceWorker
+        .register('sw.js')
+        .then(function () {
+
+            console.log("Service Worker登録完了");
+
+            /* Service Worker登録完了後に
+               起動オープニング(c011.html)へ移動する */
+            window.location.href = "c011.html";
+        });
+    } else {
+
+        /* Service Worker非対応ブラウザでも
+           起動オープニングへ進む */   
+        window.location.href = "c011.html";
+    
     }
-    h1{ font-size:1.1rem; }
-    p{ font-size:0.85rem; color:#aaa; line-height:1.5; }
-    label{ font-size:0.85rem; display:block; margin-top:10px; }
-    input[type="number"]{
-        width:100%;
-        box-sizing:border-box;
-        font-size:1.1rem;
-        padding:10px;
-        border-radius:8px;
-        border:1px solid #555;
-        background:#222;
-        color:#eee;
-        margin-top:4px;
-    }
-    button{
-        display:block;
-        width:100%;
-        box-sizing:border-box;
-        font-size:1rem;
-        padding:14px;
-        margin:8px 0;
-        border-radius:8px;
-        border:1px solid #555;
-        background:#222;
-        color:#eee;
-    }
-    button:disabled{ opacity:0.4; }
-    #status{ font-size:0.95rem; margin:10px 0; color:#7cf; }
-    #log{
-        white-space:pre-wrap;
-        word-break:break-all;
-        background:#000;
-        color:#7CFC90;
-        font-family:monospace;
-        font-size:0.7rem;
-        line-height:1.4;
-        padding:10px;
-        height:40vh;
-        overflow-y:auto;
-        border:1px solid #444;
-        border-radius:8px;
-        margin-top:12px;
-    }
-</style>
+    </script>
+
 </head>
+
 <body>
 
-<!--
-======================================================================
- 実験3: audio.loop + playbackRate + preservesPitch の組み合わせテスト
+    <p>Loading NoriRun...</p>
 
-----------------------------------------------------------------------
-
-【これは何か】
-
- ノリRun本体とは完全に切り離した、検証専用の使い捨てページです。
- sandbox/index.html なので、本体には一切影響しません。
- 実験1・実験2の内容を上書きしています(結果は会話記録に保存済み)。
-
-【これまでの経緯】
-
- 実験1(2026-08-23): audio.loop属性(JSがplay()を呼ばない方式)なら、
- ロック中でも何十周でも止まらないことを確認済み。
-
- 実験2(2026-08-23): AudioContextのstart(when)予約方式なら、
- 違う曲を次々にロック中でも追加予約でき続けることを確認済み。
- ただしこの方式は preservesPitch に相当する機能が無く、
- 音程がテンポと一緒にズレてしまう弱点がある。
-
-【今回(実験3)確認すること】
-
- 竹弘の疑問: 「ロック中もロック前のピッチ・テンポを維持できて
- いれば問題ない。ロックされた瞬間どうなるか実機で見たい」
-
- 「同じ曲を繰り返す」場合(ノリRun本体の1曲リピートに相当)なら、
- audio.loop に playbackRate(速度調整)と preservesPitch(音程維持)
- を組み合わせても、実験1と同じ理屈(JSがplay()を呼び直さない)で
- ロック中も生き残れるのではないか、という仮説を確認します。
-
- もし生き残れば、1曲リピート中は「ロックの前後で音程・テンポが
- 一切変わらない」という理想の形が、Web Audio APIへ切り替える
- ことなく実現できることになります。
-
- ※ 違う曲を次々に流すモード(連続再生)には loop は使えないため、
-   これは1曲リピートのケースだけを確認するテストです。
-
-【使い方】
-
- 1. 「①曲ファイルを選ぶ」で 010 クイズ開始_1.mp3 を選ぶ
- 2. 再生速度を入力(初期値1.15。1.0だと変化が分かりにくいため、
-    はっきり違いが聞き取れる値にしてあります。自由に変更可)
- 3. 「②再生開始(loop+速度調整)」をタップ
- 4. 音程が変わらず速さだけ変わって聞こえるか確認
- 5. 画面をロックして放置。ロック解除後も同じ音程・速さのままか確認
- 6. 「ログをコピー」で記録をコピーできます
-======================================================================
--->
-
-<h1>実験3: loop + ピッチ維持 テスト</h1>
-<p>
-    速度を変えても音程が変わらないまま(preservesPitch)、
-    ロック中も鳴り続けるかを確認します。
-</p>
-
-<button id="pick-btn">① 曲ファイルを選ぶ</button>
-
-<label>
-    再生速度(1.0が元の速さ。ノリRun本体と同じ考え方)
-    <input type="number" id="rate-input" value="1.15" step="0.05" min="0.5" max="2.0">
-</label>
-
-<button id="play-btn" disabled>② 再生開始(loop+速度調整)</button>
-<button id="copy-btn">ログをコピー</button>
-<button id="clear-btn">ログをクリア</button>
-
-<div id="status">未選択</div>
-
-<audio id="audio-player"></audio>
-
-<div id="log"></div>
-
-<script>
-
-// ==========================================================
-// ログ(localStorageに残す。ページが作り直されても消えない)
-// ==========================================================
-
-const LOG_KEY = "pitch_loop_test_log";
-const LOG_MAX = 500;
-
-const logEl = document.getElementById("log");
-
-function pad(value,length){
-    return String(value).padStart(length || 2,"0");
-}
-
-function timestamp(){
-    const d = new Date();
-    return pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds()) +
-        "." + pad(d.getMilliseconds(),3);
-}
-
-function log(message){
-
-    const stored = localStorage.getItem(LOG_KEY);
-    const lines = stored ? JSON.parse(stored) : [];
-
-    lines.push(timestamp() + " | " + message);
-
-    while(lines.length > LOG_MAX){
-        lines.shift();
-    }
-
-    localStorage.setItem(LOG_KEY,JSON.stringify(lines));
-
-    renderLog();
-
-}
-
-function renderLog(){
-
-    const stored = localStorage.getItem(LOG_KEY);
-    const lines = stored ? JSON.parse(stored) : [];
-
-    logEl.textContent = lines.join("\n");
-    logEl.scrollTop = logEl.scrollHeight;
-
-}
-
-renderLog();
-log("=== ページ読み込み ===");
-
-
-// ==========================================================
-// 画面部品
-// ==========================================================
-
-const statusEl = document.getElementById("status");
-const audioPlayer = document.getElementById("audio-player");
-const pickBtn = document.getElementById("pick-btn");
-const playBtn = document.getElementById("play-btn");
-const rateInput = document.getElementById("rate-input");
-const copyBtn = document.getElementById("copy-btn");
-const clearBtn = document.getElementById("clear-btn");
-
-let fileHandle = null;
-
-
-// ==========================================================
-// ①曲ファイルを選ぶ
-// ==========================================================
-pickBtn.addEventListener("click",async function(){
-
-    try{
-
-        const [handle] = await window.showOpenFilePicker({
-            types:[{
-                description:"音楽ファイル",
-                accept:{"audio/*":[".mp3",".m4a",".wav"]}
-            }]
-        });
-
-        fileHandle = handle;
-        statusEl.textContent = "選択済み: " + handle.name;
-        playBtn.disabled = false;
-
-        log("ファイル選択 : " + handle.name);
-
-    }
-    catch(error){
-
-        log("ファイル選択キャンセル/失敗 : " + error.name);
-
-    }
-
-});
-
-
-// ==========================================================
-// ②再生開始(ここが実験の本体)
-// ==========================================================
-playBtn.addEventListener("click",async function(){
-
-    if(!fileHandle){ return; }
-
-    const file = await fileHandle.getFile();
-    const url = URL.createObjectURL(file);
-
-    const rate = Number(rateInput.value) || 1.0;
-
-    audioPlayer.src = url;
-    audioPlayer.loop = true;
-
-    /*
-    ★ここが今回の実験の肝です。
-    ノリRun本体(js/pitch.js)と全く同じ2行です。
-    */
-    audioPlayer.playbackRate = rate;
-    audioPlayer.preservesPitch = true;
-
-    try{
-
-        await audioPlayer.play();
-
-        log(
-            "再生開始(loop=true, rate=" + rate + ", preservesPitch=true) : " +
-            fileHandle.name
-        );
-        statusEl.textContent = "再生中(rate=" + rate + ")。音程が変わっていないか確認してください";
-
-    }
-    catch(error){
-
-        log("再生開始 失敗 : " + error.name + " / " + error.message);
-        statusEl.textContent = "再生に失敗しました";
-
-    }
-
-});
-
-
-// ==========================================================
-// ログのコピー/クリア
-// ==========================================================
-copyBtn.addEventListener("click",function(){
-
-    const stored = localStorage.getItem(LOG_KEY);
-    const text = stored ? JSON.parse(stored).join("\n") : "";
-
-    navigator.clipboard.writeText(text).then(function(){
-
-        const original = copyBtn.textContent;
-        copyBtn.textContent = "コピーしました";
-        setTimeout(function(){ copyBtn.textContent = original; },1500);
-
-    }).catch(function(error){
-
-        copyBtn.textContent = "コピー失敗";
-        console.error("コピー失敗 :",error.name,error.message);
-
-    });
-
-});
-
-clearBtn.addEventListener("click",function(){
-    localStorage.removeItem(LOG_KEY);
-    renderLog();
-});
-
-
-// ==========================================================
-// ブラウザ・OS側の合図を記録する
-// ==========================================================
-
-document.addEventListener("visibilitychange",function(){
-    log("visibilitychange → " + document.visibilityState);
-});
-
-window.addEventListener("pagehide",function(event){
-    log("pagehide (persisted=" + event.persisted + ")");
-});
-
-window.addEventListener("pageshow",function(event){
-    log("pageshow (persisted=" + event.persisted + ")");
-});
-
-document.addEventListener("freeze",function(){
-    log("★ document 'freeze' イベント発火(ブラウザがページを凍結しました)");
-});
-
-document.addEventListener("resume",function(){
-    log("★ document 'resume' イベント発火(凍結から復帰しました)");
-});
-
-[
-    "play","pause","ended","stalled","waiting","suspend","abort","error",
-    "seeking","seeked","ratechange"
-].forEach(function(eventName){
-
-    audioPlayer.addEventListener(eventName,function(){
-        log(
-            "audio '" + eventName + "' currentTime=" + audioPlayer.currentTime.toFixed(2) +
-            " rate=" + audioPlayer.playbackRate +
-            " preservesPitch=" + audioPlayer.preservesPitch
-        );
-    });
-
-});
-
-
-// ==========================================================
-// 心拍ログ + ループ回数の推定
-// ==========================================================
-let previousTime = 0;
-let loopCount = 0;
-
-setInterval(function(){
-
-    const currentTime = audioPlayer.currentTime;
-
-    if(currentTime < previousTime - 1){
-        loopCount++;
-        log("🔁 ループ " + loopCount + "周目に突入");
-    }
-
-    previousTime = currentTime;
-
-    log(
-        "心拍: currentTime=" + currentTime.toFixed(2) +
-        " paused=" + audioPlayer.paused +
-        " rate=" + audioPlayer.playbackRate +
-        " preservesPitch=" + audioPlayer.preservesPitch +
-        " readyState=" + audioPlayer.readyState +
-        " visibility=" + document.visibilityState
-    );
-
-},5000);
-
-</script>
 </body>
+
 </html>
