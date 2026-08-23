@@ -1,4 +1,4 @@
-const CACHE_NAME = 'noritest1';
+const CACHE_NAME = 'noritest2';
 
 const ASSETS = [
   'index.html',

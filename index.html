@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>実験2: AudioContext予約再生テスト</title>
+<title>実験3: loop+ピッチ維持テスト</title>
 <style>
     body{
         font-family:sans-serif;
@@ -14,6 +14,18 @@
     }
     h1{ font-size:1.1rem; }
     p{ font-size:0.85rem; color:#aaa; line-height:1.5; }
+    label{ font-size:0.85rem; display:block; margin-top:10px; }
+    input[type="number"]{
+        width:100%;
+        box-sizing:border-box;
+        font-size:1.1rem;
+        padding:10px;
+        border-radius:8px;
+        border:1px solid #555;
+        background:#222;
+        color:#eee;
+        margin-top:4px;
+    }
     button{
         display:block;
         width:100%;
@@ -37,7 +49,7 @@
         font-size:0.7rem;
         line-height:1.4;
         padding:10px;
-        height:45vh;
+        height:40vh;
         overflow-y:auto;
         border:1px solid #444;
         border-radius:8px;
@@ -49,79 +61,75 @@
 
 <!--
 ======================================================================
- 実験2: AudioContext(Web Audio API)による予約再生テスト
+ 実験3: audio.loop + playbackRate + preservesPitch の組み合わせテスト
 
 ----------------------------------------------------------------------
 
 【これは何か】
 
  ノリRun本体とは完全に切り離した、検証専用の使い捨てページです。
- sandbox/index.html なので、リポジトリ直下の本物のindex.html
- (ノリRun本体の入口)には一切影響しません。
+ sandbox/index.html なので、本体には一切影響しません。
+ 実験1・実験2の内容を上書きしています(結果は会話記録に保存済み)。
 
- このファイルは実験1(audio.loopテスト)の内容を上書きしています。
- 実験1は「曲の長さに関わらず必ず3周目でJSのplay()呼び出しが
- 邪魔される」→「loop属性(JSがplay()を呼ばない方式)なら
- 何十周でも止まらない」ことを実証済みです(2026-08-23、成功)。
+【これまでの経緯】
 
-【今回検証すること(実験2)】
+ 実験1(2026-08-23): audio.loop属性(JSがplay()を呼ばない方式)なら、
+ ロック中でも何十周でも止まらないことを確認済み。
 
- 竹弘の発案: legacyのver8.5仕様書にあった「曲接続モジュール」の
- 設計(AudioContextの絶対時刻で次の曲の再生開始を「予約」する
- start(when) 方式)を、ロック中の再生継続に応用できないか。
+ 実験2(2026-08-23): AudioContextのstart(when)予約方式なら、
+ 違う曲を次々にロック中でも追加予約でき続けることを確認済み。
+ ただしこの方式は preservesPitch に相当する機能が無く、
+ 音程がテンポと一緒にズレてしまう弱点がある。
 
- 予約(start(when))自体は、その前に「曲データをデコードして
- 生の波形を用意しておく」という重い作業が必要です(竹弘との
- 相談で確認済み)。デコード済みの曲は事前にまとめて予約できますが、
- メモリの都合で無制限には予約できません。
+【今回(実験3)確認すること】
 
- そこで、次の2段階を試します。
+ 竹弘の疑問: 「ロック中もロック前のピッチ・テンポを維持できて
+ いれば問題ない。ロックされた瞬間どうなるか実機で見たい」
 
-   段階A: ロック前に、曲を2つぶんまとめて予約しておく
-          (「先読みバッファ」を作った状態でロックする)
-   段階B: ロック中、予約の残りが少なくなるたびに、その場で
-          新しく曲をデコードして追加予約する(自動で繰り返す)
+ 「同じ曲を繰り返す」場合(ノリRun本体の1曲リピートに相当)なら、
+ audio.loop に playbackRate(速度調整)と preservesPitch(音程維持)
+ を組み合わせても、実験1と同じ理屈(JSがplay()を呼び直さない)で
+ ロック中も生き残れるのではないか、という仮説を確認します。
 
- 段階Aが成功するのは想定内(先に予約済みのものは鳴るはず)。
- **本当に知りたいのは段階B**です。ロック中に新しくデコード+予約
- する処理そのものが成功し続けるなら、理論上いくらでも曲を
- 繋げられることになります。失敗するなら、事前に予約できた分が
- 上限、ということになります。
+ もし生き残れば、1曲リピート中は「ロックの前後で音程・テンポが
+ 一切変わらない」という理想の形が、Web Audio APIへ切り替える
+ ことなく実現できることになります。
 
- あわせて AudioContext 自体の state(running/suspended)も
- 監視します。もしブラウザがAudioContextごと止めてくるなら、
- ここに "suspended" という記録が残るはずです。
+ ※ 違う曲を次々に流すモード(連続再生)には loop は使えないため、
+   これは1曲リピートのケースだけを確認するテストです。
 
 【使い方】
 
  1. 「①曲ファイルを選ぶ」で 010 クイズ開始_1.mp3 を選ぶ
- 2. 「②予約開始」をタップ(最初の2曲ぶんをまとめて予約します)
- 3. 画面をロックして放置
- 4. 時々ロックを解除して、下のログを確認
- 5. 「ログをコピー」でクリップボードにコピーできます
-
- ログの中で特に注目してほしい行:
-
-   予約成功 : N曲目             … 予約そのものは順調に進んでいる
-   ★ N曲目 再生終了(ended)     … 実際に鳴り終わった曲の数
-   ★ AudioContext statechange  … ブラウザがcontext自体を止めたか
-   ★★★ decodeAndSchedule失敗   … ロック中の追加予約が失敗した瞬間
+ 2. 再生速度を入力(初期値1.15。1.0だと変化が分かりにくいため、
+    はっきり違いが聞き取れる値にしてあります。自由に変更可)
+ 3. 「②再生開始(loop+速度調整)」をタップ
+ 4. 音程が変わらず速さだけ変わって聞こえるか確認
+ 5. 画面をロックして放置。ロック解除後も同じ音程・速さのままか確認
+ 6. 「ログをコピー」で記録をコピーできます
 ======================================================================
 -->
 
-<h1>実験2: AudioContext予約再生 テスト</h1>
+<h1>実験3: loop + ピッチ維持 テスト</h1>
 <p>
-    010 クイズ開始_1.mp3 を選んで再生。最初に2曲ぶん予約し、
-    以後は残りが減るたびにロック中でも自動で追加予約します。
-    追加予約が成功し続けるかが今回の本題です。
+    速度を変えても音程が変わらないまま(preservesPitch)、
+    ロック中も鳴り続けるかを確認します。
 </p>
 
 <button id="pick-btn">① 曲ファイルを選ぶ</button>
-<button id="play-btn" disabled>② 予約開始</button>
+
+<label>
+    再生速度(1.0が元の速さ。ノリRun本体と同じ考え方)
+    <input type="number" id="rate-input" value="1.15" step="0.05" min="0.5" max="2.0">
+</label>
+
+<button id="play-btn" disabled>② 再生開始(loop+速度調整)</button>
 <button id="copy-btn">ログをコピー</button>
 <button id="clear-btn">ログをクリア</button>
 
 <div id="status">未選択</div>
+
+<audio id="audio-player"></audio>
 
 <div id="log"></div>
 
@@ -131,8 +139,8 @@
 // ログ(localStorageに残す。ページが作り直されても消えない)
 // ==========================================================
 
-const LOG_KEY = "schedule_test_log";
-const LOG_MAX = 800;
+const LOG_KEY = "pitch_loop_test_log";
+const LOG_MAX = 500;
 
 const logEl = document.getElementById("log");
 
@@ -182,22 +190,14 @@ log("=== ページ読み込み ===");
 // ==========================================================
 
 const statusEl = document.getElementById("status");
+const audioPlayer = document.getElementById("audio-player");
 const pickBtn = document.getElementById("pick-btn");
 const playBtn = document.getElementById("play-btn");
+const rateInput = document.getElementById("rate-input");
 const copyBtn = document.getElementById("copy-btn");
 const clearBtn = document.getElementById("clear-btn");
 
 let fileHandle = null;
-let audioContext = null;
-
-// 「今から何秒後まで予約が埋まっているか」を表す、次に予約すべき開始時刻
-let nextStartTime = 0;
-
-// 予約に成功した回数
-let scheduledCount = 0;
-
-// 実際に鳴り終わった(ended)回数
-let endedCount = 0;
 
 
 // ==========================================================
@@ -231,97 +231,44 @@ pickBtn.addEventListener("click",async function(){
 
 
 // ==========================================================
-// デコード+予約(この関数がロック中に自動で繰り返し呼ばれます)
-// ==========================================================
-/**
- * 曲データをデコードし、続きの時刻に再生を予約します。
- *
- * 【竹弘との確認事項】
- * 「予約」は start(when) の呼び出しだけでなく、その前段の
- * デコード(decodeAudioData)も含めて1セットです。ここでは
- * 毎回ファイルの読み込みからやり直しており、キャッシュした
- * デコード結果を使い回していません。ロック中に「デコードという
- * 重い処理そのもの」が成功するかも一緒に確認したいためです。
- */
-async function decodeAndSchedule(){
-
-    const label = (scheduledCount + 1) + "曲目";
-
-    log(label + " : decodeAndSchedule開始");
-
-    try{
-
-        const file = await fileHandle.getFile();
-        const arrayBuffer = await file.arrayBuffer();
-
-        log(label + " : ArrayBuffer取得完了、デコード開始");
-
-        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-
-        log(label + " : デコード完了(長さ=" + audioBuffer.duration.toFixed(2) + "秒)");
-
-        const source = audioContext.createBufferSource();
-        source.buffer = audioBuffer;
-        source.connect(audioContext.destination);
-
-        const startAt = nextStartTime;
-        const thisNumber = scheduledCount + 1;
-
-        source.addEventListener("ended",function(){
-            endedCount++;
-            log("★ " + thisNumber + "曲目 再生終了(ended) / 累計終了=" + endedCount);
-        });
-
-        source.start(startAt);
-
-        scheduledCount++;
-
-        log(
-            "予約成功 : " + label +
-            " / 開始時刻=" + startAt.toFixed(2) +
-            " / 今のcontext時刻=" + audioContext.currentTime.toFixed(2)
-        );
-
-        nextStartTime = startAt + audioBuffer.duration;
-
-    }
-    catch(error){
-
-        log("★★★ " + label + " decodeAndSchedule失敗 : " + error.name + " / " + error.message);
-
-    }
-
-}
-
-
-// ==========================================================
-// ②予約開始
+// ②再生開始(ここが実験の本体)
 // ==========================================================
 playBtn.addEventListener("click",async function(){
 
     if(!fileHandle){ return; }
 
+    const file = await fileHandle.getFile();
+    const url = URL.createObjectURL(file);
+
+    const rate = Number(rateInput.value) || 1.0;
+
+    audioPlayer.src = url;
+    audioPlayer.loop = true;
+
     /*
-    AudioContextの生成・開始にはユーザー操作(このタップ)が
-    必要です。これがないと state が "suspended" のまま始まります。
+    ★ここが今回の実験の肝です。
+    ノリRun本体(js/pitch.js)と全く同じ2行です。
     */
-    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    audioPlayer.playbackRate = rate;
+    audioPlayer.preservesPitch = true;
 
-    log("AudioContext作成 : 初期state=" + audioContext.state);
+    try{
 
-    audioContext.addEventListener("statechange",function(){
-        log("★ AudioContext statechange → " + audioContext.state);
-    });
+        await audioPlayer.play();
 
-    // 少し先(0.2秒後)を1曲目の開始時刻にします(0だと過去扱いになる恐れがあるため)
-    nextStartTime = audioContext.currentTime + 0.2;
+        log(
+            "再生開始(loop=true, rate=" + rate + ", preservesPitch=true) : " +
+            fileHandle.name
+        );
+        statusEl.textContent = "再生中(rate=" + rate + ")。音程が変わっていないか確認してください";
 
-    // まず2曲ぶん、まとめて予約します(ロック前の「先読み」を再現)
-    await decodeAndSchedule();
-    await decodeAndSchedule();
+    }
+    catch(error){
 
-    playBtn.disabled = true;
-    statusEl.textContent = "予約済み。ロックして様子を見てください";
+        log("再生開始 失敗 : " + error.name + " / " + error.message);
+        statusEl.textContent = "再生に失敗しました";
+
+    }
 
 });
 
@@ -379,40 +326,49 @@ document.addEventListener("resume",function(){
     log("★ document 'resume' イベント発火(凍結から復帰しました)");
 });
 
+[
+    "play","pause","ended","stalled","waiting","suspend","abort","error",
+    "seeking","seeked","ratechange"
+].forEach(function(eventName){
+
+    audioPlayer.addEventListener(eventName,function(){
+        log(
+            "audio '" + eventName + "' currentTime=" + audioPlayer.currentTime.toFixed(2) +
+            " rate=" + audioPlayer.playbackRate +
+            " preservesPitch=" + audioPlayer.preservesPitch
+        );
+    });
+
+});
+
 
 // ==========================================================
-// 心拍ログ + 自動補充(ここが実験の本題)
+// 心拍ログ + ループ回数の推定
 // ==========================================================
-/*
-3秒おきに、次の2つを行います。
+let previousTime = 0;
+let loopCount = 0;
 
-  1. 心拍ログ(context.state / context.currentTime / 予約数など)
-  2. 予約の残り時間が5秒を切っていたら、追加でデコード+予約する
-     (これがロック中でも動き続けるかどうかが、今回知りたいことです)
-*/
-setInterval(async function(){
+setInterval(function(){
 
-    if(!audioContext){ return; }
+    const currentTime = audioPlayer.currentTime;
 
-    const remaining = nextStartTime - audioContext.currentTime;
+    if(currentTime < previousTime - 1){
+        loopCount++;
+        log("🔁 ループ " + loopCount + "周目に突入");
+    }
+
+    previousTime = currentTime;
 
     log(
-        "心拍: state=" + audioContext.state +
-        " context時刻=" + audioContext.currentTime.toFixed(2) +
-        " 予約数=" + scheduledCount +
-        " 終了数=" + endedCount +
-        " 残り予約時間=" + remaining.toFixed(2) + "秒" +
+        "心拍: currentTime=" + currentTime.toFixed(2) +
+        " paused=" + audioPlayer.paused +
+        " rate=" + audioPlayer.playbackRate +
+        " preservesPitch=" + audioPlayer.preservesPitch +
+        " readyState=" + audioPlayer.readyState +
         " visibility=" + document.visibilityState
     );
 
-    if(remaining < 5){
-
-        log("→ 残りが少ないため、追加予約を試みます");
-        await decodeAndSchedule();
-
-    }
-
-},3000);
+},5000);
 
 </script>
 </body>
