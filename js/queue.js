@@ -345,74 +345,17 @@ async function playNextTrack(){
     logDebugEvent("playNextTrack開始 (mode=" + currentPlayMode + ")");
 
     /*
-    ---- 1曲リピートは、ここで完結させます ----
+    ---- 1曲リピートは、もうここには来ません(v144) ----
 
-    同じ曲をもう一度 playTrack() に流すこともできますが、それだと
-    ファイルを読み直すところからやり直しになり、曲と曲の間に
-    一瞬の間があいてしまいます。
+    以前はここに「1曲リピート専用の軽い再生」の分岐がありました。
+    v144で、1曲リピートは audio要素の loop 属性(js/player.js の
+    playTrack()が設定)に置き換えたため、リピート中は ended
+    イベントそのものが発火しなくなり、この playNextTrack() が
+    呼ばれること自体が無くなりました。
 
-    currentTime は「今、曲の何秒目を鳴らしているか」を表す値です。
-    ここに0を入れると頭出しになるので、そのまま play() を呼べば
-    間を置かずに鳴り直します。
+    経緯(画面ロック中の再生調査、2026-08-23)は player.js の
+    audioPlayer.loop を設定している箇所のコメントを参照してください。
     */
-    if(currentPlayMode === PLAY_MODE_ONE && currentTrackId){
-
-        try{
-
-            // 【開発用調査ログ】
-            logDebugEvent("1曲リピート:play()呼び出し前");
-            audioPlayer.currentTime = 0;
-
-            await audioPlayer.play();
-
-            logDebugEvent("1曲リピート:play()成功");
-            console.log("1曲リピート:同じ曲を頭から鳴らします");
-
-            // 再生回数を1増やします(v136。js/play-count.js)。
-            // playTrack()を経由しない軽い再生なので、ここで別途呼びます
-            incrementPlayCount(currentTrackId);
-
-        }
-        catch(error){
-
-            // 【開発用調査ログ】
-            logDebugEvent("1曲リピート:play()失敗 :" + error.name + " / " + error.message);
-
-            /*
-            軽い再生(currentTime=0 + play()だけ)が失敗した時の
-            立て直しです(v127、竹弘の報告を受けて追加)。
-
-            【何が起きていたか】
-
-            ここより前は catch した後 console.error を出すだけで
-            終わっていました。OFF/全曲ループ/ランダムの自動再生には
-            「鳴らなければ次の曲へ」という安全網(下のwhileループ)が
-            ありますが、1曲リピートは同じ曲を鳴らし直すだけの
-            軽い作りのため、この安全網の外にありました。
-
-            走行中はスマホをポケットやアームバンドに入れたまま
-            長時間画面を触らないため、ブラウザ側の自動再生ブロックが
-            一時的に働くなど、何らかの理由で play() が失敗すると、
-            そのまま何もせず音楽が止まっていました。
-
-            queue.js冒頭の方針(「困ったら止める」ではなく「困っても
-            先へ進む」)に従い、軽い再生が駄目だった時は player.js の
-            playTrack() まで一段階重い方法(権限の再確認・ファイルの
-            読み込み直しまで行う)で立て直しを試みます。
-            */
-            console.error(
-                "1曲リピートの再生に失敗、読み込み直して立て直します :",
-                error.name,
-                error.message
-            );
-
-            await playTrack(currentTrackId);
-
-        }
-
-        return;
-
-    }
 
     let nextTrackId = findNextTrackId(currentTrackId);
 
@@ -670,6 +613,16 @@ playModeBtn.addEventListener("click",function(){
     if(currentPlayMode === PLAY_MODE_SHUFFLE){
         buildShuffleOrder();
     }
+
+    /*
+    audio要素の loop 属性も、その場で切り替えます(v144)。
+
+    js/player.js の playTrack() でも設定していますが、あちらは
+    「次の曲を鳴らし始める瞬間」にしか効きません。今まさに鳴っている
+    曲の途中でモードを切り替えた場合(例: 連続再生中に1曲リピートへ
+    切り替える)にも即座に反映されるよう、ここでも設定します。
+    */
+    audioPlayer.loop = (currentPlayMode === PLAY_MODE_ONE);
 
     updatePlayModeButton();
 
