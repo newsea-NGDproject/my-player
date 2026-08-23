@@ -469,7 +469,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v144)ノリRun
+        (v146)ノリRun
         メインメニュー
 
     </title>
@@ -3230,7 +3230,19 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
 <div id="setup-screen" style="display:none;">
 
     <div id="init-screen">
-        <h1>ノリRun 初期設定</h1>
+        <!--
+            この見出しと下の注意書きだけ、開き方によって文言が変わります(v145)。
+
+              起動時の初期設定  … 「ノリRun 初期設定」+ 注意書きあり
+              メニューのマイピッチ設定ボタン … 「マイピッチ設定」+ 注意書きなし
+
+            画面そのものは同じものを使い回します(竹弘の指示:「既存の
+            初期設定画面と機能は同じもの。文言が合わない所だけ変更して
+            使いまわしでok」)。差し替えは js/setup.js の
+            showMyPitchScreen() / closeMyPitchSetting() が行うので、
+            **id を消さないこと**。
+        -->
+        <h1 id="init-screen-title">ノリRun 初期設定</h1>
         <p class="instruction">あなたの「<strong>マイ・ピッチ</strong>」を設定します</p>
 
         <!-- 角丸内　解説メッセージ　-->
@@ -3239,7 +3251,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             「<strong>イッチ、ニッ!、イッチ、ニッ!</strong>」の、<br>
             走る時の<strong>リズムスピード</strong>になります。
 
-            <p class="sub-instruction">
+            <p class="sub-instruction" id="init-later-note">
                 (※メニュー画面から後で変更できます)
             </p>
         </div>
