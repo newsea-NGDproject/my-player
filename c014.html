@@ -469,7 +469,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v146)ノリRun
+        (v147)ノリRun
         メインメニュー
 
     </title>
@@ -3180,6 +3180,343 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             background:#0062cc;
         }
 
+        /* ======================================================
+           タップ補正画面(ノリ注入 / v147)
+
+           曲一覧の 🛌 を押すと開く、耳でテンポを測るための画面。
+           担当は js/tap.js。
+
+           【なぜこの画面だけ暗いのか】
+           集中して音を聴き取る道具なので、他の画面と見た目を
+           変えて「モードが変わった」と分かるようにしている。
+           竹弘のイメージは「暗いクラブで光るDJのターンテーブル」。
+
+           ⚠️ ここはまだ仮の見た目。ターンテーブルの造形は v149 で
+              仕上げる予定(先に操作感を実機で固めるため)。
+        ====================================================== */
+
+        #tap-screen{
+            position:fixed;
+            inset:0;
+            z-index:60;
+
+            background:#12111a;
+            color:#ece9f2;
+
+            overflow-y:auto;
+
+            /*
+            タップを連打した時に、画面が拡大したり文字が選択されたり
+            しないようにします。これが無いと1回分取りこぼします。
+            */
+            touch-action:manipulation;
+            -webkit-user-select:none;
+            user-select:none;
+        }
+
+        .tap-container{
+            max-width:520px;
+            margin:0 auto;
+            padding:14px 14px 28px;
+
+            display:flex;
+            flex-direction:column;
+            gap:10px;
+        }
+
+        .tap-head{
+            display:flex;
+            align-items:baseline;
+            justify-content:space-between;
+            gap:10px;
+        }
+
+        #tap-song{
+            font-size:0.95rem;
+            font-weight:600;
+
+            /*
+            長い曲名で2行に折り返して画面が押し広がらないよう、
+            1行に収めて溢れた分は … にします。
+            */
+            white-space:nowrap;
+            overflow:hidden;
+            text-overflow:ellipsis;
+        }
+
+        #tap-phase{
+            flex-shrink:0;
+            font-size:0.75rem;
+            font-weight:700;
+            color:#f5b03e;
+        }
+
+        /* --- 数値モニター(青枠。移植元V1.2の配置を踏襲) --- */
+        .tap-monitor{
+            background:#000000;
+            border:2px solid #2f6bff;
+            border-radius:14px;
+            padding:14px 12px;
+
+            display:flex;
+            flex-direction:column;
+            align-items:center;
+            gap:4px;
+        }
+
+        #tap-bpm{
+            font-family:monospace;
+            font-size:3.2rem;
+            font-weight:bold;
+            line-height:1.05;
+            color:#00ff88;
+
+            /* 数字の幅を揃えて、値が変わっても左右に揺れないようにします */
+            font-variant-numeric:tabular-nums;
+        }
+
+        #tap-ts{
+            font-family:monospace;
+            font-size:1rem;
+            color:#ffcc00;
+            font-variant-numeric:tabular-nums;
+        }
+
+        #tap-lat{
+            font-size:0.82rem;
+            font-weight:bold;
+            color:#ffffff;
+            background:#d63a3a;
+            border-radius:6px;
+            padding:2px 10px;
+        }
+
+        #tap-guide{
+            font-size:0.85rem;
+            line-height:1.6;
+            color:#00ff88;
+            background:rgba(0,255,136,0.09);
+            border-radius:10px;
+            padding:11px 13px;
+        }
+
+        /* --- 測り始める位置の調整(v147で新設) --- */
+        #tap-pos-row{
+            display:flex;
+            align-items:center;
+            gap:8px;
+        }
+
+        #tap-pos-label{
+            flex:1;
+            text-align:center;
+            font-family:monospace;
+            font-size:0.95rem;
+            color:#ece9f2;
+            font-variant-numeric:tabular-nums;
+        }
+
+        .tap-pos-btn{
+            flex:0 0 88px;
+            padding:11px 0;
+
+            background:#2a2733;
+            color:#ece9f2;
+            border:1px solid #3d3850;
+            border-radius:9px;
+
+            font-size:0.9rem;
+            font-weight:bold;
+            cursor:pointer;
+        }
+
+        .tap-pos-btn:active{ background:#3a3548; }
+
+        /* --- タップする場所 --- */
+        #tap-zone{
+            position:relative;
+
+            height:190px;
+            background:#1a1824;
+            border:3px dashed #443e58;
+            border-radius:20px;
+
+            display:flex;
+            flex-direction:column;
+            align-items:center;
+            justify-content:center;
+            gap:10px;
+
+            cursor:pointer;
+
+            /*
+            タップの取りこぼしを防ぐため、この中では
+            スクロールなどの標準動作を一切させません。
+            */
+            touch-action:none;
+        }
+
+        #tap-zone-label{
+            font-size:1.05rem;
+            font-weight:bold;
+        }
+
+        #tap-count{
+            font-family:monospace;
+            font-size:1.5rem;
+            color:#00ff88;
+            font-variant-numeric:tabular-nums;
+        }
+
+        /* 12回目でせり出す、13回目以降を受け付けないための蓋 */
+        #tap-lock{
+            position:absolute;
+            inset:0;
+            z-index:5;
+
+            background:rgba(0,0,0,0.92);
+            border-radius:17px;
+
+            display:none;
+            flex-direction:column;
+            align-items:center;
+            justify-content:center;
+            gap:10px;
+            padding:0 18px;
+        }
+
+        .tap-lock-title{
+            font-weight:bold;
+            color:#00ff88;
+        }
+
+        /* --- 微調整パネル --- */
+        .tap-desc{
+            margin:6px 0 0;
+            font-size:0.78rem;
+            line-height:1.45;
+            color:#bdb7cc;
+        }
+
+        .tap-desc span{
+            display:block;
+            color:#8b849c;
+            font-size:0.92em;
+        }
+
+        .tap-adj-group{
+            background:#221f2c;
+            border-left:5px solid #00ff88;
+            border-radius:12px;
+            padding:9px;
+            margin-top:5px;
+
+            display:flex;
+            gap:5px;
+        }
+
+        .tap-adj-group.tap-adj-latency{
+            border-left-color:#ffcc00;
+        }
+
+        .tap-adj-group button{
+            flex:1;
+            padding:13px 2px;
+
+            background:#413b52;
+            color:#ffffff;
+            border:none;
+            border-radius:8px;
+
+            font-size:1rem;
+            font-weight:bold;
+            cursor:pointer;
+
+            /* 4つのボタンの幅を必ず等分にします(v97の教訓) */
+            min-width:0;
+        }
+
+        .tap-adj-group button:active{ background:#544c68; }
+
+        /* --- 大きい操作ボタン --- */
+        .tap-action{
+            width:100%;
+            padding:16px;
+            border:none;
+            border-radius:14px;
+            font-size:1.1rem;
+            font-weight:bold;
+            cursor:pointer;
+        }
+
+        .tap-action-go{
+            background:#00ff88;
+            color:#0d0c13;
+        }
+
+        .tap-action-quiet{
+            background:#3a1f24;
+            color:#ff9aae;
+            font-size:0.88rem;
+            padding:11px;
+        }
+
+        #tap-close{
+            width:100%;
+            margin-top:4px;
+            padding:12px;
+
+            background:transparent;
+            color:#8b849c;
+            border:1px solid #3d3850;
+            border-radius:12px;
+
+            font-size:0.88rem;
+            cursor:pointer;
+        }
+
+        /* --- 画面下から数秒だけ出るお知らせ --- */
+        /*
+        alert の代わりです。alert は押されるまでJavaScriptを丸ごと
+        止めてしまうため、このアプリでは使わない方針(v129)。
+        */
+        #tap-toast{
+            position:fixed;
+            left:50%;
+            bottom:26px;
+            z-index:80;
+
+            /*
+            translateX(-50%) は「自分の幅の半分だけ左へ動かす」指定。
+            left:50% と組み合わせると、幅が変わっても必ず中央に来ます。
+            */
+            transform:translateX(-50%) translateY(14px);
+
+            max-width:90vw;
+            box-sizing:border-box;
+            padding:12px 20px;
+
+            background:#2a2733;
+            color:#ece9f2;
+            border:1px solid #4a4360;
+            border-radius:24px;
+
+            font-size:0.88rem;
+            line-height:1.5;
+            text-align:center;
+
+            /* 普段は透明かつ触れない状態にしておきます */
+            opacity:0;
+            pointer-events:none;
+
+            transition:opacity 0.22s ease, transform 0.22s ease;
+        }
+
+        #tap-toast.tap-toast-on{
+            opacity:1;
+            transform:translateX(-50%) translateY(0);
+        }
+
     </style>
 
     <!--
@@ -3846,6 +4183,125 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
  js/exclude.js が実行時に書き込みます。ここには入れ物だけを
  用意しています(解析ランプの表示と同じ考え方です)。
 ================================================================ -->
+
+<!-- ================================================================
+ タップ補正画面(ノリ注入 / v147)
+
+ 曲一覧の 🛌 を押すと、この画面が開きます。曲を聴きながら12回
+ タップして、その曲の本当のテンポと拍の位置を耳で測ります。
+ 担当は js/tap.js。
+
+ 【なぜ別ページにしないのか】
+ ページを移動するとフォルダの権限が切れる恐れがあるためです
+ (v77で初期設定を取り込んだ時と同じ理由)。#app と同じページに置き、
+ 表示を切り替えるだけにしています。
+
+ 【v147の範囲】
+ A地点(曲の頭側)だけを測ります。B地点・DBへの保存・🛌→🕺の
+ 切り替えは v148 で足します。見た目はまだ仮で、ターンテーブルの
+ 造形は v149 で仕上げます(先に操作感を実機で固めるため)。
+================================================================ -->
+<div id="tap-screen" style="display:none;">
+
+    <div class="tap-container">
+
+        <div class="tap-head">
+            <div id="tap-song"></div>
+            <div id="tap-phase"></div>
+        </div>
+
+        <!-- 測った数値を出すモニター -->
+        <div class="tap-monitor">
+            <div id="tap-bpm">---.--</div>
+            <div id="tap-ts">1拍目 --.---s</div>
+            <div id="tap-lat">Bluetoothの遅延 0ms</div>
+        </div>
+
+        <!-- 今なにをすればよいかの案内(js/tap.js が書き換えます) -->
+        <div id="tap-guide"></div>
+
+        <!--
+            測り始める位置の調整(竹弘の指示、2026-08-24)。
+
+            移植元は「曲の頭から5秒」「終わりから25秒」の固定でしたが、
+            演奏がなく会話のような、リズムの取りにくい部分に当たる曲が
+            あるため、5秒単位で前後に動かせるようにしました。
+
+            A地点でもB地点でも「曲の何分何秒から聴くか」で統一して
+            表示します。B地点を「終わりから何秒」と出すと ◀▶ の向きが
+            直感と逆になって迷うためです。
+        -->
+        <div id="tap-pos-row">
+            <button type="button" id="tap-pos-back" class="tap-pos-btn">◀ 5秒</button>
+            <span id="tap-pos-label">0:05 から</span>
+            <button type="button" id="tap-pos-fwd" class="tap-pos-btn">5秒 ▶</button>
+        </div>
+
+        <!-- ここを叩きます -->
+        <div id="tap-zone">
+
+            <div id="tap-zone-label">リズムに合わせて12回タップ</div>
+            <div id="tap-count">READY</div>
+
+            <!--
+                12回目でせり出す蓋です。13回目以降のタップを物理的に
+                受け付けなくして、叩きすぎによる測り直しを防ぎます
+                (移植元V1.9.3の「12タップ自動ロック」)。
+            -->
+            <div id="tap-lock">
+                <div class="tap-lock-title">TAP COMPLETE!　12 / 12</div>
+                <button type="button" id="tap-to-adjust" class="tap-action tap-action-go">微調整画面へ進む</button>
+                <button type="button" id="tap-retry-lock" class="tap-action tap-action-quiet">今のタップをやり直す</button>
+            </div>
+
+        </div>
+
+        <!-- 微調整パネル(タップが終わってから出ます) -->
+        <div id="tap-adjust" style="display:none;">
+
+            <p class="tap-desc">
+                メトロノームの速度を曲に合わせて下さい
+                <span>※数値を上げると早くなります</span>
+            </p>
+            <div class="tap-adj-group">
+                <button type="button" data-bpm="-0.1">-0.1</button>
+                <button type="button" data-bpm="-0.01">-0.01</button>
+                <button type="button" data-bpm="0.01">+0.01</button>
+                <button type="button" data-bpm="0.1">+0.1</button>
+            </div>
+
+            <p class="tap-desc">
+                Bluetoothの遅延調整
+                <span>※目安は ±250ms 前後です</span>
+            </p>
+            <div class="tap-adj-group tap-adj-latency">
+                <button type="button" data-lat="-10">-10ms</button>
+                <button type="button" data-lat="-1">-1ms</button>
+                <button type="button" data-lat="1">+1ms</button>
+                <button type="button" data-lat="10">+10ms</button>
+            </div>
+
+            <div style="margin-top:12px; display:flex; flex-direction:column; gap:6px;">
+                <button type="button" id="tap-confirm" class="tap-action tap-action-go">これで確定</button>
+                <button type="button" id="tap-retry-adjust" class="tap-action tap-action-quiet">タップからやり直す</button>
+            </div>
+
+        </div>
+
+        <button type="button" id="tap-close">やめる</button>
+
+    </div>
+
+</div>
+
+<!--
+    画面下から数秒だけ出るお知らせ。
+    「曲が短すぎる為ノリ注入できません」などに使います。
+    #tap-screen の外に置いてあるのは、タップ画面を開かないまま
+    メインメニュー上で出す場面があるためです。
+-->
+<div id="tap-toast"></div>
+
 <div id="exclude-panel" style="display:none;">
 
     <div class="exclude-box">
@@ -4207,6 +4663,7 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
 <script src="js/setup.js"></script>
 <script src="js/scanner.js"></script>
 <script src="js/nori.js"></script>
+<script src="js/tap.js"></script>
 <script src="js/exclude.js"></script>
 <script src="js/favorite.js"></script>
 <script src="js/play-count.js"></script>
