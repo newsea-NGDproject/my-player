@@ -469,7 +469,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v149)ノリRun
+        (v150)ノリRun
         メインメニュー
 
     </title>
@@ -3416,6 +3416,39 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             margin-top:6px;
         }
 
+        /*
+        B地点でだけ出る「A地点の値を引き継ぐ」ボタン(v150)。
+
+        押し間違えても測り直しにはならない(数値が戻るだけの)操作なので、
+        「これで確定」の緑や「やり直す」の赤とは別の、控えめな青枠に
+        してある。走りながら押すボタンではないため、サイズも控えめ。
+        */
+        #tap-inherit{
+            width:100%;
+            margin-bottom:4px;
+            padding:9px;
+
+            background:#141b2e;
+            color:#8fb4ff;
+            border:1px solid #2f6bff;
+            border-radius:10px;
+
+            font-size:0.85rem;
+            font-weight:bold;
+            cursor:pointer;
+        }
+
+        /* 引き継がれる中身(BPMと遅延)は、行を変えて小さく出す */
+        #tap-inherit-info{
+            display:block;
+            margin-top:2px;
+
+            font-family:monospace;
+            font-size:0.78rem;
+            font-weight:normal;
+            color:#6f8ec7;
+        }
+
         /* --- 微調整パネル --- */
         .tap-desc{
             margin:6px 0 0;
@@ -4246,10 +4279,14 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
  (v77で初期設定を取り込んだ時と同じ理由)。#app と同じページに置き、
  表示を切り替えるだけにしています。
 
- 【v147の範囲】
- A地点(曲の頭側)だけを測ります。B地点・DBへの保存・🛌→🕺の
- 切り替えは v148 で足します。見た目はまだ仮で、ターンテーブルの
- 造形は v149 で仕上げます(先に操作感を実機で固めるため)。
+ 【今できること(v150)】
+ A地点(曲の頭側)とB地点(曲の終わり側)を続けて測り、その曲の
+ manualBPM / startTS / endTS を保存して 🛌 を 🕺 に変えるところまで。
+
+ 【まだ仮なもの】
+ 見た目。竹弘のイメージは「暗いクラブで光るDJのターンテーブル」で、
+ 造形は最後のデザイン段階で仕上げます(先に操作感を実機で固めるため)。
+ その時に **スクロールなしの1画面** へ収め直します。
 ================================================================ -->
 <div id="tap-screen" style="display:none;">
 
@@ -4332,6 +4369,21 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
 
         <!-- 微調整パネル(タップが終わってから出ます) -->
         <div id="tap-adjust" style="display:none;">
+
+            <!--
+                B地点でだけ出るボタン(v150)。
+
+                【何のためのボタンか】
+                B地点でも12回叩き直すので、そこで出たBPMがA地点と
+                少し違うことがあります。同じ曲なら本来は同じテンポの
+                はずなので、A地点で耳で追い込んだ値の方が信用できると
+                判断した時に、こちらへ戻せるようにしてあります。
+                (移植元V1.9.3の「引き継ぎボタン」を踏襲)
+            -->
+            <button type="button" id="tap-inherit" style="display:none;">
+                A地点の値を引き継ぐ
+                <span id="tap-inherit-info"></span>
+            </button>
 
             <p class="tap-desc">
                 メトロノームの速度を曲に合わせて下さい
