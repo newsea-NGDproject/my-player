@@ -469,7 +469,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v147)ノリRun
+        (v148)ノリRun
         メインメニュー
 
     </title>
@@ -3390,6 +3390,26 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             color:#00ff88;
         }
 
+        /*
+        12回叩き終わった時に出る操作ボタンの置き場所(v148で新設)。
+
+        v147では蓋(#tap-lock)の中 ＝ タップ場所の真上にボタンがあり、
+        13拍目をノリで叩くと「やり直す」を誤爆する事故が起きていた。
+        タップ場所の外に出すことで、叩く場所と押す場所を分けている。
+
+        margin-top を少し足しているのは、叩いた勢いで指が下へ流れても
+        ボタンに届かないよう、指1本ぶんの間を空けるため
+        (.tap-container の gap:10px と合わせて16px)。
+        */
+        #tap-lock-actions{
+            /* 表示の出し入れは js/tap.js が none / flex で切り替えます */
+            display:flex;
+            flex-direction:column;
+            gap:10px;
+
+            margin-top:6px;
+        }
+
         /* --- 微調整パネル --- */
         .tap-desc{
             margin:6px 0 0;
@@ -4247,13 +4267,34 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
                 12回目でせり出す蓋です。13回目以降のタップを物理的に
                 受け付けなくして、叩きすぎによる測り直しを防ぎます
                 (移植元V1.9.3の「12タップ自動ロック」)。
+
+                ⚠️ v148から、この蓋の中には「文字だけ」を置きます。
+                   ボタンは下の #tap-lock-actions へ出しました(理由はそちら)。
             -->
             <div id="tap-lock">
                 <div class="tap-lock-title">TAP COMPLETE!　12 / 12</div>
-                <button type="button" id="tap-to-adjust" class="tap-action tap-action-go">微調整画面へ進む</button>
-                <button type="button" id="tap-retry-lock" class="tap-action tap-action-quiet">今のタップをやり直す</button>
             </div>
 
+        </div>
+
+        <!--
+            12回叩き終わった時に出る操作ボタン(v148で #tap-zone の外へ出した)。
+
+            【なぜタップ場所の外に出したのか(竹弘の実機報告、2026-08-29)】
+            v147ではこの2つを蓋の中 ＝ タップ場所の真上に置いていました。
+            すると12回叩いた勢いのまま13拍目をノリで叩いてしまった時、
+            指が「今のタップをやり直す」に当たり、**うまく測れていたのに
+            やり直しになる**事故が何度も起きました。
+
+            叩く場所と押す場所が同じである限り、蓋で受け付けなくしても
+            事故は防げません(蓋の上にボタンがあるため)。そこで
+            **押す場所そのものをタップ場所の外へ移し**、13拍目を叩いても
+            当たるのはタップ場所(すでにロック済みで何も起きない)に
+            なるようにしました。
+        -->
+        <div id="tap-lock-actions" style="display:none;">
+            <button type="button" id="tap-to-adjust" class="tap-action tap-action-go">微調整画面へ進む</button>
+            <button type="button" id="tap-retry-lock" class="tap-action tap-action-quiet">今のタップをやり直す</button>
         </div>
 
         <!-- 微調整パネル(タップが終わってから出ます) -->
