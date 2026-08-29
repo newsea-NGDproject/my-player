@@ -469,7 +469,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v148)ノリRun
+        (v149)ノリRun
         メインメニュー
 
     </title>
@@ -3336,7 +3336,13 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         #tap-zone{
             position:relative;
 
-            height:190px;
+            /*
+            v149で 190px から縮めました。竹弘の実機での判断
+            「タップエリアもボタン半分くらいスペースを減らしても
+            操作性に問題はない」(2026-08-29)。走りながら叩く場所なので、
+            これ以上は狭くしないこと。
+            */
+            height:160px;
             background:#1a1824;
             border:3px dashed #443e58;
             border-radius:20px;
@@ -3481,9 +3487,33 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             padding:11px;
         }
 
-        #tap-close{
-            width:100%;
+        /*
+        画面いちばん下の行(v149で新設)。
+        「やめる」と「今のタップをやり直す」を横に並べます。
+        */
+        #tap-bottom-row{
+            display:flex;
+            gap:8px;
             margin-top:4px;
+        }
+
+        /*
+        flex:1 1 0 は「中身の文字数を無視して、余った幅を等分する」指定。
+
+        ⚠️ ここを flex:1 1 auto(や単なる width 指定)にすると、
+           文字数の多い「今のタップをやり直す」の方が広くなり、
+           2つのボタンの幅が揃いません(v97で同じ罠を踏んでいます)。
+           min-width:0 は、長い文字で押し広げられるのを止める歯止めです。
+
+        「やり直す」が隠れている間は、この指定のおかげで「やめる」が
+        自動的に幅いっぱいへ広がります。
+        */
+        #tap-bottom-row > button{
+            flex:1 1 0;
+            min-width:0;
+        }
+
+        #tap-close{
             padding:12px;
 
             background:transparent;
@@ -4278,10 +4308,11 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         </div>
 
         <!--
-            12回叩き終わった時に出る操作ボタン(v148で #tap-zone の外へ出した)。
+            12回叩き終わった時に出る「次へ進む」ボタン
+            (v148で #tap-zone の外へ出した)。
 
             【なぜタップ場所の外に出したのか(竹弘の実機報告、2026-08-29)】
-            v147ではこの2つを蓋の中 ＝ タップ場所の真上に置いていました。
+            v147ではこのボタンを蓋の中 ＝ タップ場所の真上に置いていました。
             すると12回叩いた勢いのまま13拍目をノリで叩いてしまった時、
             指が「今のタップをやり直す」に当たり、**うまく測れていたのに
             やり直しになる**事故が何度も起きました。
@@ -4291,10 +4322,12 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             **押す場所そのものをタップ場所の外へ移し**、13拍目を叩いても
             当たるのはタップ場所(すでにロック済みで何も起きない)に
             なるようにしました。
+
+            ⚠️ v149で「今のタップをやり直す」は、さらに下の
+               #tap-bottom-row へ移しました(画面に収めるため)。
         -->
         <div id="tap-lock-actions" style="display:none;">
             <button type="button" id="tap-to-adjust" class="tap-action tap-action-go">微調整画面へ進む</button>
-            <button type="button" id="tap-retry-lock" class="tap-action tap-action-quiet">今のタップをやり直す</button>
         </div>
 
         <!-- 微調整パネル(タップが終わってから出ます) -->
@@ -4329,7 +4362,26 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
 
         </div>
 
-        <button type="button" id="tap-close">やめる</button>
+        <!--
+            画面のいちばん下の行(v149で新設)。
+
+            【なぜ2つを1行に並べたのか(竹弘の指示、2026-08-29)】
+            v148で「今のタップをやり直す」を独立した行に置いたところ、
+            実機で画面に収まらずスクロールが必要になりました。走りながら
+            使う道具でスクロールが要るのは致命的なので、竹弘の案どおり
+            「やめる」と横に並べて1行ぶん節約しています。
+
+            「やり直す」はタップし終わった時だけ出ます。出ていない間は
+            「やめる」が幅いっぱいに広がります(flex:1 1 0 のはたらき)。
+
+            ⚠️ ここは最終デザイン(ターンテーブル)で作り直す前提の
+               暫定レイアウトです。竹弘の要望は「メニュー画面と同じく
+               スクロールなしの1画面に収める」こと。
+        -->
+        <div id="tap-bottom-row">
+            <button type="button" id="tap-close">やめる</button>
+            <button type="button" id="tap-retry-lock" class="tap-action tap-action-quiet" style="display:none;">今のタップをやり直す</button>
+        </div>
 
     </div>
 
