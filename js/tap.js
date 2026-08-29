@@ -186,6 +186,16 @@ const tapPosRow = document.getElementById("tap-pos-row");
 const tapZone = document.getElementById("tap-zone");
 const tapCountLabel = document.getElementById("tap-count");
 const tapLock = document.getElementById("tap-lock");
+
+/*
+12回叩き終わった時に出る操作ボタンの行です(v148で新設)。
+
+v147ではこの2つのボタンが蓋(#tap-lock)の中 ＝ タップ場所の真上に
+あったため、13拍目をノリで叩くと「やり直す」を誤爆していました。
+タップ場所の外へ出したので、蓋とは別に出し入れする必要があります。
+**蓋を出し入れする所では、必ずこちらも一緒に切り替えてください。**
+*/
+const tapLockActions = document.getElementById("tap-lock-actions");
 const tapAdjustPanel = document.getElementById("tap-adjust");
 const tapToast = document.getElementById("tap-toast");
 
@@ -355,6 +365,7 @@ function resetTapPhase(){
     tapState.locked = false;
 
     tapLock.style.display = "none";
+    tapLockActions.style.display = "none";
     tapAdjustPanel.style.display = "none";
     tapZone.style.display = "flex";
     tapPosRow.style.display = "flex";
@@ -605,6 +616,12 @@ tapZone.addEventListener("pointerdown",function(event){
         tapState.locked = true;
         tapLock.style.display = "flex";
 
+        /*
+        操作ボタンはタップ場所の外に出しています(v148)。
+        蓋と一緒にここで出します。
+        */
+        tapLockActions.style.display = "flex";
+
         stopTapSound();
 
     }
@@ -823,6 +840,7 @@ function goToTapAdjust(){
     tapZone.style.display = "none";
     tapPosRow.style.display = "none";
     tapLock.style.display = "none";
+    tapLockActions.style.display = "none";
     tapAdjustPanel.style.display = "block";
 
     setTapGuide(
@@ -1014,6 +1032,7 @@ function showTapScreen(){
     分かりにくい残像を防ぐための後始末です。
     */
     tapLock.style.display = "none";
+    tapLockActions.style.display = "none";
     tapAdjustPanel.style.display = "none";
     tapZone.style.display = "flex";
     tapPosRow.style.display = "flex";
