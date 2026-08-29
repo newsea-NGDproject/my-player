@@ -188,14 +188,26 @@ const tapCountLabel = document.getElementById("tap-count");
 const tapLock = document.getElementById("tap-lock");
 
 /*
-12回叩き終わった時に出る操作ボタンの行です(v148で新設)。
+12回叩き終わった時に出る「微調整画面へ進む」ボタンの置き場所
+(v148で新設)。
 
-v147ではこの2つのボタンが蓋(#tap-lock)の中 ＝ タップ場所の真上に
+v147ではこのボタンが蓋(#tap-lock)の中 ＝ タップ場所の真上に
 あったため、13拍目をノリで叩くと「やり直す」を誤爆していました。
-タップ場所の外へ出したので、蓋とは別に出し入れする必要があります。
-**蓋を出し入れする所では、必ずこちらも一緒に切り替えてください。**
 */
 const tapLockActions = document.getElementById("tap-lock-actions");
+
+/*
+「今のタップをやり直す」ボタン(v149で画面いちばん下の行へ移動)。
+
+v148では上の #tap-lock-actions の中にありましたが、実機で画面に
+収まらずスクロールが必要になったため、「やめる」と横に並べて
+1行ぶん節約しました(竹弘の指示、2026-08-29)。
+
+⚠️ 蓋・進むボタン・このボタンの3つは必ず同時に出し入れします。
+   書き忘れを防ぐため、切り替えは **setTapLockUI() 経由だけ** で
+   行ってください(直接 style を書かないこと)。
+*/
+const tapRetryLock = document.getElementById("tap-retry-lock");
 const tapAdjustPanel = document.getElementById("tap-adjust");
 const tapToast = document.getElementById("tap-toast");
 
@@ -357,6 +369,32 @@ async function loadTapSong(track){
 // 6. 測る場所へ移動して、タップ待ちに戻す
 // ==========================================================
 /**
+ * 「12回叩き終わった状態」の見た目を、まとめて出し入れします。
+ *
+ * 出し入れするのは次の3つです。**必ず3つ同時**でなければならず、
+ * どれか1つでも書き忘れると「蓋は開いたのにボタンが残る」ような
+ * ちぐはぐな画面になります。だからここに集めました(v149)。
+ *
+ *   #tap-lock         … タップ場所にかぶさる蓋(13回目以降を弾く)
+ *   #tap-lock-actions … 微調整画面へ進むボタン
+ *   #tap-retry-lock   … 今のタップをやり直すボタン(画面いちばん下)
+ *
+ * @param {boolean} shown - true で「叩き終わった状態」にします
+ */
+function setTapLockUI(shown){
+
+    /*
+    display に入れる値がボタンごとに違うのは、並べ方が違うためです。
+    蓋と進むボタンは中身を縦に積む flex、やり直すボタンは
+    「やめる」と横に並ぶ普通のボタンなので block です。
+    */
+    tapLock.style.display        = shown ? "flex"  : "none";
+    tapLockActions.style.display = shown ? "flex"  : "none";
+    tapRetryLock.style.display   = shown ? "block" : "none";
+
+}
+
+/**
  * タップをやり直せる状態に戻し、測る場所から曲を鳴らし直します。
  */
 function resetTapPhase(){
@@ -364,8 +402,7 @@ function resetTapPhase(){
     tapState.taps = [];
     tapState.locked = false;
 
-    tapLock.style.display = "none";
-    tapLockActions.style.display = "none";
+    setTapLockUI(false);
     tapAdjustPanel.style.display = "none";
     tapZone.style.display = "flex";
     tapPosRow.style.display = "flex";
@@ -614,13 +651,9 @@ tapZone.addEventListener("pointerdown",function(event){
         測り直しを防ぎます。
         */
         tapState.locked = true;
-        tapLock.style.display = "flex";
 
-        /*
-        操作ボタンはタップ場所の外に出しています(v148)。
-        蓋と一緒にここで出します。
-        */
-        tapLockActions.style.display = "flex";
+        // 蓋・進むボタン・やり直すボタンをまとめて出します
+        setTapLockUI(true);
 
         stopTapSound();
 
@@ -839,8 +872,7 @@ function goToTapAdjust(){
 
     tapZone.style.display = "none";
     tapPosRow.style.display = "none";
-    tapLock.style.display = "none";
-    tapLockActions.style.display = "none";
+    setTapLockUI(false);
     tapAdjustPanel.style.display = "block";
 
     setTapGuide(
@@ -1031,8 +1063,7 @@ function showTapScreen(){
     その数秒間だけ前回の微調整パネルが見えてしまう、という
     分かりにくい残像を防ぐための後始末です。
     */
-    tapLock.style.display = "none";
-    tapLockActions.style.display = "none";
+    setTapLockUI(false);
     tapAdjustPanel.style.display = "none";
     tapZone.style.display = "flex";
     tapPosRow.style.display = "flex";
@@ -1149,7 +1180,7 @@ document.getElementById("tap-pos-fwd").onclick = function(){
 };
 
 document.getElementById("tap-to-adjust").onclick = goToTapAdjust;
-document.getElementById("tap-retry-lock").onclick = resetTapPhase;
+tapRetryLock.onclick = resetTapPhase;
 document.getElementById("tap-retry-adjust").onclick = resetTapPhase;
 document.getElementById("tap-confirm").onclick = confirmTapPhase;
 document.getElementById("tap-close").onclick = closeTapCorrection;
