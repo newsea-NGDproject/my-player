@@ -78,6 +78,22 @@ const RULER_RANGE = 35;
 */
 
 /*
+定規が目標の位置へ、1コマあたり何割ぶん近づくか(v162)。
+
+マイピッチ設定(js/setup.js)にある
+
+    state.bpm += (state.targetBpm - state.bpm) * 0.25; // 吸い付き補完
+
+と同じ値です。竹弘が「初期設定の定規の吸い付く気持ちよさは意識して
+作成した」と言っている、その正体がこの1行でした。
+
+数字を大きくすると機敏だが硬い動きに、小さくするとぬるっと重い
+動きになります。0.25は「指を離すとスッと寄ってぴたりと止まる」
+ちょうどよい塩梅なので、揃えてあります。
+*/
+const RULER_SNAP_RATIO = 0.25;
+
+/*
 再生速度の下限と上限(ver8.5から継承)。
 
 例えば元ピッチ120の曲なら、60〜240BPMの範囲でしか変えられません。
@@ -467,6 +483,27 @@ function changePitchBy(delta){
 
 }
 
+/**
+ * 定規をこのBPMに合わせます(v162で追加)。
+ *
+ * changePitchBy が「今より1つ隣へ」なのに対し、こちらは
+ * 「この値ちょうどに」動かします。なぞっている最中は指の位置から
+ * 直接BPMが決まるので、差分ではなく絶対値で指定できる方が素直です。
+ *
+ * @param {Number} bpm … 合わせたいBPM
+ */
+function changePitchTo(bpm){
+
+    const track = libraryMap[currentTrackId];
+
+    if(!track){ return; }
+
+    const base = getEffectiveBaseBpm(track);
+
+    applyTempo(bpm / base,false);
+
+}
+
 /*
 定規を指でなぞる操作の登録です(ver8.5の setupDraggable)。
 
@@ -483,9 +520,145 @@ canvasにだけ登録すると、少し外へはみ出した瞬間に操作が�
     let dragging = false;
     let lastX = 0;
 
+    /*
+    ---- 目盛りに吸い付く動き(v162) ----
+
+    竹弘の指摘(2026-08-30):
+
+        「滑らかなメモリに吸い付く気持ちよさがない。
+          初期設定の定規の吸い付く気持ちよさは意識して作成した」
+
+    マイピッチ設定(js/setup.js)の定規は、位置を**2つ**持っています。
+    それを移植しました。
+
+        targetBpm … 指が示している位置。小数のまま持つ
+        viewBpm   … いま実際に描いている位置。targetBpm を追いかける
+
+    毎コマ「差の25%」だけ近づけると、指を止めた時にスッと寄って
+    ぴたりと止まります。これが「吸い付く」感触の正体です。
+    さらに指を離した瞬間に targetBpm を整数へ丸めるので、
+    定規が最寄りの目盛りへ吸い寄せられて着地します。
+
+    v161では整数しか持っていなかったため、12pxごとにカクッと
+    切り替わるだけで、この気持ちよさがありませんでした。
+    */
+    let targetBpm = 0;
+    let viewBpm = 0;
+
+    // アニメーションの予約番号。止める時に使います
+    let rafId = null;
+
+    /*
+    定規が動ける範囲に収めます。
+
+    再生速度は0.5〜2.0倍までなので、その外側へ指を運んでも
+    定規は端で止まります(元ピッチ120の曲なら60〜240BPM)。
+    */
+    function clampTarget(){
+
+        const track = libraryMap[currentTrackId];
+
+        if(!track){ return; }
+
+        const base = getEffectiveBaseBpm(track);
+
+        const minBpm = base * RATE_MIN;
+        const maxBpm = base * RATE_MAX;
+
+        if(targetBpm < minBpm){ targetBpm = minBpm; }
+        if(targetBpm > maxBpm){ targetBpm = maxBpm; }
+
+    }
+
+    /**
+     * 1コマ分だけ定規を目標へ近づけて、描き直します。
+     */
+    function animate(){
+
+        const diff = targetBpm - viewBpm;
+
+        /*
+        差が十分小さくなったら、ぴたりと合わせて終わりにします。
+
+        0.25ずつ近づける計算は、いつまでも「限りなく近いが届かない」
+        状態が続くため、この打ち切りが無いと永久に描き続けてしまいます。
+        */
+        if(Math.abs(diff) < 0.005){
+
+            viewBpm = targetBpm;
+
+        }
+        else{
+
+            viewBpm = viewBpm + diff * RULER_SNAP_RATIO;
+
+        }
+
+        /*
+        実際の再生速度は、丸めた整数が変わった時だけ合わせます。
+
+        毎コマ速度を変えると音が細切れになりますし、画面の数字も
+        小数で震えて読めません。**見た目は滑らかに、音は1BPM単位で**
+        という役割分担です。
+        */
+        const rounded = Math.round(viewBpm);
+
+        if(rounded !== currentRulerBpm){
+
+            changePitchTo(rounded);
+
+        }
+
+        /*
+        最後に小数の位置で描き直します。
+
+        ⚠️ 順番が大事です。上の changePitchTo() の中でも定規を
+           整数の位置で描いているので、その後に描かないと
+           カクついた見た目に戻ってしまいます。
+        */
+        drawRuler(viewBpm);
+
+        // 指を離していて、もう動く必要が無ければループを終えます
+        if(!dragging && viewBpm === targetBpm){
+
+            rafId = null;
+
+            return;
+
+        }
+
+        rafId = requestAnimationFrame(animate);
+
+    }
+
+    /**
+     * アニメーションが止まっていたら動かし始めます。
+     */
+    function ensureAnimating(){
+
+        if(rafId === null){
+
+            rafId = requestAnimationFrame(animate);
+
+        }
+
+    }
+
     function start(x){
+
         dragging = true;
         lastX = x;
+
+        /*
+        なぞり始める前に、いまの値と足並みを揃えます。
+
+        曲を変えたり「元ピッチ」ボタンを押したりすると、定規は
+        こちらを通らずに動いています。揃えておかないと、指を
+        置いた瞬間に前回の位置へ飛んでしまいます。
+        */
+        targetBpm = currentRulerBpm;
+        viewBpm = currentRulerBpm;
+
     }
 
     function move(x){
@@ -494,43 +667,25 @@ canvasにだけ登録すると、少し外へはみ出した瞬間に操作が�
 
         const dx = x - lastX;
 
+        lastX = x;
+
         /*
         指が動いた距離を、目盛りの幅(RULER_GAP＝12px)で割って
-        「何BPM分動いたか」を出します(v161)。
+        「何BPM分動いたか」を出します。**小数のまま**足すのが要点です
+        (v161では整数に丸めていたため、カクついていました)。
 
-        こうすると**掴んだ目盛りが指の下から離れません**。紙の定規を
-        指で押しやるのと同じで、12px動かせば目盛り1つ分だけ動きます。
+        こうすると掴んだ目盛りが指の下から離れず、1px動かせば
+        1pxぶんきっちり定規が流れます。
 
-        【Math.trunc を使う理由】
-        小数点以下を「0の方向へ」切り捨てる命令です。よく似た
-        Math.floor は常に小さい方へ丸めるため、左へ動かした時
-        (マイナス)に1つ余計に進んでしまいます。
-
-            dx =  25px → trunc(2.08) =  2   floor(2.08) =  2  ◯
-            dx = -25px → trunc(-2.08) = -2   floor(-2.08) = -3 ✗
-
-        【端数を捨てずに持ち越す】
-        lastX を x にせず「使った分だけ」進めるのが要点です。
-        こうすれば余った数ピクセルが次の動きに足され、ゆっくり
-        なぞっても取りこぼしなく1BPMずつ変わります。lastX = x に
-        すると端数が毎回消え、じわじわ動かした時に反応しません。
-
-        dx > 0(指を右へ)で符号を反転しているのは、定規を右へ引っぱると
-        目盛りが右へ流れ、中央の赤い線が指す値は小さくなるからです
+        引き算にしているのは、定規を右へ引っぱると目盛りが右へ流れ、
+        中央の赤い線が指す値は小さくなるからです
         (紙の定規を手で押しやる感覚と同じ向きです)。
-
-        なお12pxという幅そのものが十分な「遊び」になるので、
-        指の震えで勝手に値が変わることはありません。
         */
-        const steps = Math.trunc(dx / RULER_GAP);
+        targetBpm = targetBpm - (dx / RULER_GAP);
 
-        if(steps !== 0){
+        clampTarget();
 
-            changePitchBy(-steps);
-
-            lastX = lastX + steps * RULER_GAP;
-
-        }
+        ensureAnimating();
 
     }
 
@@ -539,6 +694,19 @@ canvasにだけ登録すると、少し外へはみ出した瞬間に操作が�
         if(!dragging){ return; }
 
         dragging = false;
+
+        /*
+        指を離したら、いちばん近い目盛りへ吸い寄せます(v162)。
+
+        小数のまま止めると、定規が目盛りの間で半端な位置に居座り、
+        画面の数字と定規の絵がずれて見えます。整数へ丸めておけば、
+        上の animate() が残りをスッと詰めてくれます。
+        */
+        targetBpm = Math.round(targetBpm);
+
+        clampTarget();
+
+        ensureAnimating();
 
         // なぞり終わった時に一度だけ保存します
         const track = libraryMap[currentTrackId];
