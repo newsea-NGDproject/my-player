@@ -503,6 +503,57 @@ async function openTapCorrection(trackId){
 // ==========================================================
 // 5. 曲を読み込む
 // ==========================================================
+/*
+音を扱う作業台(AudioContext)を1つだけ持ち、**閉じずに使い回します**(v157)。
+
+【なぜ閉じないのか(竹弘の観察、2026-08-30)】
+    「曲停止中にタップ補正ボタンを押して、やめるボタンを押して戻った後、
+      最初に音のなるボタン(再度タップ補正ボタン押すとか曲名を押して
+      再生する)を押すとほぼノイズが高確率で入る」
+
+作業台を閉じると、スマホのオーディオ出力そのものが止まります。すると
+イヤホン側は「もう音が来ない」と判断してアンプを切り、次に音が来た時に
+慌てて起き上がります。**その起き上がりが「ブッ」の正体**です。
+曲名を押して再生した時(こちらは <audio> で、タップ補正とは別の仕組み)
+にも鳴るのは、犯人が再生処理ではなく出力の入り切りだからです。
+
+作業台を開いたままにしておけば出力が途切れないので、この復帰音自体が
+起きなくなります。音を出していない間の電池の消費はごくわずかです。
+
+【閉じないと数の上限に引っかからないか】
+ブラウザには同時に作れる AudioContext の数に上限があります(Chromeで
+6個程度)。**1つだけ作って使い回す**この形なら、何度タップ補正を開いても
+増えないので、上限には決して届きません。むしろ開くたびに作り直していた
+今までの方が、作り損ねる危険がありました。
+*/
+let tapAudioCtx = null;
+
+function getTapAudioContext(){
+
+    if(!tapAudioCtx){
+
+        tapAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+    }
+
+    /*
+    ブラウザの判断で眠っている(suspended)ことがあるので、起こしてから
+    返します。眠ったままだと音が1つも鳴りません。
+    */
+    if(tapAudioCtx.state === "suspended"){
+
+        tapAudioCtx.resume().catch(function(error){
+
+            console.error("音の作業台を起こせませんでした :",error.name,error.message);
+
+        });
+
+    }
+
+    return tapAudioCtx;
+
+}
+
 /**
  * 曲のファイルを読み、音の波形データ(AudioBuffer)にほどきます。
  *
@@ -541,7 +592,7 @@ async function loadTapSong(track){
         const file = await track.file_handle.getFile();
         const arrayBuffer = await file.arrayBuffer();
 
-        tapState.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        tapState.audioCtx = getTapAudioContext();
 
         /*
         音量つまみは、ここではなく playTapSongFrom() が鳴らすたびに
@@ -1780,32 +1831,19 @@ function closeTapCorrection(){
     stopTapSound();
 
     /*
-    AudioContext は作りっぱなしにするとブラウザに数を数えられ、
-    いくつも開くと新しく作れなくなります。必ず閉じます。
-    波形データ(約80MB)も、参照を捨ててメモリを解放します。
+    ---- 音の作業台(AudioContext)は閉じません(v157) ----
 
-    ⚠️ ただし**すぐには閉じません**(v156)。すぐ上の stopTapSound() が
-       「一瞬かけて音量を0まで落としてから止める」予約をしたところなので、
-       ここで即座に閉じると、その予約ごと断ち切って結局「ブッ」と鳴ります。
-       落ちきるのを待ってから閉じます。
+    以前はここで close() していましたが、それが「画面を閉じた後、
+    次に音を鳴らした時にブッと鳴る」原因でした(竹弘の観察、2026-08-30)。
+    閉じるとスマホのオーディオ出力ごと止まり、イヤホンがアンプを切って
+    しまうため、次の音で復帰する時に鳴ってしまいます。
 
-    先に tapState.audioCtx を空にしておくのは、待っている間に
-    別の処理が閉じかけの音の作業台を触らないようにするためです。
+    詳しい理由は getTapAudioContext() のコメントに書いてあります。
+    作業台は1つしか作らないので、開いたままでも増えていきません。
+
+    ⚠️ 重い波形データ(約80MB)の方は、ここで必ず手放します。
+       こちらを持ち続けるとメモリを食い潰します。
     */
-    if(tapState.audioCtx){
-
-        const closingCtx = tapState.audioCtx;
-
-        tapState.audioCtx = null;
-
-        setTimeout(function(){
-
-            try{ closingCtx.close(); }
-            catch(error){ /* すでに閉じている場合は何もしなくてよい */ }
-
-        },(TAP_FADE_SEC * 1000) + 20);
-
-    }
 
     tapState.songBuffer = null;
     tapState.songGain = null;
