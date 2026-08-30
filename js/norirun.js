@@ -59,6 +59,16 @@ let isNoriRunMode = false;
 
 const noriRunAppEl = document.getElementById("app");
 const noriRunTitleEl = document.querySelector(".ua-title-row h1");
+
+/*
+タイトルの下に小さく出ている副題です(v160で追加)。
+
+竹弘のキャプチャで、見出しを「🕺ノリノリRun再生」に変えたのに、
+その下に「メインメニュー」が残ったままなのが見つかりました。
+見出しだけ切り替えても、ここが残っていると食い違って見えます。
+*/
+const noriRunSubTitleEl = document.querySelector(".sub-title");
+
 const noriRunToggleBtn = document.getElementById("norirun-play-btn");
 
 
@@ -85,6 +95,15 @@ function enterNoriRunMode(){
     noriRunTitleEl.textContent = "🕺ノリノリRun再生";
 
     /*
+    副題は「マイピッチで走る」に変えます。
+
+    空にしてしまうと1行ぶん高さが減り、上半分の10等分レイアウトの
+    中で見出しの位置がずれます。同じ高さのまま、このモードが何を
+    するところかを一言で示す文言を置きました。
+    */
+    noriRunSubTitleEl.textContent = "マイピッチで繋いで走る";
+
+    /*
     入ってきたボタン自身が、戻るボタンに変わります。
 
     上半分は10等分の窮屈な作りで、ボタンを1つ足すと他の段が
@@ -108,6 +127,7 @@ function exitNoriRunMode(){
     noriRunAppEl.classList.remove("norirun-mode");
 
     noriRunTitleEl.textContent = "ノリRun";
+    noriRunSubTitleEl.textContent = "メインメニュー";
 
     noriRunToggleBtn.textContent = "🕺ノリノリRun再生";
 
