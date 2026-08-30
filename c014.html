@@ -469,7 +469,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v157)ノリRun
+        (v158)ノリRun
         メインメニュー
 
     </title>
@@ -481,12 +481,61 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         ====================================================== */
 
         :root{
-            --main-blue:#007aff;
+            /*
+            ---- 画面のテーマ色(v158で追加) ----
+
+            【なぜ変数を1枚かぶせたのか】
+            竹弘の指示(2026-08-30):
+
+                通常の「メインメニュー」は青色を基調としたデザインとする。
+                これは曲順の並び替え時のOFSの設定色とイメージは一致する。
+                …それに対して「🕺ノリノリRun再生メニュー」は燃える
+                ランナーをイメージして、…夕焼け、暁色を基調とする。
+                メインメニューで青を基調した所を暁色に変更する。
+
+            青は既に --main-blue という名前で**20か所以上**から
+            使われています。そこで名前はそのまま残し、**中身だけ**を
+            この --theme-color から取るようにしました。こうすると
+            モードを切り替えた時に、青だった所がまとめて暁色に変わります。
+            既存の var(--main-blue) は1文字も書き換えていません。
+
+            CSSの変数は「使う場所で解いて」もらえるので、下の
+            #app.norirun-mode で --theme-color を上書きするだけで、
+            その中身すべてが追従します。
+            */
+            --theme-color:#007aff;
+
+            /*
+            影に使う色です。黒い影より柔らかく、テーマ色が
+            画面全体にほんのり滲む感じになります(竹弘の
+            「影も同じように青みがかった感じ」)。
+            */
+            --theme-shadow:rgba(0,122,255,0.16);
+
+            --main-blue:var(--theme-color);
             --bg-color:#f2f2f7;
             --card-bg:#ffffff;
             --text-main:#1c1c1e;
             --text-sub:#8e8e93;
             --border-color:#d1d1d6;
+        }
+
+        /*
+        ---- 🕺ノリノリRun再生モードの色(v158) ----
+
+        竹弘のイメージは「燃えるランナー。ドキツイ赤ではなく、
+        少し抑えた、キレイな夕焼け、暁色」。
+
+        真っ赤(#ff0000)だと警告色に見えてしまい、走る高揚感より
+        「危険」の印象が勝ちます。そこで赤より少しオレンジへ寄せ、
+        明度を落とした夕焼けの色にしました。
+
+        ⚠️ この1か所を書き換えるだけで、青だった所すべてが暁色に
+           変わります。個々のボタンの色を指定して回らないこと。
+        */
+        #app.norirun-mode{
+            --theme-color:#e8734a;
+            --theme-shadow:rgba(232,115,74,0.20);
         }
 
         html,
@@ -577,11 +626,23 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             gap:8px;
         }
 
+        /*
+        画面の上半分と下半分を包む、いちばん外側の角丸カードです。
+
+        【v158で枠線と影の色を変えました(竹弘の指示)】
+            通常の「メインメニュー」の一番外の角丸の枠線についても
+            同様の青色に変更して影も同じように青みがかった感じにして欲しい
+
+        枠線と影をテーマ色にしたことで、メインメニュー(青)と
+        🕺ノリノリRun再生(暁色)が、画面を一目見ただけで区別できます。
+        走行中に「今どちらのモードか」を確かめる手段になります。
+        */
         .card{
             background:var(--card-bg);
+            border:1px solid var(--theme-color);
             border-radius:18px;
             padding:20px;
-            box-shadow:0 6px 16px rgba(0,0,0,0.08);
+            box-shadow:0 6px 16px var(--theme-shadow);
         }
 
         /* ======================================================
@@ -4792,6 +4853,7 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
 <script src="js/drag-sort.js"></script>
 <script src="js/jump.js"></script>
 <script src="js/search.js"></script>
+<script src="js/norirun.js"></script>
 <script src="js/lamp.js"></script>
 <script src="js/metadata.js"></script>
 <script src="js/main.js"></script>
