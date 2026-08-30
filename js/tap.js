@@ -264,6 +264,16 @@ const tapToast = document.getElementById("tap-toast");
 // 確定ボタン。文言が地点によって変わるので、ここで掴んでおきます
 const tapConfirmBtn = document.getElementById("tap-confirm");
 
+/*
+「タップからやり直す」ボタン(v152で画面いちばん下の行へ移動)。
+
+微調整画面でも縦が1行足りずスクロールが出たため、「やめる」と
+横に並べました(竹弘の指示、2026-08-30)。微調整パネルと必ず
+一緒に出し入れするので、切り替えは setTapAdjustUI() 経由だけで
+行ってください。
+*/
+const tapRetryAdjust = document.getElementById("tap-retry-adjust");
+
 
 // ==========================================================
 // 4. 入口 ── 曲一覧の 🛌 から呼ばれます
@@ -458,6 +468,23 @@ function setTapLockUI(shown){
 }
 
 /**
+ * 微調整画面の見た目を、まとめて出し入れします(v152)。
+ *
+ * setTapLockUI() と同じ考え方で、必ず一緒に動く2つをここに集めています。
+ *
+ *   #tap-adjust       … BPMと遅延の調整パネル本体
+ *   #tap-retry-adjust … タップからやり直すボタン(画面いちばん下の行)
+ *
+ * @param {boolean} shown - true で微調整画面にします
+ */
+function setTapAdjustUI(shown){
+
+    tapAdjustPanel.style.display = shown ? "block" : "none";
+    tapRetryAdjust.style.display = shown ? "block" : "none";
+
+}
+
+/**
  * タップをやり直せる状態に戻し、測る場所から曲を鳴らし直します。
  */
 function resetTapPhase(){
@@ -466,7 +493,7 @@ function resetTapPhase(){
     tapState.locked = false;
 
     setTapLockUI(false);
-    tapAdjustPanel.style.display = "none";
+    setTapAdjustUI(false);
     tapZone.style.display = "flex";
     tapPosRow.style.display = "flex";
 
@@ -1124,7 +1151,7 @@ function showTapAdjustPanel(guideText,fromSec){
     tapZone.style.display = "none";
     tapPosRow.style.display = "none";
     setTapLockUI(false);
-    tapAdjustPanel.style.display = "block";
+    setTapAdjustUI(true);
 
     setTapGuide(guideText);
 
@@ -1354,7 +1381,7 @@ function showTapScreen(){
     分かりにくい残像を防ぐための後始末です。
     */
     setTapLockUI(false);
-    tapAdjustPanel.style.display = "none";
+    setTapAdjustUI(false);
     tapZone.style.display = "flex";
     tapPosRow.style.display = "flex";
     tapCountLabel.textContent = "READY";
@@ -1573,7 +1600,7 @@ document.getElementById("tap-pos-fwd").onclick = function(){
 
 document.getElementById("tap-to-adjust").onclick = goToTapAdjust;
 tapRetryLock.onclick = resetTapPhase;
-document.getElementById("tap-retry-adjust").onclick = resetTapPhase;
+tapRetryAdjust.onclick = resetTapPhase;
 tapConfirmBtn.onclick = confirmTapPhase;
 document.getElementById("tap-close").onclick = closeTapCorrection;
 
