@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v164)ノリRun
+        (v165)ノリRun
         メインメニュー
 
     </title>
@@ -1512,6 +1512,29 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         .ua-pill-value{
             font-weight:bold;
             font-variant-numeric:tabular-nums;
+        }
+
+        /*
+        🕺ノリノリRun再生の「マイピッチ」ボタン(v165)。
+
+        竹弘の指示:
+            「『元ピッチ:___』は、『マイピッチ』に変更して、大きめに表示」
+
+        走っている最中に「今どのテンポで走っているか」を確かめる、
+        このモードの主役の数字なので、少し大きくしてテーマ色の枠で
+        囲み、他のボタンより目に留まるようにしています。
+
+        ⚠️ 文字を大きくしすぎるとエリアからはみ出します。エリアの高さは
+           画面の高さの1/10しかなく、小さい端末では枠線が
+           .ua-slot の overflow:hidden に切り取られます(v93の教訓)。
+           元の .ua-pill-btn が持つ max-height:100% が歯止めですが、
+           上げ幅は控えめに留めてあります。
+        */
+        .ua-pill-btn-strong{
+            font-size:1.0rem;
+            font-weight:bold;
+            color:var(--main-blue);
+            border-color:var(--main-blue);
         }
 
         /* ======================================================
@@ -4090,7 +4113,12 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             </div>
 
             <div class="ua-pitch-base">
-                <button type="button" id="reset-pitch-btn" class="ua-pill-btn">元ピッチ：<span class="ua-pill-value" id="base-pitch-value">---</span></button>
+                <!--
+                    v165から、見出しを span で包んでいます。
+                    🕺ノリノリRun再生では「元ピッチ：」→「マイピッチ：」に
+                    書き換えるため、JavaScriptから掴める必要があるためです。
+                -->
+                <button type="button" id="reset-pitch-btn" class="ua-pill-btn"><span id="base-pitch-label">元ピッチ：</span><span class="ua-pill-value" id="base-pitch-value">---</span></button>
             </div>
 
         </div>
