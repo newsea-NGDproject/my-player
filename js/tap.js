@@ -164,6 +164,14 @@ const TAP_CLICK_SEC = 0.05;
 // 曲を鳴らす音量(メトロノームが埋もれないよう控えめに)
 const TAP_SONG_GAIN = 0.5;
 
+/*
+まだ何も測っていない時の、内部で持っておくBPMです(v155)。
+
+画面には出しません(測る前は「---.--」と出します)。ここに何か入れて
+おかないと、1拍の長さの計算で0割りが起きるための置き場です。
+*/
+const TAP_DEFAULT_BPM = 120;
+
 
 // ==========================================================
 // 2. 今の状態
@@ -199,7 +207,18 @@ const tapState = {
 
     phase: TAP_PHASE_A, // 今どちらの地点を測っているか(v150)
 
-    bpm: 120,           // 割り出したBPM
+    /*
+    もうこの曲を測ったか(v155)。
+
+    false の間、画面の数字は「---.--」のままにします。
+    **これが無いと、前の曲で測った値が次の曲を開いた時に出たままになり、
+    その曲を測った結果のように見えてしまいます**(竹弘の指摘、2026-08-30)。
+    値そのものも開くたびに初期化しますが、「まだ測っていない」ことを
+    表す旗が別にある方が、表示の判断が確実です。
+    */
+    measured: false,
+
+    bpm: TAP_DEFAULT_BPM, // 割り出したBPM
     beatOriginSec: 0,   // 拍番号0の位置(秒)。ここから拍が等間隔に並ぶ
 
     /*
@@ -343,8 +362,25 @@ async function openTapCorrection(trackId){
     B地点から始まってしまいます。
     */
     tapState.phase = TAP_PHASE_A;
-    tapState.endTS = 0;
     tapState.resumedFromSaved = false;
+
+    /*
+    測定値をまっさらに戻します(v155)。
+
+    ここを消しておかないと、前の曲で測った値が残ったまま次の曲の画面に
+    出てしまい、その曲を測った結果のように見えます(竹弘の指摘、
+    2026-08-30)。機能には影響しませんが、誤解を招く表示は事故のもとです。
+
+    ⚠️ 遅延(latencyMs)はここで消しません。イヤホンの性質であって曲の
+       性質ではなく、次に測る曲へ引き継ぐのが仕様だからです
+       (このすぐ下で保存済みの値を読み込んでいます)。
+    */
+    tapState.measured = false;
+    tapState.bpm = TAP_DEFAULT_BPM;
+    tapState.beatOriginSec = 0;
+    tapState.targetBeat = 1;
+    tapState.startTS = 0;
+    tapState.endTS = 0;
 
     // 位置は毎回この初期値から始めます(前回位置は保存していません)
     tapState.posSec = TAP_POS_A_DEFAULT_SEC;
@@ -580,6 +616,12 @@ function resetTapPhase(){
     */
     tapState.resumedFromSaved = false;
 
+    /*
+    これから叩き直すので、数字も「---.--」に戻します(v155)。
+    前の測定結果が出たままだと、今から測る値と混ざって見えます。
+    */
+    tapState.measured = false;
+
     setTapLockUI(false);
     setTapAdjustUI(false);
     tapZone.style.display = "flex";
@@ -679,6 +721,9 @@ function resumeTapFromSaved(){
     const track = tapState.track;
 
     tapState.resumedFromSaved = true;
+
+    // 前に測った値があるので、最初から数字を出します(v155)
+    tapState.measured = true;
 
     tapState.bpm = track.manualBPM;
     tapState.startTS = track.startTS;
@@ -1313,6 +1358,9 @@ function goToTapAdjust(){
     tapState.bpm = 60 / grid.beatDur;
     tapState.beatOriginSec = grid.origin;
 
+    // 測れたので、ここから画面に数字を出します(v155)
+    tapState.measured = true;
+
     /*
     測った直線の、どの拍を狙うかを決めます(v150-v151)。
 
@@ -1487,16 +1535,44 @@ function updateTapConfirmLabel(){
 
 function updateTapMonitor(){
 
-    tapBpmDisplay.textContent = tapState.bpm.toFixed(2);
+    /*
+    まだ測っていない間は、数字を出しません(v155)。
+
+    ここで前の曲の値を出してしまうと、その曲を測った結果のように
+    見えてしまいます(竹弘の指摘、2026-08-30)。HTMLの初期表示と
+    同じ「---.--」に戻すことで、「まだ測っていない」と一目で分かります。
+
+    自動解析の値(baseBPM)を代わりに出す案もありましたが、未解析の曲には
+    登録時の120が入っているだけで実際のテンポではないため、
+    かえって別の誤解を生むと判断しました(のりの提案、竹弘が採用)。
+    */
+    const label = (tapState.phase === TAP_PHASE_A) ? "1拍目 " : "13拍目 ";
+
+    if(!tapState.measured){
+
+        tapBpmDisplay.textContent = "---.--";
+        tapTsDisplay.textContent = label + "--.---s";
+
+    }
+    else{
+
+        tapBpmDisplay.textContent = tapState.bpm.toFixed(2);
+
+        /*
+        出す数字は、今どちらを測っているかで変わります(v150)。
+        A地点は1拍目、B地点は13拍目(曲の接続点)です。
+        */
+        tapTsDisplay.textContent = (tapState.phase === TAP_PHASE_A)
+            ? label + tapState.startTS.toFixed(3) + "s"
+            : label + tapState.endTS.toFixed(3) + "s";
+
+    }
 
     /*
-    出す数字は、今どちらを測っているかで変わります(v150)。
-    A地点は1拍目、B地点は13拍目(曲の接続点)です。
+    遅延だけは、測る前から数字を出します。
+    イヤホンの性質であって曲の性質ではなく、前に合わせた値がそのまま
+    使えるためです(次に測る曲の初期値として引き継いでいます)。
     */
-    tapTsDisplay.textContent = (tapState.phase === TAP_PHASE_A)
-        ? "1拍目 " + tapState.startTS.toFixed(3) + "s"
-        : "13拍目 " + tapState.endTS.toFixed(3) + "s";
-
     tapLatDisplay.textContent = "Bluetoothの遅延 " + tapState.latencyMs + "ms";
 
 }
@@ -1600,6 +1676,16 @@ function showTapScreen(){
     tapZone.style.display = "flex";
     tapPosRow.style.display = "flex";
     tapCountLabel.textContent = "READY";
+
+    /*
+    数字も「---.--」に戻してから画面を出します(v155)。
+
+    ⚠️ ここを忘れると、**曲を読み込んでいる数秒のあいだ**だけ前の曲の
+       値が残って見えます。この関数は重い読み込みを始める前に呼ばれ、
+       数字を書き換えるのは読み込みが終わってからだからです。
+       画面の部品は使い回しなので、消さない限り前回の表示が残ります。
+    */
+    updateTapMonitor();
 
     tapScreen.style.display = "block";
     document.getElementById("app").style.display = "none";
