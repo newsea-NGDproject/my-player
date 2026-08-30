@@ -124,6 +124,15 @@ const TAP_POS_B_BEFORE_END_SEC = 25;
 const TAP_POS_STEP_SEC = 5;
 
 /*
+測り直しの時、その拍の何秒前から鳴らし始めるか(v153)。
+
+前に測った位置をもう一度聴いてもらうための助走です。いきなりその拍から
+鳴らすと、耳が構える前にカチッが来てしまい、合っているかを判断できません。
+3秒あれば、BPM170なら8拍ぶん聴けます。
+*/
+const TAP_REPLAY_LEAD_SEC = 3;
+
+/*
 測り始める位置の上限を決めるための余白(秒)です。
 
 12回タップするには時間が要ります。曲の終わり際から始めてしまうと
@@ -214,6 +223,17 @@ const tapState = {
     startTS: 0,         // A地点で測る1拍目の位置(秒)
     endTS: 0,           // B地点で測る13拍目の位置(秒)= 曲の接続点
     latencyMs: 0,       // Bluetoothの遅延調整値
+
+    /*
+    前に測った値を読み戻して開いたか(v153)。
+
+    🕺の曲(測定済み)を開くと、タップを飛ばして微調整画面から始まります。
+    この旗が立っている間は、B地点も**保存されている13拍目**をそのまま
+    確認してもらいます(A地点から計算し直すと、前回の値の確認になりません)。
+
+    どこかで叩き直したら、その時点で前の値は用済みなので旗を下ろします。
+    */
+    resumedFromSaved: false,
 
     wasPlaying: false   // 開く前に曲が鳴っていたか(閉じる時に戻すため)
 
@@ -324,6 +344,7 @@ async function openTapCorrection(trackId){
     */
     tapState.phase = TAP_PHASE_A;
     tapState.endTS = 0;
+    tapState.resumedFromSaved = false;
 
     // 位置は毎回この初期値から始めます(前回位置は保存していません)
     tapState.posSec = TAP_POS_A_DEFAULT_SEC;
@@ -361,7 +382,65 @@ async function openTapCorrection(trackId){
 
     }
 
+    /*
+    前に測ってある曲(🕺)は、タップを飛ばして微調整画面から始めます(v153)。
+
+    測り直しは何度でもできる約束なので、開けること自体は前から同じですが、
+    毎回12回×2地点を叩き直すのは負担が大きすぎました。値があるなら
+    まず聴いて確かめてもらい、ズレていた時だけ叩き直します。
+    */
+    const hasSaved = hasSavedTapResult(track);
+
+    /*
+    どちらの道を通ったかを必ず記録します(v154で追加)。
+
+    【なぜログが要るのか】
+    「🕺なのにタップから始まった」時、原因が2つあって画面からは
+    区別がつかないためです(竹弘の実機報告、2026-08-30)。
+
+      1. 測定データが本当に無い(v150より前に印だけ付けた曲)
+      2. js/tap.js が古いまま動いている(アップロード漏れ)
+
+    値をそのまま出しておけば、1なら undefined や 0 が並び、
+    2ならこの行自体が出ません。それだけで切り分けられます。
+    */
+    console.log(
+        "タップ補正を開きます :",
+        track.file_name,
+        "/ 測定済み :",(hasSaved ? "はい(微調整から)" : "いいえ(タップから)"),
+        "/ manualBPM :",track.manualBPM,
+        "/ startTS :",track.startTS,
+        "/ endTS :",track.endTS
+    );
+
+    if(hasSaved){
+
+        resumeTapFromSaved();
+
+        return;
+
+    }
+
     resetTapPhase();
+
+    /*
+    🕺なのに測定データが無い曲への案内です(v154で追加)。
+
+    タップ補正ができる前(v78-v79の頃)は、ボタンを押すと印を付けるだけの
+    仮の作りでした。その時代に🕺にした曲は補正データを持っていないので、
+    ここへ来ます。**壊れているのではなく、測り直せば🕺のまま値が入ります。**
+    黙ってタップ画面が出ると「動いていない」ように見えるため、
+    理由をはっきり書いておきます。
+    */
+    if(track.is_analyzed){
+
+        setTapGuide(
+            "この曲は🕺になっていますが、測定データが残っていません" +
+            "(タップ補正ができる前に印だけ付けた曲です)。" +
+            "いまから " + TAP_TOTAL_COUNT + " 回タップして測り直してください。"
+        );
+
+    }
 
 }
 
@@ -492,6 +571,15 @@ function resetTapPhase(){
     tapState.taps = [];
     tapState.locked = false;
 
+    /*
+    ここへ来たということは、これから叩き直すということです(v153)。
+
+    前に測った値はもう使わないので、読み戻しの旗を下ろします。
+    立てたままだと、A地点を叩き直したのにB地点では前回の13拍目が
+    出てきて、新しく測ったBPMと噛み合わなくなります。
+    */
+    tapState.resumedFromSaved = false;
+
     setTapLockUI(false);
     setTapAdjustUI(false);
     tapZone.style.display = "flex";
@@ -527,6 +615,101 @@ function resetTapPhase(){
 }
 
 /**
+ * その曲に、前に測った値が揃っているかを調べます(v153)。
+ *
+ * 3つとも揃っている時だけ「測定済み」と見なします。どれか1つでも
+ * 欠けていると拍の格子を作り直せないので、その時は普通にタップから
+ * 始めてもらいます。
+ *
+ * typeof で数値かどうかまで見ているのは、undefined や null が
+ * 紛れ込んだ時に isFinite() だけでは弾けないためです
+ * (isFinite(null) は null を0と見なすので true になってしまいます)。
+ */
+function hasSavedTapResult(track){
+
+    return typeof track.manualBPM === "number" && isFinite(track.manualBPM) && track.manualBPM > 0
+        && typeof track.startTS === "number" && isFinite(track.startTS) && track.startTS > 0
+        && typeof track.endTS === "number" && isFinite(track.endTS) && track.endTS > 0;
+
+}
+
+/**
+ * 「この秒の位置に拍がある」という状態に、拍の格子を組み直します(v153)。
+ *
+ * 【なぜ組み直しが要るのか】
+ * 保存してあるのは秒(startTS / endTS)だけで、拍の格子そのものは
+ * 残していません。一方このファイルは、拍を
+ * 「beatOriginSec + 1拍の長さ × targetBeat」で扱う作りです
+ * (v151。BPMを動かしても同じ拍を指し続けるため)。
+ * そこで、狙う拍を1拍目と決めて、その1拍前を原点に置き直します。
+ *
+ *     beatOriginSec = ts − 1拍   ならば
+ *     beatOriginSec + 1拍 × 1 = ts   となって元の秒に戻る
+ *
+ * メトロノームは原点から等間隔に鳴るので、原点がどこにあっても
+ * 曲全体で正しい位置にカチッが並びます。
+ *
+ * @param {number} ts - そこに拍を置きたい秒
+ */
+function restoreTapGridAt(ts){
+
+    const beatDur = 60 / tapState.bpm;
+
+    if(!isFinite(beatDur) || beatDur <= 0){ return; }
+
+    tapState.targetBeat = 1;
+    tapState.beatOriginSec = ts - beatDur;
+
+}
+
+/**
+ * 前に測った値を読み戻して、A地点の微調整画面から始めます(v153)。
+ *
+ * 【竹弘の指示(2026-08-29)】
+ *     「曲(注入済み)を押した時は、前回タップの詳細調整画面としたい。
+ *       前回の設定状況を確認して、やめるか修正するか判断するように
+ *       ブラッシュアップしたい」
+ *
+ * 12回叩き直す必要はありません。前の値でメトロノームを鳴らし、
+ * 曲と合っているかを耳で確かめてもらうだけです。ズレていた時だけ
+ * 「タップからやり直す」で測り直します(B地点の引き継ぎと同じ考え方)。
+ */
+function resumeTapFromSaved(){
+
+    const track = tapState.track;
+
+    tapState.resumedFromSaved = true;
+
+    tapState.bpm = track.manualBPM;
+    tapState.startTS = track.startTS;
+
+    // B地点へ進んだ時に、保存されている13拍目をそのまま確認できるように控えます
+    tapState.endTS = track.endTS;
+
+    // A地点の1拍目に拍を置き直します
+    restoreTapGridAt(track.startTS);
+
+    /*
+    その拍の少し前から鳴らします。
+
+    測り直しになった時のために、位置は前回の測定位置ではなく
+    「保存されている1拍目の手前」に合わせています。前回どこで測ったかは
+    残していないので、値そのものから逆算するのが確実です。
+    */
+    tapState.posSec = Math.max(0,track.startTS - TAP_REPLAY_LEAD_SEC);
+
+    updateTapPhaseLabel();
+
+    showTapAdjustPanel(
+        "前にこの曲で測った値です。メトロノームと曲が合っているか聴いて" +
+        "確かめてください。直すなら「タップからやり直す」、このままで" +
+        "よければ「やめる」で戻れます(値は保存済みです)。",
+        tapState.posSec
+    );
+
+}
+
+/**
  * A地点を終えて、B地点(曲の終わり側)の測定へ移ります。
  *
  * 【なぜ自動でB地点へ進むのか】
@@ -537,6 +720,32 @@ function resetTapPhase(){
 function startTapPhaseB(){
 
     tapState.phase = TAP_PHASE_B;
+
+    /*
+    前に測った値を読み戻して来た時は、保存されている13拍目を
+    そのまま確認してもらいます(v153)。
+
+    ここでA地点から計算し直してしまうと、竹弘が確かめたい
+    「前回の設定状況」ではなく、今作った別の値を見せることになります。
+    */
+    if(tapState.resumedFromSaved){
+
+        restoreTapGridAt(tapState.endTS);
+
+        tapState.posSec = Math.max(0,tapState.endTS - TAP_REPLAY_LEAD_SEC);
+
+        updateTapPhaseLabel();
+
+        showTapAdjustPanel(
+            "前にこの曲で測った接続点(13拍目)です。メトロノームと曲が" +
+            "合っているか聴いて確かめてください。直すなら" +
+            "「タップからやり直す」で測り直せます。",
+            tapState.posSec
+        );
+
+        return;
+
+    }
 
     /*
     測り始める位置を、曲の終わりから数えた場所に移します。
@@ -1182,9 +1391,15 @@ function adjustTapBpm(delta){
     /*
     1拍の長さが変わったので、狙っている拍の位置も計算し直します(v151)。
 
-    これが無いと、メトロノームだけが動いて保存される値は取り残されます。
-    B地点の引き継ぎでは数百拍先を指しているため、BPMを0.1動かしただけで
-    接続点が100ミリ秒近くズレることがありました。
+    これが無いと、メトロノームだけが動いて保存される値が取り残されます。
+
+    ズレる量は「拍番号 × 1拍の長さの変化」なので、**曲の長さとテンポに
+    よって変わります**(竹弘の指摘、2026-08-30)。A地点は1拍先しか
+    見ていないので無視できますが、B地点の引き継ぎは数百拍先を指すため、
+    BPMを0.1動かすだけで接続点が0.1秒ほど動くこともあります。
+
+    向きは「BPMを上げる=曲が速くなる」ので、拍の間隔が詰まって
+    13拍目は手前へ動きます。
     */
     updateTapTargetTS();
 
