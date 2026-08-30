@@ -192,20 +192,28 @@ const tapState = {
 
     bpm: 120,           // 割り出したBPM
     beatOriginSec: 0,   // 拍番号0の位置(秒)。ここから拍が等間隔に並ぶ
+
+    /*
+    今その地点で「狙っている拍」の番号です(v151で追加)。
+
+    【なぜ秒ではなく拍番号で持つのか】
+    微調整でBPMを変えると1拍の長さが変わるので、拍の位置も動きます。
+    秒で覚えていると、耳で合わせたメトロノームの位置と、保存される
+    値がズレていきます。**拍番号で持てば、BPMをいくら動かしても
+    「同じ拍」を指し続けます。**
+
+        A地点          … 1(1拍目)
+        B地点(叩いた)  … 9(13タップ目)
+        B地点(引き継ぎ)… 測り始め位置の拍 + 8
+
+    実際の秒は updateTapTargetTS() が
+    「beatOriginSec + 1拍の長さ × 拍番号」で計算します。
+    */
+    targetBeat: 1,
+
     startTS: 0,         // A地点で測る1拍目の位置(秒)
     endTS: 0,           // B地点で測る13拍目の位置(秒)= 曲の接続点
     latencyMs: 0,       // Bluetoothの遅延調整値
-
-    /*
-    A地点を確定した時の値を控えておきます(v150)。
-
-    B地点でも12回叩き直すので、そこで出たBPMがA地点と少し違うことが
-    あります。同じ曲なら本来は同じ値のはずなので、「A地点で追い込んだ
-    値の方が信用できる」と竹弘が判断した時に引き継げるようにするための
-    控えです(微調整画面の引き継ぎボタン)。
-    */
-    aPointBpm: 0,
-    aPointLatencyMs: 0,
 
     wasPlaying: false   // 開く前に曲が鳴っていたか(閉じる時に戻すため)
 
@@ -252,13 +260,6 @@ v148では上の #tap-lock-actions の中にありましたが、実機で画面
 const tapRetryLock = document.getElementById("tap-retry-lock");
 const tapAdjustPanel = document.getElementById("tap-adjust");
 const tapToast = document.getElementById("tap-toast");
-
-/*
-B地点でだけ出る「A地点の値を引き継ぐ」ボタンと、その中に出す
-数値の表示です(v150)。
-*/
-const tapInheritBtn = document.getElementById("tap-inherit");
-const tapInheritInfo = document.getElementById("tap-inherit-info");
 
 // 確定ボタン。文言が地点によって変わるので、ここで掴んでおきます
 const tapConfirmBtn = document.getElementById("tap-confirm");
@@ -313,8 +314,6 @@ async function openTapCorrection(trackId){
     */
     tapState.phase = TAP_PHASE_A;
     tapState.endTS = 0;
-    tapState.aPointBpm = 0;
-    tapState.aPointLatencyMs = 0;
 
     // 位置は毎回この初期値から始めます(前回位置は保存していません)
     tapState.posSec = TAP_POS_A_DEFAULT_SEC;
@@ -513,13 +512,6 @@ function startTapPhaseB(){
     tapState.phase = TAP_PHASE_B;
 
     /*
-    A地点で確定した値を控えます。B地点の微調整画面に出る
-    「A地点の値を引き継ぐ」ボタンで使います。
-    */
-    tapState.aPointBpm = tapState.bpm;
-    tapState.aPointLatencyMs = tapState.latencyMs;
-
-    /*
     測り始める位置を、曲の終わりから数えた場所に移します。
 
     Math.max で0を下回らないようにしているのは、短い曲でも
@@ -533,8 +525,109 @@ function startTapPhaseB(){
 
     updateTapPhaseLabel();
 
-    // タップ待ちに戻すと、B地点用の案内文と位置で鳴り始めます
-    resetTapPhase();
+    /*
+    ---- B地点は「まず聴いてもらう」ところから始めます(v151) ----
+
+    【竹弘の指示(2026-08-30)】
+        「最初に『A地点の値を引き継ぐ』かを確認し、B地点で微調整画面へ。
+          ここでリスニングして、A地点のタップ補正の精度が低ければ
+          B地点のノリ注入をし直すとして、少しでもユーザー負担を軽減
+          するとしたい」
+
+    【なぜ叩かずに済むのか】
+    A地点で「1拍の長さ」と「拍の位置」が分かった時点で、その曲の拍は
+    曲の最後まで等間隔に並んでいると分かります。つまりB地点の拍の
+    位置は**計算で出せる**ので、本来もう一度叩く必要はありません。
+
+    ただしA地点のBPMがほんの少しズレていると、そのズレは曲の終わりまで
+    積み上がって大きくなります。合っているかどうかは耳でしか確かめ
+    られないので、メトロノームを重ねて鳴らし、竹弘に聴いてもらいます。
+    ズレていた時だけ「タップからやり直す」でB地点を叩き直します。
+
+    ※ タップ補正そのものが、BPM自動解析やAI補正の精度が上がるまでの
+      「手で測る」つなぎの仕組みです(竹弘の経緯説明、2026-08-30)。
+      だからこそ、手で叩く回数は少ないほどよいという判断です。
+    */
+    inheritGridToPhaseB();
+
+    showTapAdjustPanel(
+        "A地点で測った値をそのまま当てています。メトロノームと曲の" +
+        "リズムが合っているか聴いて確かめてください。ズレていたら" +
+        "「タップからやり直す」でB地点を測り直せます。",
+        tapState.posSec
+    );
+
+}
+
+/**
+ * A地点で求めた拍の格子をB地点まで伸ばし、13拍目(endTS)を計算します。
+ *
+ * 【やっていること】
+ * A地点で引いた直線は曲の最後まで続いているので、B地点の測り始め位置を
+ * 追い越した最初の拍を「1拍目」と見なし、そこから8拍先を13拍目とします。
+ * B地点で実際に12回叩いた時と、まったく同じ数え方です。
+ *
+ *     測り始め位置 ──▶ ここを追い越した最初の拍 = 1拍目
+ *                                  └─ 8拍先 ─▶ 13拍目(endTS)
+ *
+ * ⚠️ ここで遅延(latency)を足し直してはいけません。A地点で耳を合わせた
+ *    時点で beatOriginSec ごとズラし済みなので、この格子には既に
+ *    焼き込まれています。もう一度足すと二重補正になります。
+ */
+function inheritGridToPhaseB(){
+
+    const beatDur = 60 / tapState.bpm;
+
+    if(!isFinite(beatDur) || beatDur <= 0){ return; }
+
+    /*
+    Math.ceil は切り上げです。「拍番号0から何拍進めば測り始め位置を
+    追い越すか」を切り上げで求めると、その拍が最初の1拍になります。
+    */
+    const beatsFromOrigin = Math.ceil(
+        (tapState.posSec - tapState.beatOriginSec) / beatDur
+    );
+
+    /*
+    測り始め位置を追い越した最初の拍が「1拍目」で、その8拍先が
+    13タップ目です(拍番号9 − 拍番号1 = 8拍)。
+    */
+    tapState.targetBeat = beatsFromOrigin + (TAP_END_BEAT_NUMBER - 1);
+
+    updateTapTargetTS();
+
+}
+
+/**
+ * 狙っている拍の「秒」を計算し直します(v151)。
+ *
+ * この一手間があるおかげで、微調整でBPMや遅延をいくら動かしても、
+ * 耳で合わせたメトロノームの位置と、保存される値が必ず一致します。
+ *
+ *     秒 = 拍番号0の位置 + 1拍の長さ × 拍番号
+ *
+ * ⚠️ 逆に言うと、**startTS / endTS を直接書き換えてはいけません。**
+ *    beatOriginSec・bpm・targetBeat の3つだけが本物の値で、
+ *    startTS / endTS はそこから作られる「結果」です。
+ */
+function updateTapTargetTS(){
+
+    const beatDur = 60 / tapState.bpm;
+
+    if(!isFinite(beatDur) || beatDur <= 0){ return; }
+
+    const ts = tapState.beatOriginSec + beatDur * tapState.targetBeat;
+
+    if(tapState.phase === TAP_PHASE_A){
+
+        tapState.startTS = ts;
+
+    }
+    else{
+
+        tapState.endTS = ts;
+
+    }
 
 }
 
@@ -985,7 +1078,7 @@ function goToTapAdjust(){
     tapState.beatOriginSec = grid.origin;
 
     /*
-    測った直線から、その地点で必要な1点を取り出します(v150)。
+    測った直線の、どの拍を狙うかを決めます(v150-v151)。
 
       A地点 … 1拍目(拍番号1)     → startTS
       B地点 … 13タップ目(拍番号9)→ endTS。曲の接続点
@@ -993,16 +1086,11 @@ function goToTapAdjust(){
     どちらも「同じ1本の線を、どこまで伸ばすか」の違いでしかありません。
     叩いていない13タップ目の位置が分かるのは、線を引いてあるからです。
     */
-    if(tapState.phase === TAP_PHASE_A){
+    tapState.targetBeat = (tapState.phase === TAP_PHASE_A)
+        ? 1
+        : TAP_END_BEAT_NUMBER;
 
-        tapState.startTS = grid.origin + grid.beatDur;
-
-    }
-    else{
-
-        tapState.endTS = grid.origin + grid.beatDur * TAP_END_BEAT_NUMBER;
-
-    }
+    updateTapTargetTS();
 
     /*
     前回この端末で合わせた遅延を、そのまま当てておきます。
@@ -1013,23 +1101,40 @@ function goToTapAdjust(){
     */
     applyTapLatencyShift(tapState.latencyMs);
 
+    showTapAdjustPanel(
+        "メトロノームと曲のリズムがぴったり重なるまで、下のボタンで調整してください。",
+        tapState.playOffset
+    );
+
+}
+
+/**
+ * 微調整画面に切り替えて、メトロノームを重ねて鳴らします。
+ *
+ * ここへ来る道は2つあり、共通の後始末をこの関数にまとめています(v151)。
+ *
+ *   1. 12回タップし終えた時(goToTapAdjust)
+ *   2. B地点でA地点の値を引き継いだ時(startTapPhaseB)
+ *
+ * @param {string} guideText - 画面に出す案内文(道によって変わります)
+ * @param {number} fromSec   - 曲の何秒目から鳴らし直すか
+ */
+function showTapAdjustPanel(guideText,fromSec){
+
     tapZone.style.display = "none";
     tapPosRow.style.display = "none";
     setTapLockUI(false);
     tapAdjustPanel.style.display = "block";
 
-    setTapGuide(
-        "メトロノームと曲のリズムがぴったり重なるまで、下のボタンで調整してください。"
-    );
+    setTapGuide(guideText);
 
-    // 引き継ぎボタンと確定ボタンの文言は、地点によって変わります(v150)
-    updateTapInheritButton();
+    // 確定ボタンの文言は、今どちらの地点かで変わります
     updateTapConfirmLabel();
 
     updateTapMonitor();
 
     // ここからはメトロノームを重ねて鳴らします
-    playTapSongFrom(tapState.playOffset,true);
+    playTapSongFrom(fromSec,true);
 
 }
 
@@ -1046,6 +1151,15 @@ function adjustTapBpm(delta){
 
     if(tapState.bpm < 20){ tapState.bpm = 20; }
     if(tapState.bpm > 400){ tapState.bpm = 400; }
+
+    /*
+    1拍の長さが変わったので、狙っている拍の位置も計算し直します(v151)。
+
+    これが無いと、メトロノームだけが動いて保存される値は取り残されます。
+    B地点の引き継ぎでは数百拍先を指しているため、BPMを0.1動かしただけで
+    接続点が100ミリ秒近くズレることがありました。
+    */
+    updateTapTargetTS();
 
     updateTapMonitor();
 
@@ -1100,77 +1214,13 @@ function applyTapLatencyShift(deltaMs){
     const deltaSec = deltaMs / 1000;
 
     /*
-    メトロノームの基準(拍番号0)は、どちらの地点でも動かします。
-    ここを動かさないと、耳で合わせているカチッの位置が変わりません。
+    動かすのは拍の基準(拍番号0の位置)だけです。
+    ここを動かせば、メトロノームも狙っている拍も、まとめてズレます。
     */
     tapState.beatOriginSec = tapState.beatOriginSec + deltaSec;
 
-    // 焼き込む先は、今どちらを測っているかで変わります(v150)
-    if(tapState.phase === TAP_PHASE_A){
-
-        tapState.startTS = tapState.startTS + deltaSec;
-
-    }
-    else{
-
-        tapState.endTS = tapState.endTS + deltaSec;
-
-    }
-
-}
-
-/**
- * 「A地点の値を引き継ぐ」が押された時の処理です(B地点でのみ出ます)。
- *
- * 【何のためのボタンか】
- * B地点でも12回叩き直すので、そこで出たBPMがA地点と少し違うことが
- * あります。同じ曲なら本来は同じテンポのはずなので、A地点で
- * 耳で追い込んだ値の方が信用できる、と竹弘が判断した時に使います。
- * (移植元V1.9.3の「引き継ぎボタン」を踏襲)
- */
-function applyTapInherit(){
-
-    // BPMをA地点の値に戻します
-    tapState.bpm = tapState.aPointBpm;
-
-    /*
-    遅延は「差分だけ」動かします。
-
-    ⚠️ 移植元は引き継ぎのたびにA地点の遅延をそのまま足し込んでおり、
-       B地点で既に遅延を触っていた場合に二重に足されてしまいました。
-       今の値との差だけを動かせば、何度押しても結果は同じになります。
-    */
-    const deltaMs = tapState.aPointLatencyMs - tapState.latencyMs;
-
-    tapState.latencyMs = tapState.aPointLatencyMs;
-
-    applyTapLatencyShift(deltaMs);
-
-    updateTapMonitor();
-
-    // 変えたテンポでメトロノームを鳴らし直します
-    playTapSongFrom(tapState.playOffset,true);
-
-}
-
-/**
- * 引き継ぎボタンの出し入れと、中に出す数値を更新します。
- */
-function updateTapInheritButton(){
-
-    if(tapState.phase !== TAP_PHASE_B){
-
-        tapInheritBtn.style.display = "none";
-
-        return;
-
-    }
-
-    tapInheritBtn.style.display = "block";
-
-    tapInheritInfo.textContent =
-        "BPM " + tapState.aPointBpm.toFixed(2) +
-        " / 遅延 " + tapState.aPointLatencyMs + "ms";
+    // 基準が動いたので、狙っている拍の秒も計算し直します(v151)
+    updateTapTargetTS();
 
 }
 
@@ -1524,7 +1574,6 @@ document.getElementById("tap-pos-fwd").onclick = function(){
 document.getElementById("tap-to-adjust").onclick = goToTapAdjust;
 tapRetryLock.onclick = resetTapPhase;
 document.getElementById("tap-retry-adjust").onclick = resetTapPhase;
-tapInheritBtn.onclick = applyTapInherit;
 tapConfirmBtn.onclick = confirmTapPhase;
 document.getElementById("tap-close").onclick = closeTapCorrection;
 
