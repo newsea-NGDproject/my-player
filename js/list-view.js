@@ -53,6 +53,27 @@ function renderList(){
 
     currentOrderList.forEach(function(trackId){
 
+        /*
+        🕺ノリノリRun再生モードでは、ノリ注入済みの曲だけを並べます
+        (v163、竹弘の指示)。
+
+            「曲一覧には、ノリ注入曲のみが表示され、曲接続演奏となる」
+
+        繋ぐのに必要なBPMと拍の位置を持っている曲だけが対象なので、
+        持っていない曲は、そもそも選べないようにしておきます。
+
+        ⚠️ ここで飛ばすのは**表示だけ**です。並び順そのもの
+           (currentOrderList)には手を触れていないので、メインメニューへ
+           戻れば竹弘が並べた順のまま全曲が戻ります。
+        */
+        if(isNoriRunMode){
+
+            const track = libraryMap[trackId];
+
+            if(!track || !hasSavedTapResult(track)){ return; }
+
+        }
+
         const row = createRowElement(trackId);
         if(row){ menuListEl.appendChild(row); }
 

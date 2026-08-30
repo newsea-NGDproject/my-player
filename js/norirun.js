@@ -52,6 +52,21 @@
 */
 let isNoriRunMode = false;
 
+/*
+このモードに入るのに必要な、ノリ注入済みの曲数です(v163)。
+
+【なぜ2曲なのか(竹弘の指示、2026-08-30)】
+
+    タップ補正データ(=ノリ注入曲)がない場合、
+    2曲以上のノリ注入曲を作ってねとユーザーに促し、
+    機能は使えないこととする。
+
+このモードの本質は「曲と曲を繋いでテンポを保つ」ことなので、
+繋ぐ相手がいない1曲では成り立ちません。**2曲そろって初めて
+意味を持つ機能**です。
+*/
+const NORIRUN_MIN_TRACKS = 2;
+
 
 // ==========================================================
 // 画面部品
@@ -73,12 +88,74 @@ const noriRunToggleBtn = document.getElementById("norirun-play-btn");
 
 
 // ==========================================================
+// ノリ注入済みの曲を数える
+// ==========================================================
+/**
+ * ノリ注入(タップ補正)が済んでいる曲の数を返します(v163)。
+ *
+ * 【🕺の印だけでは数えない理由】
+ * タップ補正ができる前(v78-v79の頃)は、ボタンを押すと印を付ける
+ * だけの仮の作りでした。その時代に🕺になった曲は、繋ぐのに必要な
+ * BPMや拍の位置を持っていません。**印ではなく中身で数えます。**
+ *
+ * 判定は js/tap.js の hasSavedTapResult() を借りています。
+ * 「補正データが揃っているか」の基準は1か所にまとめておかないと、
+ * 数える場所と使う場所で食い違いが起きるためです。
+ *
+ * @return {number} ノリ注入済みの曲数
+ */
+function countNoriInjectedTracks(){
+
+    let count = 0;
+
+    for(const trackId of currentOrderList){
+
+        const track = libraryMap[trackId];
+
+        if(track && hasSavedTapResult(track)){ count++; }
+
+    }
+
+    return count;
+
+}
+
+
+// ==========================================================
 // モードの出入り
 // ==========================================================
 /**
  * 🕺ノリノリRun再生モードに入ります。
+ *
+ * ノリ注入済みの曲が足りない時は、入らずにお知らせだけ出します。
  */
 function enterNoriRunMode(){
+
+    const injectedCount = countNoriInjectedTracks();
+
+    if(injectedCount < NORIRUN_MIN_TRACKS){
+
+        /*
+        お知らせは js/tap.js の showTapToast() を借ります。
+
+        #tap-toast はタップ補正画面の**外**に置いてあるので、
+        メインメニューの上にも出せます(tap.js のHTMLコメント参照)。
+        */
+        showTapToast(
+            "ノリ注入した曲が" + NORIRUN_MIN_TRACKS + "曲以上必要です" +
+            "(いま" + injectedCount + "曲)。" +
+            "曲一覧の🛌を押してノリを注入してください"
+        );
+
+        console.log(
+            "🕺ノリノリRun再生に入れません :",
+            "ノリ注入済み " + injectedCount + "曲 /",
+            "必要 " + NORIRUN_MIN_TRACKS + "曲"
+        );
+
+        return;
+
+    }
 
     isNoriRunMode = true;
 
@@ -113,7 +190,38 @@ function enterNoriRunMode(){
     */
     noriRunToggleBtn.textContent = "◀ メインメニューへ戻る";
 
-    console.log("🕺ノリノリRun再生モードに入りました");
+    /*
+    曲一覧を作り直して、ノリ注入済みの曲だけにします(v163)。
+
+    絞り込みそのものは js/list-view.js の renderList() が
+    isNoriRunMode を見て行います。ここで並び順(currentOrderList)は
+    一切いじりません。**竹弘が並べた曲順は、モードを行き来しても
+    そのまま保たれます**(ランダム再生で並び順を壊さないのと同じ考え方)。
+    */
+    refreshNoriRunList();
+
+    console.log(
+        "🕺ノリノリRun再生モードに入りました :",
+        "ノリ注入済み " + injectedCount + "曲"
+    );
+
+}
+
+/**
+ * 曲一覧を作り直して、いまのモードに合った並びにします。
+ */
+function refreshNoriRunList(){
+
+    renderList();
+
+    /*
+    先頭へ戻します。
+
+    モードの行き来は「別の画面へ移る」操作なので、前の画面で
+    スクロールしていた位置に居残ると、どこを見ているのか分からなく
+    なります(並び替えの後に先頭へ戻すのと同じ理由。v101)。
+    */
+    menuListEl.scrollTop = 0;
 
 }
 
@@ -130,6 +238,9 @@ function exitNoriRunMode(){
     noriRunSubTitleEl.textContent = "メインメニュー";
 
     noriRunToggleBtn.textContent = "🕺ノリノリRun再生";
+
+    // 曲一覧を全曲に戻します
+    refreshNoriRunList();
 
     console.log("メインメニューへ戻りました");
 

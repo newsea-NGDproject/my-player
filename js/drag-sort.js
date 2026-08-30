@@ -928,9 +928,85 @@ async function saveNewOrderFromDOM(){
         menuListEl.querySelectorAll(".music-row")
     );
 
-    currentOrderList = rows.map(function(row){
+    const visibleIds = rows.map(function(row){
         return row.dataset.trackId;
     });
+
+    /*
+    ---- 画面に一部の曲しか並んでいない時の書き戻し(v164) ----
+
+    ⚠️ **ここを単純な代入に戻すと、369曲の並び順が消えます。**
+
+    メインメニューでは全曲が画面に並んでいるので、見えている順番を
+    そのまま並び順にして構いません。
+
+    ところが🕺ノリノリRun再生モードでは、ノリ注入済みの曲だけしか
+    並んでいません(例えば3曲)。そのまま代入すると
+
+        currentOrderList = [3曲]
+
+    となり、**残りの366曲が並び順から消えたうえ、DBにも保存されて
+    しまいます**。竹弘が並べた曲順が失われる事故です
+    (v163の実機テスト前に竹弘の質問で気づいて食い止めました)。
+
+    そこで、竹弘と決めた「**席はそのまま、中身だけ入れ替わる**」で
+    書き戻します。
+
+        元      [A🛌, B🕺, C🛌, D🕺, E🕺]
+                       ↑席1      ↑席2  ↑席3
+
+        画面で B と D を入れ替えると
+
+        結果    [A🛌, D🕺, C🛌, B🕺, E🕺]
+                       ↑Dが席1へ  ↑Bが席2へ
+
+    🛌の曲(A・C)は1ミリも動きません。🕺の曲同士が、元々あった席の
+    中だけで入れ替わります。メインメニューへ戻った時に見覚えのある
+    並びのままなので、驚きがありません。
+
+    ※ 検索(js/search.js)で絞り込んでいる時は、行を消さずクラスで
+      隠しているだけなので、ここには全369行が来ます。つまり
+      検索中に並び替えても、今までどおり正しく保存されます。
+    */
+    if(isNoriRunMode){
+
+        /*
+        Set は「入っているかどうか」を高速に調べられる入れ物です。
+        配列の includes だと曲数×表示数の回数だけ照合することになり、
+        369曲では無駄が大きくなります。
+        */
+        const visibleSet = new Set(visibleIds);
+
+        const nextOrder = currentOrderList.slice();
+
+        // visibleIds の何番目を次に埋めるか
+        let cursor = 0;
+
+        for(let index = 0; index < currentOrderList.length; index++){
+
+            /*
+            判定は必ず**書き換える前の** currentOrderList を見ます。
+            書き換え中の nextOrder を見ると、さっき入れた曲を
+            もう一度「席だ」と数えてしまう恐れがあります。
+            */
+            if(visibleSet.has(currentOrderList[index])){
+
+                nextOrder[index] = visibleIds[cursor];
+
+                cursor = cursor + 1;
+
+            }
+
+        }
+
+        currentOrderList = nextOrder;
+
+    }
+    else{
+
+        currentOrderList = visibleIds;
+
+    }
 
     /*
     保存は js/undo.js の共通処理に任せます(v85)。
