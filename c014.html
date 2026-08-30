@@ -464,12 +464,16 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
 
     <!-- PWA設定 -->
     <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#007aff">
+    <!--
+        スマホのブラウザ枠(アドレスバーなど)に着く色です。
+        v159で、アプリ本体と同じ「海の青」に揃えました。
+    -->
+    <meta name="theme-color" content="#00a2ff">
 
     <!-- ブラウザタイトル -->
     <title>
 
-        (v158)ノリRun
+        (v159)ノリRun
         メインメニュー
 
     </title>
@@ -503,14 +507,54 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             #app.norirun-mode で --theme-color を上書きするだけで、
             その中身すべてが追従します。
             */
-            --theme-color:#007aff;
+            /*
+            ⚠️ この青は **OFS(曲の並び替え)で使っている #00a2ff** です。
+
+            v158では #007aff(iOS標準の青)にしていましたが、竹弘から
+            「OFSと色が違うように見えます」と指摘があり、v159で揃えました。
+            並び替えの色だけが変数を使わず直値で書かれていたため、
+            2種類の青が混在していたのが原因です。
+
+                竹弘:「自分の名前の漢字に海が付くのでキレイな海を
+                        イメージした色にしてます。OFSと同じ色がいいです」
+
+            #007aff より緑側(シアン寄り)で、浅い海の水のように
+            明るく澄んで見えます。これがこのアプリの青です。
+            */
+            --theme-color:#00a2ff;
+
+            /*
+            同じ色を「薄く敷く」ために、数字だけの形でも持っておきます。
+
+            rgba() は #00a2ff のような書き方を受け取れないので、
+            半透明にしたい場所では rgba(var(--theme-rgb),0.35) のように
+            使います。色を変えるのはここ1か所で済みます。
+            */
+            --theme-rgb:0,162,255;
+
+            /*
+            **行き先のモードの色**です(v159、竹弘の指示)。
+
+                「メインメニューの『🕺ノリノリRun再生』ボタンは暁色。
+                  逆に『◀メインメニューに戻る』は青色で、
+                  行き先のメニュー色にしている感じにしましょう」
+
+            ボタン自身が「押したら何色の世界へ行くか」を先に見せる、
+            という考え方です。走行中でも、色だけで行き先が分かります。
+            */
+            --theme-color-other:#ff8c42;
 
             /*
             影に使う色です。黒い影より柔らかく、テーマ色が
             画面全体にほんのり滲む感じになります(竹弘の
             「影も同じように青みがかった感じ」)。
+
+            v159で 0.16 → 0.22 に濃くしました。竹弘の
+            「もっと水色ぽい色で浮いてる感じを強くできますか?」に対して、
+            色そのものを水色寄り(#00a2ff)にしたうえで、影を濃く・広く
+            落として、カードが背景から持ち上がって見えるようにしています。
             */
-            --theme-shadow:rgba(0,122,255,0.16);
+            --theme-shadow:rgba(var(--theme-rgb),0.22);
 
             --main-blue:var(--theme-color);
             --bg-color:#f2f2f7;
@@ -534,8 +578,25 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
            変わります。個々のボタンの色を指定して回らないこと。
         */
         #app.norirun-mode{
-            --theme-color:#e8734a;
-            --theme-shadow:rgba(232,115,74,0.20);
+
+            /*
+            v158では #e8734a でしたが、竹弘から「もっとオレンジ色が
+            いいかな。まだ赤に近い感じです。夕焼けの綺麗なイメージ」と
+            指摘があり、v159で赤みを抜いてオレンジ側へ寄せました。
+
+                #e8734a … R232 G115 B74(赤寄り。燃えるというより「熱」)
+                #ff8c42 … R255 G140 B66(緑を上げてオレンジへ。夕焼け)
+
+            緑の値を上げると赤から橙へ移ります。明るさも上げて、
+            海の青(#00a2ff)と同じくらい澄んだ発色に揃えました。
+            */
+            --theme-color:#ff8c42;
+            --theme-rgb:255,140,66;
+
+            /* こちらから見た「行き先」はメインメニュー＝海の青です */
+            --theme-color-other:#00a2ff;
+
+            --theme-shadow:rgba(var(--theme-rgb),0.20);
         }
 
         html,
@@ -642,7 +703,13 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             border:1px solid var(--theme-color);
             border-radius:18px;
             padding:20px;
-            box-shadow:0 6px 16px var(--theme-shadow);
+
+            /*
+            v159で影を 6px/16px から 8px/22px へ広げました。
+            影は「下に落ちる距離」と「ぼけ幅」が大きいほど、
+            物が高い位置にあるように見えます(竹弘の「浮いてる感じ」)。
+            */
+            box-shadow:0 8px 22px var(--theme-shadow);
         }
 
         /* ======================================================
@@ -1580,14 +1647,34 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         }
 
         /* このアプリの主役になる操作(ノリノリRun再生)は青で目立たせます */
+        /*
+        モードを行き来するボタンです。
+
+        【v159から「行き先の色」で塗ります(竹弘の指示)】
+        画面全体の色ではなく、**押した先の世界の色**をまといます。
+
+            メインメニュー(青)にいる時   … 🕺ノリノリRun再生 → 暁色
+            ノリノリRun(暁色)にいる時   … ◀メインメニューへ戻る → 青
+
+        押す前から行き先が色で分かるので、走りながらでも迷いません。
+        画面の他の部品はすべて今いるモードの色なので、この1つだけが
+        違う色で浮き、自然と目に留まります。
+        */
         .ua-btn-accent{
             color:#ffffff;
-            background:var(--main-blue);
-            border-color:var(--main-blue);
+            background:var(--theme-color-other);
+            border-color:var(--theme-color-other);
         }
 
+        /*
+        押した瞬間は少し沈んで見せます。
+
+        色をモードごとに用意すると2色ぶん管理が増えるので、
+        黒を薄くかぶせて暗くする方式にしました。どちらの色でも
+        「押した」ことが伝わります。
+        */
         .ua-btn-accent:active{
-            background:#0062cc;
+            filter:brightness(0.85);
         }
 
         /*
@@ -1995,7 +2082,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         /* 指を置いている間は、押されていることが分かるようにします */
         .jump-btn.jump-open{
             border-color:var(--main-blue);
-            background:#e6f6ff;
+            background:rgba(var(--theme-rgb),0.10);
         }
 
         /*
@@ -2062,8 +2149,8 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         .jump-option.jump-active{
             color:var(--main-blue);
             border-color:var(--main-blue);
-            background:#e6f6ff;
-            box-shadow:0 4px 16px rgba(0,162,255,0.4);
+            background:rgba(var(--theme-rgb),0.10);
+            box-shadow:0 4px 16px rgba(var(--theme-rgb),0.4);
         }
 
         /*
@@ -2103,7 +2190,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         .play-mode-active{
             color:var(--main-blue);
             border-color:var(--main-blue);
-            background:#e6f6ff;
+            background:rgba(var(--theme-rgb),0.10);
         }
 
         /*
@@ -2539,10 +2626,18 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             touch-action:none;
         }
 
+        /*
+        掴んでいる間のハンドルの色。
+
+        ⚠️ クラス名に blue と入っていますが、v159から**テーマ色**です。
+           🕺ノリノリRun再生モードでは暁色になります。名前を変えると
+           js/drag-sort.js の付け外しも直すことになり、並び替えという
+           完成済みの機能に触れる危険があるため、名前は据え置きました。
+        */
         .sort-handle.active-blue{
-            color:#00a2ff !important;
-            border-color:#00a2ff !important;
-            background:#e6f6ff;
+            color:var(--main-blue) !important;
+            border-color:var(--main-blue) !important;
+            background:rgba(var(--theme-rgb),0.10);
         }
 
         /*
@@ -2610,9 +2705,9 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             content-visibility:visible;
 
             position:fixed;
-            box-shadow:0 15px 35px rgba(0,162,255,0.35);
+            box-shadow:0 15px 35px rgba(var(--theme-rgb),0.35);
             background:#ffffff;
-            border-color:#00a2ff;
+            border-color:var(--main-blue);
             z-index:10000;
             opacity:0.95;
             transform:scale(1.02);
@@ -2623,10 +2718,10 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         /* 差し込みスロット(指を離した時の着地位置) */
         .drag-placeholder{
             height:56px;
-            background:rgba(0,162,255,0.03);
-            border:2px dashed #00a2ff;
+            background:rgba(var(--theme-rgb),0.03);
+            border:2px dashed var(--main-blue);
             border-radius:12px;
-            box-shadow:0 0 15px rgba(0,162,255,0.2);
+            box-shadow:0 0 15px rgba(var(--theme-rgb),0.2);
             box-sizing:border-box;
             transition:transform 0.2s ease;
 
@@ -2763,11 +2858,11 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         }
         .glow-top{
             top:0;
-            background:linear-gradient(to bottom,rgba(0,162,255,0.35),transparent);
+            background:linear-gradient(to bottom,rgba(var(--theme-rgb),0.35),transparent);
         }
         .glow-bottom{
             bottom:0;
-            background:linear-gradient(to top,rgba(0,162,255,0.35),transparent);
+            background:linear-gradient(to top,rgba(var(--theme-rgb),0.35),transparent);
         }
         .glow-active{
             opacity:1;
@@ -3075,8 +3170,12 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             border-color:var(--main-blue);
         }
 
+        /*
+        押した時は、色を決め打ちせず暗くします(v159)。
+        濃い青を直に書くと、暁色モードで押した瞬間だけ青が顔を出します。
+        */
         .pitch-input-ok:active{
-            background:#0062cc;
+            filter:brightness(0.85);
         }
 
         /* ======================================================
@@ -3237,8 +3336,9 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             cursor:pointer;
         }
 
+        /* 押した時は色を決め打ちせず暗くします(v159。上と同じ理由) */
         .exclude-btn:active{
-            background:#0062cc;
+            filter:brightness(0.85);
         }
 
         /* ======================================================
