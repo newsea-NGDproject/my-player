@@ -644,6 +644,16 @@ function closeMyPitchSetting() {
     document.getElementById("app").style.display = "flex";
 
     /*
+    🕺ノリノリRun再生の最中だった場合は、新しいマイピッチを
+    すぐ反映します(v166)。
+
+    このモードは「マイピッチで全曲を鳴らす」ことが目的なので、
+    設定を変えたのに表示も再生速度も古いままでは、設定した意味が
+    ありません(竹弘の実機報告)。
+    */
+    if(isNoriRunMode){ reloadNoriRunPitch(); }
+
+    /*
     ---- 止めておいた曲を、続きから鳴らし直す(v146) ----
 
     画面を先に戻してから鳴らしています。曲一覧が見えている状態で

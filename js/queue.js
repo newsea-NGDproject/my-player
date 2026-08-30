@@ -153,6 +153,41 @@ const MAX_CONSECUTIVE_SKIP = 10;
 let shuffleOrder = [];
 
 /**
+ * いま鳴らしてよい曲の順番を返します(v166で追加)。
+ *
+ * 【なぜ currentOrderList を直接見てはいけないのか】
+ * 🕺ノリノリRun再生モードでは、画面にノリ注入済みの曲しか並んでいません。
+ * ところが「次の曲」を決める処理は曲順(currentOrderList)を直接見ていた
+ * ため、**画面に無い曲(🛌)が次に鳴ってしまう**不具合がありました
+ * (竹弘の実機報告、2026-08-30)。
+ *
+ * 画面に並んでいるものと、次に鳴るものは、必ず一致していなければ
+ * なりません。そこで「今のモードで鳴らせる曲」をここ1か所で決め、
+ * 曲送り・自動再生・ランダムのすべてがこれを見るようにしました。
+ *
+ * @return {string[]} 鳴らしてよい曲IDの配列
+ */
+function getPlayOrderList(){
+
+    // メインメニューでは全曲がそのまま対象です
+    if(!isNoriRunMode){ return currentOrderList; }
+
+    /*
+    ノリ注入済みの曲だけに絞ります。判定は js/tap.js の
+    hasSavedTapResult() を借りており、曲一覧の絞り込み
+    (js/list-view.js)とまったく同じ基準です。
+    */
+    return currentOrderList.filter(function(trackId){
+
+        const track = libraryMap[trackId];
+
+        return track && hasSavedTapResult(track);
+
+    });
+
+}
+
+/**
  * 曲順をシャッフルして、ランダム再生用の順番を作ります。
  *
  * 除外された曲(グレー表示)は最初から入れません。
@@ -160,7 +195,7 @@ let shuffleOrder = [];
 function buildShuffleOrder(){
 
     // まず、鳴らせる曲だけを集めます
-    shuffleOrder = currentOrderList.filter(function(trackId){
+    shuffleOrder = getPlayOrderList().filter(function(trackId){
         return !isExcluded(libraryMap[trackId]);
     });
 
@@ -239,7 +274,13 @@ function findNextTrackId(fromTrackId){
     「今の曲が一覧に見当たらない時は、先頭から探し直す」という
     動きになります(並び替えの直後などに起こりえます)。
     */
-    const currentIndex = currentOrderList.indexOf(fromTrackId);
+    /*
+    今のモードで鳴らせる曲だけを対象にします(v166)。
+    🕺ノリノリRun再生では、ノリ注入済みの曲だけが並びます。
+    */
+    const orderList = getPlayOrderList();
+
+    const currentIndex = orderList.indexOf(fromTrackId);
 
     /*
     今の曲の1つ後ろから、順番に見ていきます。
@@ -247,9 +288,9 @@ function findNextTrackId(fromTrackId){
     除外された曲は飛ばすので、「次」は必ずしも隣とは限りません。
     鳴らせる見込みのある曲が見つかった時点で、それを返します。
     */
-    for(let i = currentIndex + 1; i < currentOrderList.length; i++){
+    for(let i = currentIndex + 1; i < orderList.length; i++){
 
-        const trackId = currentOrderList[i];
+        const trackId = orderList[i];
 
         if(!isExcluded(libraryMap[trackId])){
             return trackId;
@@ -265,9 +306,9 @@ function findNextTrackId(fromTrackId){
     */
     if(currentPlayMode === PLAY_MODE_ALL){
 
-        for(let i = 0; i < currentOrderList.length; i++){
+        for(let i = 0; i < orderList.length; i++){
 
-            const trackId = currentOrderList[i];
+            const trackId = orderList[i];
 
             if(!isExcluded(libraryMap[trackId])){
 
@@ -452,7 +493,7 @@ function findNeighborTrackId(step){
     */
     const list = (currentPlayMode === PLAY_MODE_SHUFFLE)
         ? shuffleOrder
-        : currentOrderList;
+        : getPlayOrderList();
 
     if(list.length === 0){ return null; }
 

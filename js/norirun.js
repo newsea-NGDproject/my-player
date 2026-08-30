@@ -199,6 +199,34 @@ async function loadMyPitch(){
 }
 
 /**
+ * マイピッチを読み直して、画面と再生速度に反映します(v166で追加)。
+ *
+ * 【いつ呼ばれるか】
+ * 🕺ノリノリRun再生の最中に「マイピッチ設定」を開いて値を変え、
+ * 戻ってきた時です(js/setup.js の closeMyPitchSetting から)。
+ *
+ * これが無いと、設定を変えたのに表示も再生速度も古いままでした
+ * (竹弘の実機報告、2026-08-30)。走る前にペースを決め直したのに
+ * 反映されないと、設定した意味がありません。
+ *
+ * 走行中に定規で上げ下げしていた分は捨てて、新しく決めた値から
+ * 始め直します。「設定し直した」以上、そちらが竹弘の意思だからです。
+ */
+async function reloadNoriRunPitch(){
+
+    if(!isNoriRunMode){ return; }
+
+    noriRunBasePitch = await loadMyPitch();
+    noriRunMyPitch = noriRunBasePitch;
+
+    updateNoriRunPitchDisplay();
+    applyNoriRunPitch();
+
+    console.log("マイピッチを読み直しました :",noriRunMyPitch);
+
+}
+
+/**
  * 「マイピッチ」ボタンが押された時の処理です(v165)。
  *
  * 初期設定で決めた値へ戻します。走行中に上げ下げした後、
@@ -413,6 +441,17 @@ function updateNoriRunPitchLabel(){
 function refreshNoriRunList(){
 
     renderList();
+
+    /*
+    ランダム再生の順番も作り直します(v166)。
+
+    シャッフルした順番(shuffleOrder)は、モードを切り替えただけでは
+    作り直されません(空になった時と一巡した時にしか作られない作り)。
+    そのままだと、🔀のままノリノリRunへ入った時に、**古い全曲の
+    並びから次の曲が選ばれてしまいます**。
+    対象の曲が入れ替わったこの場で作り直しておきます。
+    */
+    buildShuffleOrder();
 
     /*
     先頭へ戻します。
