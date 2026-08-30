@@ -469,7 +469,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v151)ノリRun
+        (v152)ノリRun
         メインメニュー
 
     </title>
@@ -4359,9 +4359,12 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
                 <button type="button" data-lat="10">+10ms</button>
             </div>
 
-            <div style="margin-top:12px; display:flex; flex-direction:column; gap:6px;">
+            <!--
+                v152で「タップからやり直す」を下の #tap-bottom-row へ
+                移したので、ここに残るのは確定ボタン1つだけです。
+            -->
+            <div style="margin-top:12px;">
                 <button type="button" id="tap-confirm" class="tap-action tap-action-go">これで確定</button>
-                <button type="button" id="tap-retry-adjust" class="tap-action tap-action-quiet">タップからやり直す</button>
             </div>
 
         </div>
@@ -4375,8 +4378,17 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             使う道具でスクロールが要るのは致命的なので、竹弘の案どおり
             「やめる」と横に並べて1行ぶん節約しています。
 
-            「やり直す」はタップし終わった時だけ出ます。出ていない間は
-            「やめる」が幅いっぱいに広がります(flex:1 1 0 のはたらき)。
+            【v152で「やり直す」を2種類に増やしました】
+            微調整画面でも同じ理由(縦が足りない)で1行にまとめたい、と
+            竹弘から指示がありました。画面の状態によって、この行に並ぶ
+            相棒が入れ替わります。
+
+                タップ待ち   … やめる だけ(幅いっぱいに広がる)
+                12回叩いた後 … やめる ＋ 今のタップをやり直す
+                微調整画面   … やめる ＋ タップからやり直す
+
+            出ていないボタンは display:none なので、残った「やめる」が
+            自動的に幅いっぱいへ広がります(flex:1 1 0 のはたらき)。
 
             ⚠️ ここは最終デザイン(ターンテーブル)で作り直す前提の
                暫定レイアウトです。竹弘の要望は「メニュー画面と同じく
@@ -4385,6 +4397,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         <div id="tap-bottom-row">
             <button type="button" id="tap-close">やめる</button>
             <button type="button" id="tap-retry-lock" class="tap-action tap-action-quiet" style="display:none;">今のタップをやり直す</button>
+            <button type="button" id="tap-retry-adjust" class="tap-action tap-action-quiet" style="display:none;">タップからやり直す</button>
         </div>
 
     </div>
