@@ -165,6 +165,25 @@ const TAP_CLICK_SEC = 0.05;
 const TAP_SONG_GAIN = 0.5;
 
 /*
+音を出し始める時と切る時に、音量を 0 ⇄ 本来の大きさへ動かす時間(秒)。
+
+【なぜ必要か(竹弘の報告、2026-08-30)】
+    「曲を再生していない時であっても、タップ補正ボタンを押すと、
+      押した瞬間にノイズが『ブッ』て入る時がある」
+
+この画面は曲の途中(5秒地点など)からいきなり鳴らします。音の波は
+上下に揺れているので、**揺れの途中の値からいきなり音が始まる**と、
+スピーカーの紙が瞬間的に飛ばされて「ブッ」と鳴ります。止める時も同じです。
+
+竹弘の「時がある」もこれで説明がつきます。始めた位置がたまたま
+波の底(振幅ゼロ付近)なら、段差が無いので鳴りません。
+
+0.015秒(15ミリ秒)は耳には一瞬で、曲が遅れて始まったとは感じません。
+それでいて波形を滑らかに繋ぐには十分な長さです。
+*/
+const TAP_FADE_SEC = 0.015;
+
+/*
 まだ何も測っていない時の、内部で持っておくBPMです(v155)。
 
 画面には出しません(測る前は「---.--」と出します)。ここに何か入れて
@@ -525,12 +544,9 @@ async function loadTapSong(track){
         tapState.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
         /*
-        曲の音量つまみを1つ作り、ここを通してから音を出します。
-        メトロノームはこのつまみを通さないので、曲だけを小さくできます。
+        音量つまみは、ここではなく playTapSongFrom() が鳴らすたびに
+        作ります(v156でこちらへ移しました。理由はあちらのコメント)。
         */
-        tapState.songGain = tapState.audioCtx.createGain();
-        tapState.songGain.gain.value = TAP_SONG_GAIN;
-        tapState.songGain.connect(tapState.audioCtx.destination);
 
         tapState.songBuffer = await tapState.audioCtx.decodeAudioData(arrayBuffer);
 
@@ -996,10 +1012,38 @@ function playTapSongFrom(fromSec,withMetronome){
     const source = tapState.audioCtx.createBufferSource();
 
     source.buffer = tapState.songBuffer;
-    source.connect(tapState.songGain);
+
+    /*
+    音量つまみも、鳴らすたびに新しく作ります(v156)。
+
+    【なぜ1つを使い回さないのか】
+    止める音と鳴らし始める音が、同じつまみを取り合ってしまうためです。
+    止める側は「音量を0へ下げてから止めたい」、始める側は「0から
+    上げたい」ので、つまみが1つだと、片方の指示がもう片方を打ち消して
+    しまい、けっきょく段差(ノイズ)が残ります。
+
+    1本ずつ専用のつまみを持たせれば、消えていく音と鳴り始める音が
+    それぞれ自分の都合で上下でき、なめらかに入れ替われます。
+
+    ※ メトロノームはこのつまみを通しません(曲だけを控えめにするため)。
+    */
+    const gain = tapState.audioCtx.createGain();
+
+    source.connect(gain);
+    gain.connect(tapState.audioCtx.destination);
+
+    const now = tapState.audioCtx.currentTime;
+
+    /*
+    音量0から始めて、TAP_FADE_SEC かけて本来の大きさまで上げます。
+    これが「ブッ」というノイズを消す本体です。
+    */
+    gain.gain.setValueAtTime(0,now);
+    gain.gain.linearRampToValueAtTime(TAP_SONG_GAIN,now + TAP_FADE_SEC);
 
     tapState.songSource = source;
-    tapState.ctxStartTime = tapState.audioCtx.currentTime;
+    tapState.songGain = gain;
+    tapState.ctxStartTime = now;
     tapState.playOffset = fromSec;
 
     // 第1引数は「いつ鳴らすか」、第2引数は「曲の何秒目から鳴らすか」
@@ -1092,10 +1136,46 @@ function stopTapSound(){
 
     if(tapState.songSource){
 
-        try{ tapState.songSource.stop(); }
-        catch(error){ /* すでに止まっている場合は何もしなくてよい */ }
+        /*
+        いきなり止めると、音の波の途中でぶつ切りになって「ブッ」と鳴ります
+        (鳴らし始める時と同じ理屈。v156)。ほんの一瞬で音量を0まで
+        落とし、落ちきってから止めます。
+        */
+        const ctx = tapState.audioCtx;
+        const gain = tapState.songGain;
 
+        if(ctx && gain){
+
+            const now = ctx.currentTime;
+            const stopAt = now + TAP_FADE_SEC;
+
+            /*
+            鳴らし始めた時のフェードイン予約が残っていると、音量が
+            上がり続けてしまいます。先に取り消し、今の音量を起点にして
+            0へ向かわせます。
+            */
+            gain.gain.cancelScheduledValues(now);
+            gain.gain.setValueAtTime(gain.gain.value,now);
+            gain.gain.linearRampToValueAtTime(0,stopAt);
+
+            try{ tapState.songSource.stop(stopAt); }
+            catch(error){ /* すでに止まっている場合は何もしなくてよい */ }
+
+        }
+        else{
+
+            // つまみが無い時(閉じた後など)は、そのまま止めます
+            try{ tapState.songSource.stop(); }
+            catch(error){ /* 同上 */ }
+
+        }
+
+        /*
+        ここで手放しても、止まる時刻を予約済みの音は最後まで鳴り切ります
+        (Web Audioが、鳴っている音を勝手に消さないでいてくれます)。
+        */
         tapState.songSource = null;
+        tapState.songGain = null;
 
     }
 
@@ -1703,13 +1783,27 @@ function closeTapCorrection(){
     AudioContext は作りっぱなしにするとブラウザに数を数えられ、
     いくつも開くと新しく作れなくなります。必ず閉じます。
     波形データ(約80MB)も、参照を捨ててメモリを解放します。
+
+    ⚠️ ただし**すぐには閉じません**(v156)。すぐ上の stopTapSound() が
+       「一瞬かけて音量を0まで落としてから止める」予約をしたところなので、
+       ここで即座に閉じると、その予約ごと断ち切って結局「ブッ」と鳴ります。
+       落ちきるのを待ってから閉じます。
+
+    先に tapState.audioCtx を空にしておくのは、待っている間に
+    別の処理が閉じかけの音の作業台を触らないようにするためです。
     */
     if(tapState.audioCtx){
 
-        try{ tapState.audioCtx.close(); }
-        catch(error){ /* すでに閉じている場合は何もしなくてよい */ }
+        const closingCtx = tapState.audioCtx;
 
         tapState.audioCtx = null;
+
+        setTimeout(function(){
+
+            try{ closingCtx.close(); }
+            catch(error){ /* すでに閉じている場合は何もしなくてよい */ }
+
+        },(TAP_FADE_SEC * 1000) + 20);
 
     }
 
