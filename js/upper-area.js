@@ -332,7 +332,12 @@ loadedmetadata は「曲の中身(長さなど)が読み込めた」という合
 seekBar.max に曲の長さ(秒)を入れることで、バーの左端が0秒、
 右端が曲の終わりを表すようになります。
 */
-audioPlayer.addEventListener("loadedmetadata",function(){
+/*
+⚠️ v167から bindDeckEvent(js/deck.js)を通しています。
+デッキが2枚になったため、両方に耳を付けたうえで、いま鳴っている方の
+知らせだけを受け取ります(理由は js/deck.js のコメント)。
+*/
+bindDeckEvent("loadedmetadata",function(){
 
     seekBar.max = audioPlayer.duration;
     seekBar.value = 0;
@@ -348,7 +353,8 @@ timeupdate は再生中におよそ0.25秒ごとに起きるイベントです�
 細かすぎず粗すぎない間隔なので、秒の表示を更新するのにちょうど
 良く、専用のタイマーを自分で回す必要がありません。
 */
-audioPlayer.addEventListener("timeupdate",function(){
+// v167: 2枚のデッキに対応(理由は js/deck.js のコメント)
+bindDeckEvent("timeupdate",function(){
 
     // つまみを触っている間は、指の邪魔をしないよう何もしません
     if(isSeeking){ return; }
@@ -462,12 +468,13 @@ stopBtn.addEventListener("click",function(){
 「JSは “今どうなっているか” を写すだけ」という形にしておくのが、
 表示と実際の状態がズレない一番の近道です。
 */
-audioPlayer.addEventListener("play",function(){
+// v167: 2枚のデッキに対応(理由は js/deck.js のコメント)
+bindDeckEvent("play",function(){
     stopBtn.textContent = STOP_ICON_PLAYING;
     stopBtn.classList.remove("paused-icon");
 });
 
-audioPlayer.addEventListener("pause",function(){
+bindDeckEvent("pause",function(){
 
     /*
     意図した停止でなければ、記号は今のまま(■)に固定します(v135)。

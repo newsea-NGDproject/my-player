@@ -125,11 +125,12 @@ audioの play/pause は、js/upper-area.js が停止ボタン(■/▶)の
 */
 if(mediaSessionSupported){
 
-    audioPlayer.addEventListener("play",function(){
+    // v167: 2枚のデッキに対応(理由は js/deck.js のコメント)
+    bindDeckEvent("play",function(){
         navigator.mediaSession.playbackState = "playing";
     });
 
-    audioPlayer.addEventListener("pause",function(){
+    bindDeckEvent("pause",function(){
         navigator.mediaSession.playbackState = "paused";
     });
 

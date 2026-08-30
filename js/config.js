@@ -101,7 +101,38 @@ HTMLがまだ組み上がっていない状態(<head>の中など)で実行す�
 */
 
 const menuListEl = document.getElementById("menu-list");
-const audioPlayer = document.getElementById("audio-player");
+
+/*
+---- 音を鳴らす2枚のデッキ(v167) ----
+
+    deckAudioA … 1枚目。起動時からずっと主役を務めます
+    deckAudioB … 2枚目。🕺ノリノリRun再生で曲を繋ぐ時に使います
+
+【なぜ2枚あるのか】
+1枚では「前の曲を止めてから次を鳴らす」しかできず、切れ目で音が
+途切れます。2枚あれば、前の曲が鳴っているうちに次を裏で走らせ、
+繋ぎ目で音量を入れ替えられます(DJの2台のターンテーブルと同じ)。
+詳しくは c014.html の <audio id="audio-player-b"> のコメントに
+書いてあります。
+*/
+const deckAudioA = document.getElementById("audio-player");
+const deckAudioB = document.getElementById("audio-player-b");
+
+/*
+いま主役を務めているデッキです。
+
+【⚠️ const ではなく let にした理由(v167)】
+曲を繋ぐ時、主役は A → B → A … と交代していきます。他のファイルは
+今までどおり audioPlayer と書くだけで、常に「いま鳴っている方」を
+指すようにするため、入れ替えられる変数にしました。
+
+**この名前を変えないこと。** シークバー・停止ボタン・Media Session・
+定規・タップ補正など10ファイルがこの名前を見ています。名前を変えると
+それら全部を直すことになり、完成済みの機能を壊す危険があります。
+
+交代させてよいのは js/deck.js だけです。他の場所で書き換えないこと。
+*/
+let audioPlayer = deckAudioA;
 
 /*
 上半分(操作エリア)にある、再生中の曲情報の表示部分です。
