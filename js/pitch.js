@@ -407,11 +407,42 @@ function applyTempo(rate,shouldSave){
 
     drawRuler(currentBpm);
 
-    // --- 選んだテンポを曲データに覚えさせます ---
-    track.userBPM = currentBpm;
+    /*
+    ---- 決めたテンポを、どこに覚えさせるか(v165で分岐) ----
 
-    if(shouldSave){
-        savePitchToDb(track);
+    【メインメニュー】
+    その曲の userBPM に覚えさせます。曲ごとに好きな速さを持てる、
+    今までどおりの動きです。
+
+    【🕺ノリノリRun再生】
+    竹弘の注意書き:
+
+        個々の曲の速度を変更するメインメニューと違って、
+        マイピッチの速度と連動する。
+
+    こちらの定規が決めるのは「走るテンポそのもの」です。曲ごとの
+    設定ではないので、**userBPM には一切触りません**。触ってしまうと、
+    走りながら上げ下げしただけで、竹弘が曲ごとに決めた速さが
+    次々と塗り替えられてしまいます。
+
+    走行中に変えた値は保存もしません(竹弘の判断)。次にこのモードへ
+    入る時は、また初期設定のマイピッチから始まります。
+    */
+    if(isNoriRunMode){
+
+        noriRunMyPitch = currentBpm;
+
+        updateNoriRunPitchDisplay();
+
+    }
+    else{
+
+        track.userBPM = currentBpm;
+
+        if(shouldSave){
+            savePitchToDb(track);
+        }
+
     }
 
 }
@@ -448,9 +479,27 @@ function applyTrackTempo(track){
 
     const base = getEffectiveBaseBpm(track);
 
-    const targetBpm = (track.userBPM && track.userBPM !== 0)
-        ? track.userBPM
-        : base;
+    /*
+    ---- どの速さで鳴らし始めるか(v165で分岐) ----
+
+    【メインメニュー】
+    前回この曲で選んだテンポ(userBPM)があればそれを、無ければ
+    元ピッチ(等速)で。曲ごとに好きな速さを覚えている今までの動きです。
+
+    【🕺ノリノリRun再生】
+    **曲が何であろうと、いつでもマイピッチ。** これがこのモードの
+    すべてです。曲ごとの userBPM は見ません。
+
+        竹弘:「ランナーが曲と曲の間でノッて走っていたら
+                曲のテンポが変わり、コケてしまう」
+
+    次の曲が前の曲と違う速さで始まったら、その瞬間に足が乱れます。
+    曲を選び直しても、自動で次へ進んでも、必ず同じテンポで鳴り
+    始めるようにしておくのが、転ばせないための土台です。
+    */
+    const targetBpm = isNoriRunMode
+        ? noriRunMyPitch
+        : ((track.userBPM && track.userBPM !== 0) ? track.userBPM : base);
 
     /*
     保存しないのは、ここが「前回の続きを再現しているだけ」で、
@@ -758,6 +807,27 @@ userBPM のすべてが基準の値に揃います。竹弘の指定した「定
     if(!button){ return; }
 
     button.addEventListener("click",function(){
+
+        /*
+        押した時の行き先は、モードによって変わります(v165)。
+
+            メインメニュー   … その曲本来の速さ(等速)へ
+            🕺ノリノリRun再生 … 初期設定で決めたマイピッチへ
+
+        竹弘の指示:
+            「元マイピッチボタンを押されたら、初期設定のマイピッチに
+              戻す。つまり、ランナーがピッチを上げたい。辛くて下げたい。
+              といった時の対応ができるようにする」
+
+        走りながら上げ下げした後、ボタン一つで元のペースに帰れます。
+        */
+        if(isNoriRunMode){
+
+            resetToBasePitch();
+
+            return;
+
+        }
 
         if(!libraryMap[currentTrackId]){ return; }
 
