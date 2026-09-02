@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v172)ノリRun
+        (v173)ノリRun
         メインメニュー
 
     </title>
@@ -3045,6 +3045,15 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             filter:brightness(0.85);
         }
 
+        /* 選択肢のグループ見出し(v173)。少し上に間を空けます */
+        #connect-panel .connect-heading{
+            margin:20px 0 8px 0;
+
+            font-size:0.9rem;
+            font-weight:bold;
+            color:var(--theme-color);
+        }
+
         /* 選択肢の下に添える一言。少し小さく、控えめな色にします */
         #connect-panel .connect-note{
             display:block;
@@ -4839,21 +4848,38 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
     <div class="license-body">
 
         <p>
-            🕺ノリノリRun再生で、曲と曲が入れ替わる時の<br>
-            重なりの長さを選びます。
+            🕺ノリノリRun再生で、曲と曲が<br>
+            入れ替わる時の鳴り方を選びます。
         </p>
 
-        <button type="button" class="connect-choice" data-beats="16">
+        <p class="connect-heading">🎧 重ねて繋ぐ</p>
+
+        <button type="button" class="connect-choice" data-beats="16" data-silence="0">
             16拍でゆっくり繋ぐ
-            <span class="connect-note">マイピッチ170で約5.6秒。DJのミックスに近い長さ</span>
+            <span class="connect-note">マイピッチ170で約5.6秒。DJのミックスに近い</span>
         </button>
 
-        <button type="button" class="connect-choice" data-beats="8">
+        <button type="button" class="connect-choice" data-beats="8" data-silence="0">
             8拍でさっと繋ぐ
-            <span class="connect-note">マイピッチ170で約2.8秒。重なりが短く、すっきり</span>
+            <span class="connect-note">マイピッチ170で約2.8秒。重なりが短くすっきり</span>
+        </button>
+
+        <p class="connect-heading">🧘 無音をはさんで繋ぐ</p>
+
+        <button type="button" class="connect-choice" data-beats="16" data-silence="12">
+            16拍フェード ＋ 約4秒の無音
+            <span class="connect-note">ゆっくり消えて、静かになってから次の曲へ</span>
+        </button>
+
+        <button type="button" class="connect-choice" data-beats="8" data-silence="12">
+            8拍フェード ＋ 約4秒の無音
+            <span class="connect-note">さっと消えて、静かになってから次の曲へ</span>
         </button>
 
         <p class="connect-note">
+            ※ 無音をはさむと、走るリズムの「イチ、ニ」が<br>
+            　 次の曲でも取り直しやすくなります。<br>
+            <br>
             ※ 秒ではなく拍で決めているので、<br>
             　 マイピッチを上げると、その分だけ短くなります。<br>
             　 走る歩数で数えると、いつも同じ歩数です。
