@@ -265,22 +265,50 @@ function findNextTrackId(fromTrackId){
 
     // ---- OFF / 全曲ループ ----
     /*
-    今の曲が、曲順(currentOrderList)の何番目にいるかを調べます。
-
-    indexOf は「配列の中で何番目にあるか」を返す標準の命令で、
-    見つからない時は -1 を返します。
-
-    -1 だった場合、下の for文は i=0 から始まります。つまり
-    「今の曲が一覧に見当たらない時は、先頭から探し直す」という
-    動きになります(並び替えの直後などに起こりえます)。
-    */
-    /*
     今のモードで鳴らせる曲だけを対象にします(v166)。
     🕺ノリノリRun再生では、ノリ注入済みの曲だけが並びます。
     */
     const orderList = getPlayOrderList();
 
+    /*
+    今の曲が、その並びの何番目にいるかを調べます。
+
+    indexOf は「配列の中で何番目にあるか」を返す標準の命令で、
+    見つからない時は -1 を返します。
+    */
     const currentIndex = orderList.indexOf(fromTrackId);
+
+    /*
+    ---- 今の曲が、その並びにいない時(v169) ----
+
+    【いつ起きるか】
+    メインメニューで🛌の曲を鳴らしたまま🕺ノリノリRun再生へ入ると、
+    その曲は曲一覧から消えますが、**鳴り続けます**(走っている最中に
+    曲を強制的に止める方が違和感が大きい、という竹弘の判断)。
+    この時 orderList(ノリ注入済みだけの並び)に今の曲はいないので、
+    indexOf は -1 を返します。
+
+    【v168までの動き = 竹弘が実機で見つけた不具合】
+    -1 のまま下の for文へ進むと i=0 から始まるため、**曲一覧の
+    いちばん上の曲**が次に鳴っていました。
+
+        竹弘:「曲一覧のトップに戻って再生される為、メインメニューに
+                戻った際に、再生曲位置にジャンプしてしまう為、
+                再生曲によっては中盤以降ではなくなってしまう」
+
+    369曲の中盤を聴いていたのに、モードを往復しただけで一覧の先頭へ
+    飛ばされてしまう、という問題です。
+
+    【直した後】
+    全曲の並び(currentOrderList)を頼りに、**今の曲より後ろにある
+    最初のノリ注入曲**を返します。竹弘の言葉では「メインメニューの
+    一覧の再生中以降から抽出された曲」。聴いていた場所を見失いません。
+    */
+    if(currentIndex === -1){
+
+        return findNextFromFullOrder(fromTrackId,orderList);
+
+    }
 
     /*
     今の曲の1つ後ろから、順番に見ていきます。
@@ -319,6 +347,83 @@ function findNextTrackId(fromTrackId){
             }
 
         }
+
+    }
+
+    return null;
+
+}
+
+/**
+ * 今の曲が「鳴らせる曲の並び」にいない時に、次の曲を探します(v169)。
+ *
+ * 全曲の並び(currentOrderList)の中で今の曲の位置を調べ、そこから
+ * **後ろへ向かって**、最初に見つかった鳴らせる曲を返します。
+ *
+ * @param  {string}   fromTrackId - どの曲の次を探すか(並びにいない曲)
+ * @param  {string[]} orderList   - 今のモードで鳴らせる曲の並び
+ * @return {string|null} 次の曲のtrack_id。もう無ければ null
+ */
+function findNextFromFullOrder(fromTrackId,orderList){
+
+    /*
+    全曲の並びの中で、今の曲が何番目かを調べます。
+
+    currentOrderList は「竹弘が並べた曲ぜんぶの順番」で、モードを
+    切り替えても中身は変わりません(絞り込みは画面の描画と
+    getPlayOrderList() が行っており、並び順そのものには手を触れない
+    作りにしてあります)。だからこそ、こちらを「物差し」に使えます。
+    */
+    const fullIndex = currentOrderList.indexOf(fromTrackId);
+
+    if(fullIndex >= 0){
+
+        // 今の曲の1つ後ろから、全曲の並びを順に見ていきます
+        for(let i = fullIndex + 1; i < currentOrderList.length; i++){
+
+            const trackId = currentOrderList[i];
+
+            /*
+            「今のモードで鳴らせる曲」かつ「除外されていない曲」だけを
+            採ります。orderList.indexOf(trackId) が -1 でなければ、
+            その曲は今の画面にも並んでいる、という意味です。
+            */
+            if(orderList.indexOf(trackId) !== -1 && !isExcluded(libraryMap[trackId])){
+
+                return trackId;
+
+            }
+
+        }
+
+        /*
+        今の曲より後ろに、鳴らせる曲が1曲も無かった場合です。
+
+        全曲ループなら下へ進んで先頭から探し直しますが、それ以外
+        (OFF＝最後で止まる設定)は**ここで終わり**です。
+
+        ⚠️ v168まではこの区別ができていませんでした。-1 のせいで
+           「まだ並びの先頭にいる」と誤解し、OFFなのに一覧の先頭の曲を
+           鳴らしてしまう状態でした。竹弘の指摘を直す過程で見つかった、
+           もう1つの不具合です。
+        */
+        if(currentPlayMode !== PLAY_MODE_ALL){ return null; }
+
+    }
+
+    /*
+    ここへ来るのは次の2つの場合です。
+
+      ・全曲ループで、今の曲より後ろに鳴らせる曲が無かった
+      ・全曲の並びにも今の曲が見当たらなかった(通常は起きません)
+
+    どちらも「先頭から最初の鳴らせる曲」へ着地するのが自然です。
+    */
+    for(let i = 0; i < orderList.length; i++){
+
+        const trackId = orderList[i];
+
+        if(!isExcluded(libraryMap[trackId])){ return trackId; }
 
     }
 
@@ -499,14 +604,26 @@ function findNeighborTrackId(step){
 
     const currentIndex = list.indexOf(currentTrackId);
 
-    // 今の曲が見当たらない時は、先頭の鳴らせる曲を返します
+    /*
+    ---- 今の曲が、その並びにいない時(v169) ----
+
+    自動で次へ進む時(findNextTrackId)とまったく同じ事情です。
+    メインメニューで🛌の曲を鳴らしたまま🕺ノリノリRun再生へ入ると、
+    その曲は並びにいないので -1 になります。
+
+    ⚠️ v168まではモードに関係なく「先頭の鳴らせる曲」を返していました。
+       そのため **⏮(前の曲)を押しても一覧の先頭へ飛んで**しまいます。
+       前へ戻りたいのに先頭へ行く、という動きです。竹弘はまだこの
+       操作を踏んでいませんでしたが、根っこは同じ場所でした。
+    */
     if(currentIndex === -1){
 
-        for(const trackId of list){
-            if(!isExcluded(libraryMap[trackId])){ return trackId; }
-        }
+        const neighbor = findNeighborFromFullOrder(step,list);
 
-        return null;
+        if(neighbor){ return neighbor; }
+
+        // その方向に1曲も無ければ、端に着いた時と同じ扱いにします
+        return findWrapAroundTrackId(step,list);
 
     }
 
@@ -524,25 +641,100 @@ function findNeighborTrackId(step){
 
     }
 
-    /*
-    端に着いた時の扱いです。
+    // 端に着きました(扱いは下の関数にまとめてあります)
+    return findWrapAroundTrackId(step,list);
 
-    全曲ループとランダムの時は、反対の端へ回り込みます(一覧の
+}
+
+/**
+ * 今の曲が「鳴らせる曲の並び」にいない時に、隣の曲を探します(v169)。
+ *
+ * findNextFromFullOrder() の ⏭ ⏮ 版です。あちらが「後ろへ」だけ
+ * 進むのに対し、こちらは step の向きに合わせて前後どちらへも進みます。
+ *
+ * @param  {number}   step - +1 なら次の曲(⏭)、-1 なら前の曲(⏮)
+ * @param  {string[]} list - 今のモードで鳴らせる曲の並び
+ * @return {string|null} 見つかった曲のtrack_id。無ければ null
+ */
+function findNeighborFromFullOrder(step,list){
+
+    /*
+    ランダム再生の時は、今までどおり先頭の鳴らせる曲を返します。
+
+    シャッフルした順番(shuffleOrder)は毎回切り直したトランプなので、
+    **並び順に意味がありません。** 「竹弘が並べた順で1つ後ろ」を
+    探しても、ランダム再生の趣旨に合わないためです。
+    先頭の曲自体が無作為に選ばれたものなので、これで十分です。
+    */
+    if(currentPlayMode === PLAY_MODE_SHUFFLE){
+
+        for(const trackId of list){
+            if(!isExcluded(libraryMap[trackId])){ return trackId; }
+        }
+
+        return null;
+
+    }
+
+    const fullIndex = currentOrderList.indexOf(currentTrackId);
+
+    if(fullIndex < 0){ return null; }
+
+    /*
+    step の向きへ、全曲の並びを1曲ずつ見ていきます。
+
+        ⏭(step=+1) … 今の曲より後ろにある、最初の🕺
+        ⏮(step=-1) … 今の曲より手前にある、最後の🕺
+
+    どちらも「今いた場所の隣」へ行くので、聴いていた場所を
+    見失いません。
+    */
+    for(let i = fullIndex + step; i >= 0 && i < currentOrderList.length; i += step){
+
+        const trackId = currentOrderList[i];
+
+        if(list.indexOf(trackId) !== -1 && !isExcluded(libraryMap[trackId])){
+            return trackId;
+        }
+
+    }
+
+    return null;
+
+}
+
+/**
+ * 端に着いた時、反対の端へ回り込みます。
+ *
+ * v169で findNeighborTrackId() から切り出しました。今の曲が並びに
+ * いない時の経路からも、まったく同じ扱いをしたかったためです
+ * (2か所に同じ処理を書くと、片方だけ直す事故が起きます)。
+ *
+ * @param  {number}   step - +1 なら次の曲(⏭)、-1 なら前の曲(⏮)
+ * @param  {string[]} list - 今のモードで鳴らせる曲の並び
+ * @return {string|null} 回り込んだ先の曲。回り込まない設定なら null
+ */
+function findWrapAroundTrackId(step,list){
+
+    /*
+    全曲ループとランダムの時だけ、反対の端へ回り込みます(一覧の
     最後で ⏭ を押したら先頭へ、先頭で ⏮ を押したら最後へ)。
     OFFと1曲リピートの時は、端で止まります。
     */
-    if(currentPlayMode === PLAY_MODE_ALL || currentPlayMode === PLAY_MODE_SHUFFLE){
+    if(currentPlayMode !== PLAY_MODE_ALL && currentPlayMode !== PLAY_MODE_SHUFFLE){
 
-        const wrapStart = (step > 0) ? 0 : list.length - 1;
+        return null;
 
-        for(let i = wrapStart; i >= 0 && i < list.length; i += step){
+    }
 
-            const trackId = list[i];
+    const wrapStart = (step > 0) ? 0 : list.length - 1;
 
-            if(libraryMap[trackId] && !isExcluded(libraryMap[trackId])){
-                return trackId;
-            }
+    for(let i = wrapStart; i >= 0 && i < list.length; i += step){
 
+        const trackId = list[i];
+
+        if(libraryMap[trackId] && !isExcluded(libraryMap[trackId])){
+            return trackId;
         }
 
     }
