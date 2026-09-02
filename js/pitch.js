@@ -392,9 +392,26 @@ function applyTempo(rate,shouldSave){
     こちらの名前しか知らないためです。片方を知らないブラウザは
     その行を黙って無視するので、両方書いておくのが安全です。
     */
-    audioPlayer.preservesPitch = true;
-    audioPlayer.webkitPreservesPitch = true;
-    audioPlayer.playbackRate = safeRate;
+    /*
+    ⚠️ v168から、いま鳴っている方だけでなく **2枚のデッキ両方** に
+       同じ速さを当てています(js/deck.js の applyRateToBothDecks)。
+
+    【なぜ両方に当てるのか】
+    STEP5では、接続点の少し前から次の曲を裏のデッキで音量0のまま
+    走らせておきます(助走)。この時もし裏のデッキが古い速さのまま
+    だと、繋がった瞬間にテンポが変わります。
+
+        竹弘:「ランナーが曲と曲の間でノッて走っていたら
+                曲のテンポが変わり、コケてしまう」
+
+    走りながら定規でテンポを上げ下げするのは、まさに助走中にも
+    起こりうる操作です。**その時点で裏の曲も一緒に速さを変えて
+    おかないと、繋ぎ目で必ず転びます。**
+
+    メインメニューでは裏のデッキは鳴っていないので、設定しても
+    何も起きません。動きは今までと1ミリも変わりません。
+    */
+    applyRateToBothDecks(safeRate);
 
     // 今鳴らしているテンポ(小数は出さず、1BPM単位に丸めます)
     const currentBpm = Math.round(base * safeRate);
