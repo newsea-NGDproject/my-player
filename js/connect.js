@@ -83,19 +83,65 @@
 const CONNECT_PRE_ROLL_SEC = 15;
 
 /*
-クロスフェードの長さ(拍)。
+クロスフェードの長さ(拍)の選び方。設定 ⚙️ →「🎚️ 曲の繋ぎ方」で
+竹弘が選びます(v172)。
 
 ⚠️ **秒ではなく拍で持ちます。** 竹弘の指示:
 
     クロスフェードの秒数は拍数で近似してよい
-    拍数 = Math.round(目標秒 ÷ 1拍の長さ)。BPM170なら12秒=34拍
+    拍数 = Math.round(目標秒 ÷ 1拍の長さ)
 
 走るリズムを崩さないため、このアプリの時間はすべて拍が単位です。
-34拍は、マイピッチ170なら約12秒、150なら約13.6秒になります。
-テンポが上がるほど短くなりますが、**走っている人の歩数で数えると
-いつも34歩**なので、体感は変わりません。
+テンポが上がるほど秒数は短くなりますが、**走っている人の歩数で
+数えるといつも同じ歩数**なので、体感は変わりません。
+
+【なぜ選べるようにしたか(v172)】
+
+v170は34拍(マイピッチ170で約12秒)でした。移植元の仕様書にある
+「フェード10秒」に合わせた値です。しかし竹弘の実機テストで:
+
+    「お互いの音がまだ結構大きい状況でクロスしている。
+      先行曲と後続曲の音が大きい状況で二つが重なって、
+      しかもその鳴る時間が長いと耳障りだね」
+
+あの10秒は**無音を挟む前提**の数字で、「重ねる時間」に流用したのが
+誤りでした。長さの好みは耳で確かめるしかないので、2つ用意して
+聞き比べられるようにしています。
 */
-const CONNECT_CROSSFADE_BEATS = 34;
+const CROSSFADE_BEATS_LONG  = 16;   // ゆっくり繋ぐ(マイピッチ170で約5.6秒)
+const CROSSFADE_BEATS_SHORT = 8;    // さっと繋ぐ  (マイピッチ170で約2.8秒)
+
+// いま選ばれている長さ。設定画面で切り替え、DBにも残します
+let crossfadeBeats = CROSSFADE_BEATS_LONG;
+
+/*
+クロスフェードのカーブの深さ。
+
+【この数字が効くところ】
+
+音量は cos と sin で入れ替えますが、その結果を「何乗するか」が
+この値です。**大きいほど、入れ替わりの真ん中で両方の音が小さく
+なります。**
+
+    1.0 … 中間で両方 0.71(等パワー。DJミキサーの標準)
+    2.0 … 中間で両方 0.50
+    3.0 … 中間で両方 0.35  ← いまここ
+
+竹弘の要望「もう2段階くらい音が小さくなった所でクロスしたい」に
+合わせて 3.0 にしました。
+
+【なぜDJの標準(1.0)ではいけないのか】
+
+等パワーは「音の力を一定に保つ」ので中間でも両方はっきり聞こえます。
+DJがそれで濁らないのは、**ミキサーのEQで低音を片方だけ切っている**
+からです。低音が2つ重なると一発で濁るのは、DJの世界では常識です。
+
+ノリRunは音量しか触っていないので、低音がまるごと2つ重なります。
+さらにDJは調(キー)の合う曲を選んで繋ぎますが、こちらは竹弘が
+好きな曲を好きな順に並べるので、調は揃いません。
+**だからDJより深い谷が要る**、というのが竹弘の耳の判断でした。
+*/
+const CONNECT_CROSSFADE_CURVE = 3.0;
 
 /*
 接続点をずらす拍数(将来の「脳内整理モード」用)。
@@ -683,13 +729,13 @@ function doConnect(){
 
     長さは「拍数 × 1拍の長さ」。竹弘の指示で秒ではなく拍で決めます。
     */
-    const fadeSec = CONNECT_CROSSFADE_BEATS * getBeatSec();
+    const fadeSec = crossfadeBeats * getBeatSec();
 
     startCrossfade(fromDeck,toDeck,fadeSec);
 
     console.log(
         "接続しました :",nextTrack.file_name,
-        "/ クロスフェード " + CONNECT_CROSSFADE_BEATS + "拍 =",
+        "/ クロスフェード " + crossfadeBeats + "拍 =",
         fadeSec.toFixed(2) + "秒"
     );
 
@@ -777,8 +823,18 @@ function startCrossfade(fromDeck,toDeck,durationSec){
         // Math.PI / 2 はラジアンで90度です
         const angle = t * Math.PI / 2;
 
-        fromDeck.volume = Math.cos(angle);
-        toDeck.volume   = Math.sin(angle);
+        /*
+        cos と sin の結果を CONNECT_CROSSFADE_CURVE 乗しています(v172)。
+
+        Math.pow(a,b) は「aのb乗」を返す命令です。1乗なら何も変わらず
+        等パワーのまま、乗数を上げるほど**入れ替わりの真ん中で両方の
+        音が小さくなり、谷ができます。**
+
+        竹弘の「もう2段階くらい音が小さくなった所でクロスしたい」を
+        実現している行です(詳しい理由は定数のコメント)。
+        */
+        fromDeck.volume = Math.pow(Math.cos(angle),CONNECT_CROSSFADE_CURVE);
+        toDeck.volume   = Math.pow(Math.sin(angle),CONNECT_CROSSFADE_CURVE);
 
         if(t < 1){
 
@@ -923,7 +979,87 @@ function rescheduleConnect(){
 
 
 // ==========================================================
-// 10. 見張り役をつなぐ
+// 10. 繋ぎ方の設定(保存と読み込み)
+// ==========================================================
+/*
+選んだ長さは settings ストアに残し、次にアプリを開いた時も同じ
+繋ぎ方で始められるようにします(再生モードや並び順の保存と同じ考え方)。
+
+走る前に決めた設定が、走り出す時にも残っていてほしいためです。
+*/
+
+/**
+ * クロスフェードの長さを変えて、保存します。
+ *
+ * @param {number} beats - CROSSFADE_BEATS_LONG か CROSSFADE_BEATS_SHORT
+ */
+async function setCrossfadeBeats(beats){
+
+    /*
+    知らない値が入ってきた時は、長い方に倒します。
+
+    設定画面のボタン以外から呼ばれることは今のところありませんが、
+    保存してある値が将来の版と食い違った時に、変な長さで繋いで
+    しまわないようにするための関門です。
+    */
+    if(beats !== CROSSFADE_BEATS_LONG && beats !== CROSSFADE_BEATS_SHORT){
+
+        beats = CROSSFADE_BEATS_LONG;
+
+    }
+
+    crossfadeBeats = beats;
+
+    console.log("曲の繋ぎ方を変えました :",crossfadeBeats + "拍");
+
+    try{
+
+        // settings ストアはキーを自分で指定する形なので、3つ目の引数に渡します
+        await idbPut(STORE_SETTINGS,crossfadeBeats,"crossfade_beats");
+
+    }
+    catch(error){
+
+        console.error("繋ぎ方の保存に失敗 :",error.name,error.message);
+
+    }
+
+}
+
+/**
+ * 保存してある繋ぎ方を読み込みます。
+ *
+ * js/main.js の起動処理から呼ばれます。
+ */
+async function loadCrossfadeSetting(){
+
+    try{
+
+        const saved = await idbGet(STORE_SETTINGS,"crossfade_beats");
+
+        /*
+        今のコードが知っている2つのどちらかである時だけ受け入れます。
+        将来この選択肢を変えた場合に、古い値が残っていても壊れない
+        ようにするためです(再生モードの読み込みと同じ守り方)。
+        */
+        if(saved === CROSSFADE_BEATS_LONG || saved === CROSSFADE_BEATS_SHORT){
+
+            crossfadeBeats = saved;
+
+        }
+
+    }
+    catch(error){
+
+        console.error("繋ぎ方の読み込みに失敗 :",error.name,error.message);
+
+    }
+
+}
+
+
+// ==========================================================
+// 11. 見張り役をつなぐ
 // ==========================================================
 /*
 曲が進むたびに、接続点が近づいていないかを見ます。

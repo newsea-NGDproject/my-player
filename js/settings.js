@@ -50,6 +50,11 @@ js/sort.js の SORT_DEFINITIONS と同じ形にしてあります。
 */
 const SETTINGS_DEFINITIONS = [
     {
+        key: "connect",
+        icon: "🎚️",
+        label: "曲の繋ぎ方"
+    },
+    {
         key: "license",
         icon: "📜",
         label: "ライセンス"
@@ -203,9 +208,94 @@ function openSettingsItem(key){
 
     closeSettingsMenu();
 
+    if(key === "connect"){
+        openConnectPanel();
+    }
+
     if(key === "license"){
         openLicensePanel();
     }
+
+}
+
+
+// ==========================================================
+// 3-2. 曲の繋ぎ方(v172)
+// ==========================================================
+/*
+🕺ノリノリRun再生で、曲と曲を何拍かけて入れ替えるかを選びます。
+
+【なぜ設定画面に置いたか】
+
+竹弘の指示:「メニューのレイアウトは今のテストで崩したくないから、
+設定ボタンに16拍と8拍で選択できるようにできないかな」
+
+上半分は10等分の窮屈な作りで、ボタンを1つ足すと他の段が潰れます。
+実機テストの最中にレイアウトが変わると、何を確かめているのか
+分からなくなるため、設定の中に入れました。
+
+【この画面の位置づけ】
+
+いまは長さを聞き比べるためのものですが、竹弘と約束している
+「脳内整理モード(曲と曲の間を開けて繋ぐ)」の設定も、いずれ
+ここに並びます。**その時のための入口**でもあります。
+*/
+
+/**
+ * 選ばれている方のボタンに印を付け直します。
+ */
+function refreshConnectPanel(){
+
+    const panel = document.getElementById("connect-panel");
+
+    if(!panel){ return; }
+
+    /*
+    querySelectorAll は「その条件に当てはまる要素を全部」返します。
+    ここでは選択肢のボタン2つが取れます。
+    */
+    panel.querySelectorAll(".connect-choice").forEach(function(button){
+
+        /*
+        data-beats はHTML側に書いた「この選択肢は何拍か」です。
+        dataset で読み出すと文字列で返るので、Number() で数に直して
+        比べます(文字の "16" と数の 16 は === では一致しないため)。
+        */
+        const beats = Number(button.dataset.beats);
+
+        /*
+        classList.toggle は、第2引数が true ならクラスを付け、
+        false なら外します。if文を書かずに済む書き方です。
+        */
+        button.classList.toggle("connect-choice-on",beats === crossfadeBeats);
+
+    });
+
+}
+
+function openConnectPanel(){
+
+    const panel = document.getElementById("connect-panel");
+
+    if(!panel){ return; }
+
+    refreshConnectPanel();
+
+    panel.style.display = "flex";
+
+    const body = panel.querySelector(".license-body");
+
+    if(body){ body.scrollTop = 0; }
+
+}
+
+function closeConnectPanel(){
+
+    const panel = document.getElementById("connect-panel");
+
+    if(!panel){ return; }
+
+    panel.style.display = "none";
 
 }
 
@@ -296,5 +386,39 @@ function closeLicensePanel(){
             closeLicensePanel();
         });
     }
+
+    // 曲の繋ぎ方の画面(v172)
+    const connectCloseBtn = document.getElementById("connect-close-btn");
+
+    if(connectCloseBtn){
+        connectCloseBtn.addEventListener("click",function(){
+            closeConnectPanel();
+        });
+    }
+
+    /*
+    長さの選択肢(16拍 / 8拍)。
+
+    ボタンを1つずつ書かず、まとめて耳を付けています。将来
+    選択肢が増えても、HTMLに1行足すだけでここは直さずに済みます。
+    */
+    document.querySelectorAll("#connect-panel .connect-choice").forEach(function(button){
+
+        button.addEventListener("click",function(){
+
+            /*
+            setCrossfadeBeats(js/connect.js)は保存まで済ませます。
+            await せずに呼んでいるのは、保存の完了を待たなくても
+            画面と次の接続には即座に効くためです(長さの値そのものは
+            この関数の中で先に切り替わります)。
+            */
+            setCrossfadeBeats(Number(button.dataset.beats));
+
+            // 選ばれている印を付け替えます
+            refreshConnectPanel();
+
+        });
+
+    });
 
 })();
