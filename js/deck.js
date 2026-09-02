@@ -11,24 +11,31 @@
        L4 司令塔(Master Scheduler)            (STEP5で追加)
 
    ------------------------------------------------------------
-   【この版(v168)でやること = STEP5の土台づくり】
+   【このファイルの持ち場】
 
-   **まだ曲は繋ぎません。** v167で2枚のデッキを用意したのに続いて、
-   2曲を同時に鳴らしても壊れないように、下ごしらえだけをします。
-   画面から見える動きは、v167と1ミリも変わりません。
+   2枚のデッキそのものの世話だけをします。
 
-       ① デッキごとに一時URLを持てるようにする(setDeckSource)
-       ② 速さの設定を必ず2枚とも揃える(applyRateToBothDecks)
-       ③ 使い終わった裏のデッキを片付ける(clearIdleDeck)
+       ・どちらが主役かを覚え、交代させる(swapActiveDeck)
+       ・両方に耳を付け、鳴っている方の声だけ通す(bindDeckEvent)
+       ・デッキごとに「載っている曲」と「一時URL」を覚える
+       ・デッキごとに正しい速さを当てる(applyPitchToDeck)
+       ・使い終わった裏のデッキを片付ける(clearIdleDeck)
 
-   ①〜③はどれも「2曲同時に鳴らすと壊れる場所」の先回りです。
-   繋ぐ処理と一緒に入れてしまうと、うまく鳴らなかった時に
-   「繋ぎ方が悪いのか、土台が悪いのか」が分からなくなるため、
-   **わざと動きの変わらない版として先に切り出しました。**
+   **「いつ繋ぐか」「どう繋ぐか」はここでは決めません。**
+   それは js/connect.js(曲接続モジュール)の仕事です。デッキは
+   ターンテーブル、connect.js はそれを操るDJ、という役割分担です。
 
-   拍で繋ぐ(プリロールとクロスフェード)のは次のv169、画面ロック中に
-   何曲繋がるかを数えるのはSTEP6、メインメニューも同じ仕組みに移すのは
-   STEP7です。
+   ------------------------------------------------------------
+   【ここまでの歩み】
+
+       v167 … 2枚のデッキを用意し、主役を交代できるようにした
+       v168 … 2曲同時に鳴らしても壊れないよう下ごしらえ
+              (URLをデッキごとに / 片付け / エラーの受け口)
+       v170 … 速さの当て方を「倍率」から「BPM」へ改めた
+              (曲ごとに元テンポが違うため。deckTrackIds のコメント参照)
+
+   画面ロック中に何曲繋がるかを数えるのはSTEP6、メインメニューも
+   同じ仕組みに移すのはSTEP7です。
 
    ------------------------------------------------------------
    【なぜ「主役の交代」という形にしたのか】
@@ -167,16 +174,41 @@ v167までは、この住所を currentObjectUrl という**たった1つの変�
 */
 const deckObjectUrls = new Map();
 
+/*
+どのデッキに、どの曲が載っているかの台帳です(v170で追加)。
+
+【なぜ曲まで覚える必要があるのか】
+
+再生速度の倍率は「走りたいテンポ ÷ その曲の元のテンポ」で決まります。
+**元のテンポは曲ごとに違う**ので、2枚のデッキに同じ倍率を当てては
+いけません。
+
+    マイピッチ170で走る場合
+      元150の曲 … 170 ÷ 150 = 1.13倍  → 170BPMで鳴る ✅
+      元180の曲 … 170 ÷ 180 = 0.94倍  → 170BPMで鳴る ✅
+
+    もし元150の曲の倍率(1.13倍)を、元180の曲にも当てると
+      180 × 1.13 = 203BPM  → まったく違う速さで鳴ってしまう ❌
+
+⚠️ v168の applyRateToBothDecks() は、この違いを見ずに両デッキへ同じ
+   倍率を当てていました。裏のデッキがまだ鳴っていなかったので実害は
+   出ませんでしたが、繋ぎ始めると**後続曲だけ違う速さで鳴る**という
+   致命的な不具合になります。v170で下の applyPitchToBothDecks() に
+   置き換えました。
+*/
+const deckTrackIds = new Map();
+
 /**
  * デッキに曲のファイルを載せます。
  *
  * そのデッキが前に使っていた一時URLは、ここで返します。
  * **もう一枚のデッキが使っている住所には手を触れません。**
  *
- * @param {HTMLAudioElement} deck - 載せる先のデッキ
- * @param {File}             file - 鳴らしたい曲のファイル
+ * @param {HTMLAudioElement} deck    - 載せる先のデッキ
+ * @param {File}             file    - 鳴らしたい曲のファイル
+ * @param {string}           trackId - その曲のtrack_id(速さの計算に使います)
  */
-function setDeckSource(deck,file){
+function setDeckSource(deck,file,trackId){
 
     // 先に、このデッキが前に使っていた住所を返します
     releaseDeckUrl(deck);
@@ -186,7 +218,26 @@ function setDeckSource(deck,file){
     // 台帳に「このデッキはこの住所を使っている」と書き込みます
     deckObjectUrls.set(deck,url);
 
+    // どの曲を載せたかも覚えます(速さを計算し直す時に要ります)
+    deckTrackIds.set(deck,trackId);
+
     deck.src = url;
+
+}
+
+/**
+ * そのデッキに今どの曲が載っているかを返します。
+ *
+ * @param  {HTMLAudioElement} deck - 調べたいデッキ
+ * @return {Object|null} libraryMap から取り出した曲のデータ
+ */
+function getDeckTrack(deck){
+
+    const trackId = deckTrackIds.get(deck);
+
+    if(!trackId){ return null; }
+
+    return libraryMap[trackId] || null;
 
 }
 
@@ -218,21 +269,61 @@ function releaseDeckUrl(deck){
 // 4. 両デッキで共通の設定
 // ==========================================================
 /**
- * 2枚のデッキに、同じ再生設定を当てます。
+ * 1枚のデッキを、指定のテンポで鳴るように設定します(v170)。
  *
- * 速さ(playbackRate)と音程維持(preservesPitch)は、繋ぐ時に
- * **両方のデッキで揃っていなければなりません**。片方だけ速いと、
- * 繋ぎ目でテンポが変わってランナーが転びます。
+ * **倍率ではなく「鳴らしたいBPM」を渡す**のがこの関数の要です。
+ * 倍率はデッキに載っている曲の元テンポから、ここで計算します。
+ * そうしないと、元テンポの違う曲に他の曲の倍率を当ててしまいます
+ * (deckTrackIds のコメント参照)。
  *
- * @param {number} rate - 再生速度の倍率
+ * @param  {HTMLAudioElement} deck     - 設定するデッキ
+ * @param  {number}           targetBpm - 鳴らしたいテンポ
+ * @return {boolean} 設定できたら true(曲が載っていなければ false)
  */
-function applyRateToBothDecks(rate){
+function applyPitchToDeck(deck,targetBpm){
+
+    const track = getDeckTrack(deck);
+
+    // 何も載っていないデッキには、当てるべき速さがありません
+    if(!track){ return false; }
+
+    const base = getEffectiveBaseBpm(track);
+
+    // 安全装置。0.5〜2.0倍からはみ出さないようにします(pitch.jsと同じ)
+    const rate = Math.min(Math.max(targetBpm / base,RATE_MIN),RATE_MAX);
+
+    /*
+    preservesPitch は「速度を変えても音の高さは変えない」という指定です。
+    webkitPreservesPitch も一緒に書くのは、古いブラウザがこちらの名前
+    しか知らないためです(知らない方は黙って無視されます)。
+    */
+    deck.preservesPitch = true;
+    deck.webkitPreservesPitch = true;
+    deck.playbackRate = rate;
+
+    return true;
+
+}
+
+/**
+ * 2枚のデッキを、同じテンポで鳴るように揃えます(v170)。
+ *
+ * 繋ぐ時、**2枚は同じテンポで鳴っていなければなりません**。
+ * 片方だけ速いと、繋ぎ目でテンポが変わってランナーが転びます。
+ *
+ *     竹弘:「ランナーが曲と曲の間でノッて走っていたら
+ *             曲のテンポが変わり、コケてしまう」
+ *
+ * ⚠️ 「同じ速さ(倍率)」ではなく「同じテンポ(BPM)」で揃えます。
+ *    曲ごとに元のテンポが違うので、同じ倍率では揃いません。
+ *
+ * @param {number} targetBpm - 2枚とも、このテンポで鳴らします
+ */
+function applyPitchToBothDecks(targetBpm){
 
     [deckAudioA,deckAudioB].forEach(function(deck){
 
-        deck.preservesPitch = true;
-        deck.webkitPreservesPitch = true;
-        deck.playbackRate = rate;
+        applyPitchToDeck(deck,targetBpm);
 
     });
 
@@ -267,6 +358,9 @@ function clearIdleDeck(){
     メモリが解放されません。片付けるならここまでやって一組です。
     */
     releaseDeckUrl(idle);
+
+    // どの曲が載っていたかの記録も消します(v170)
+    deckTrackIds.delete(idle);
 
     /*
     音量を1(最大)に戻しておきます。
