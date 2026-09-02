@@ -72,9 +72,11 @@ function updateMediaSessionMetadata(track){
     /*
     前の曲で作ったジャケット用の一時URLを解放します。
 
-    player.js の currentObjectUrl(曲そのものの再生用URL)と
+    deck.js の deckObjectUrls(曲そのものの再生用URLの台帳)と
     同じ考え方です。解放し忘れると、曲を切り替えるたびに
     ブラウザがメモリを確保し続けてしまいます。
+    (v168まではこの説明で player.js の currentObjectUrl を
+     指していましたが、その変数はデッキごとの台帳へ移りました)
     */
     if(mediaSessionArtworkUrl){
         URL.revokeObjectURL(mediaSessionArtworkUrl);
