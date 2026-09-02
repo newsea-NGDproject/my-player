@@ -365,6 +365,23 @@ function ensureDeckAudioGraph(){
             source.connect(gain);
             gain.connect(deckAudioCtx.destination);
 
+            /*
+            ⚠️ <audio> 側の音量を1に戻します(v175で追加した命綱)。
+
+            音は「<audio>.volume × GainNodeの値」という掛け算で決まり
+            ます。回路ができる前に <audio>.volume が0にされていると、
+            **GainNodeをいくら上げても 0 × 1 = 0 で無音のまま**です。
+
+            v174でまさにこの事故が起きました(竹弘の実機報告:
+            「デッキBの再生に失敗。シークだけ動いて音がなりません」)。
+            回路ができる前の音量調整が <audio>.volume に書き込まれ、
+            回路ができた後は誰もそれを1に戻さなかったためです。
+
+            ここで1に揃えておけば、以後の音量は下の setDeckVolume /
+            rampDeckVolume が GainNode だけで受け持ちます。
+            */
+            deck.volume = 1;
+
             deckGains.set(deck,gain);
 
         });
@@ -439,6 +456,16 @@ function setDeckVolume(deck,volume){
 
     }
 
+    /*
+    ⚠️ <audio> 側は必ず1に固定します(v175)。
+
+    音量を持つのは GainNode ただ1つ、と決めておかないと、
+    「<audio>.volume × GainNode」の掛け算のどちらかに0が残って
+    無音になる事故が起きます(v174で実際に起きました。詳しくは
+    ensureDeckAudioGraph のコメント)。
+    */
+    deck.volume = 1;
+
     const now = deckAudioCtx.currentTime;
 
     /*
@@ -479,6 +506,9 @@ function rampDeckVolume(deck,curve,durationSec){
         return;
 
     }
+
+    // <audio> 側は必ず1に固定(理由は setDeckVolume のコメント)
+    deck.volume = 1;
 
     const now = deckAudioCtx.currentTime;
 
