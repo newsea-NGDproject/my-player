@@ -346,6 +346,38 @@ bindDeckEvent("loadedmetadata",function(){
 
 });
 
+/**
+ * シークバーを、いま主役のデッキに合わせて作り直します(v170)。
+ *
+ * 【なぜこの関数が要るのか】
+ *
+ * 上の loadedmetadata は「曲の長さが分かった時」に起きますが、
+ * 曲を繋ぐ時、その合図は **接続点の15秒前**(裏のデッキに次の曲を
+ * 載せた瞬間)に起きてしまいます。その時点ではまだ裏のデッキが
+ * 主役ではないので、bindDeckEvent が知らせを弾きます。
+ *
+ * つまり繋いだ後、シークバーは前の曲の長さのまま取り残されます。
+ * そこで接続の瞬間に、js/connect.js からこれを呼んでもらいます。
+ *
+ * 竹弘が選んだA案(接続点で次の曲のバーに切り替える)は、この
+ * 呼び出し1つで実現しています。「接続点は曲が切り替わる所で、
+ * とても分かりやすい」(竹弘、2026-09-02)。
+ */
+function resetSeekBarForCurrentDeck(){
+
+    /*
+    duration は、まだ読み込めていない時に NaN になります。
+    そのままバーに入れると目盛りが壊れるので、0を入れておきます。
+    */
+    const duration = isFinite(audioPlayer.duration) ? audioPlayer.duration : 0;
+
+    seekBar.max = duration;
+    seekBar.value = audioPlayer.currentTime;
+
+    updateSeekText(audioPlayer.currentTime);
+
+}
+
 /*
 再生が進むたびに、バーと文字を今の位置に合わせます。
 
@@ -396,6 +428,19 @@ seekBar.addEventListener("change",function(){
     audioPlayer.currentTime = Number(seekBar.value);
 
     isSeeking = false;
+
+    /*
+    繋ぐ準備をしていたら取りやめます(v170)。
+
+    接続の予約は「あと何秒後」という形で入れてあります。再生位置を
+    飛ばすと、その「あと何秒」がまるごと嘘になり、**まったく違う
+    場所で次の曲へ切り替わります。**
+
+    位置を計算し直すこともできますが、シークは「今の流れを変える」
+    操作なので、曲を選び直した時や停止した時と同じ扱いにしました。
+    接続点がまた近づけば、助走はやり直されます。
+    */
+    cancelConnect();
 
 });
 
@@ -450,8 +495,24 @@ stopBtn.addEventListener("click",function(){
         audioPlayer.play();
     }
     else{
+
         intentionalPause = true;
         audioPlayer.pause();
+
+        /*
+        繋ぐ準備をしていたら取りやめます(v170)。
+
+        止めたのに裏で助走が続き、予約の時刻が来て勝手に次の曲へ
+        切り替わってしまうのを防ぎます。信号待ちで止めたら、
+        止まったままでいてほしいためです。
+
+        ⚠️ もう一度 ▶ を押して走り出せば、また接続点が近づいた時に
+           助走がやり直されます(js/connect.js が timeupdate で
+           見張っているため)。取りやめても、繋がらなくなるわけでは
+           ありません。
+        */
+        cancelConnect();
+
     }
 
 });
