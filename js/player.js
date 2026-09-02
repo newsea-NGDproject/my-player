@@ -117,6 +117,20 @@ async function playTrack(trackId){
     */
     cancelConnect();
 
+    /*
+    音量回路(Web Audio)を用意して、眠っていれば起こします(v174)。
+
+    ⚠️ **ここで呼ぶことに意味があります。** この関数が動くのは、
+       竹弘が曲一覧をタップした時など「操作の直後」です。ブラウザは
+       操作と関係なく音を鳴らし始めることを禁じているため、回路を
+       作るのも起こすのも、操作の中でなければ受け付けられません。
+
+    2回目以降は、すでにある回路をそのまま使うので何も起きません。
+    詳しくは js/deck.js の音量回路のコメントを参照。
+    */
+    ensureDeckAudioGraph();
+    resumeDeckAudio();
+
     try{
 
         const track = libraryMap[trackId];
@@ -225,8 +239,12 @@ async function playTrack(trackId){
 
             これを忘れると、繋いだ後に曲一覧をタップした時、
             **無音のまま再生が進む**という分かりにくい不具合になります。
+
+            v174から setDeckVolume() を通します。音量つまみ(GainNode)が
+            音量を持つようになったため、<audio>.volume を直に書き換えても
+            効かなくなったためです(js/deck.js の音量回路)。
             */
-            audioPlayer.volume = 1;
+            setDeckVolume(audioPlayer,1);
 
         }
 

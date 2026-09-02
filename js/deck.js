@@ -266,6 +266,253 @@ function releaseDeckUrl(deck){
 
 
 // ==========================================================
+// 3-2. 音量回路(Web Audio)(v174)
+// ==========================================================
+/* ------------------------------------------------------------
+   【なぜ <audio>.volume をやめたのか ―― v173で起きた不具合】
+
+   竹弘の実機報告(2026-09-02):
+
+       「後続曲の立ち上がりのフェードインだけど、曲再生が音程が
+         ヨレヨレに聞こえる時がある。ボリュームを変えているだけの
+         はずなのに。たまに再生中の曲もヨレヨレする時が出た」
+
+   犯人は音量そのものではなく、**命令の回数**でした。
+
+       ① preservesPitch=true で速度を変えている間、ブラウザは
+          WSOLA という処理で波形を伸縮し続けている(CPUを食う)
+       ② それを2曲同時にやっている(助走中は接続点の15秒前から)
+       ③ そこへメインスレッドから毎コマ(1秒に約120回)音量の
+          変更命令が飛ぶ  ← v173までの作り
+       ④ 音を作る作業が間に合わず、波形の継ぎ目がずれる
+          → **音程がヨレて聞こえる**
+
+   ------------------------------------------------------------
+   【移植元は同じ壁にぶつかって、乗り越えていた】
+
+   仕様書(V4.6.6・最終版)にその記録が残っていました。
+
+       「16msごとの逐次処理」を廃止。
+       **「先行予約スケジュール方式」**を採用。
+
+       制御方式: L4司令塔による「事前予約ボリュームスケジューリング」
+       EndTS - 20秒: L4がボリューム曲線を**ハードウェアへ書き込む**
+
+       「13=0」の精度を、**ブラウザの負荷に左右されない**
+       「ハードウェアレベルの予約」で実現する
+
+   つまり移植元は `<audio>.volume` を触っていませんでした。
+   Web Audio の GainNode(音量つまみ)に**音量の曲線を1回だけ予約**し、
+   あとは音を作る側(オーディオスレッド)に任せていたのです。
+
+       v173まで … 1秒に120回「今の音量はこれ」と言い続ける
+       v174から … 1回だけ「これから5.6秒かけて0まで下げて」と予約
+
+   ------------------------------------------------------------
+   【おまけ:画面ロック中も動くようになる】
+
+   requestAnimationFrame は画面が消えると止まりますが、GainNodeの
+   予約は音を作る側で実行されるので止まりません。STEP6で心配して
+   いた「ロック中にクロスフェードが動かない」も、これで解決します。
+
+   ------------------------------------------------------------
+   【回路のかたち】
+
+       deckAudioA ──> MediaElementSource ──> GainNode ──┐
+                                                         ├─> スピーカー
+       deckAudioB ──> MediaElementSource ──> GainNode ──┘
+
+   ⚠️ createMediaElementSource は、1つの <audio> につき**一度しか
+      呼べません**(呼ぶと元にも戻せません)。そのため下の
+      ensureDeckAudioGraph() は、最初の1回だけ回路を組み、
+      2回目以降は何もせずに戻ります。
+------------------------------------------------------------ */
+
+// 音を扱う作業台。1つだけ作り、**閉じません**(理由は下の resume の項)
+let deckAudioCtx = null;
+
+// デッキ → そのデッキの音量つまみ(GainNode)
+const deckGains = new Map();
+
+/**
+ * 音量回路を用意します。すでにあれば何もしません。
+ *
+ * ⚠️ **必ずユーザーの操作(タップ)の中から呼ぶこと。**
+ *    ブラウザは、操作と関係なく音を鳴らし始めることを禁じています。
+ *    操作の外で作ると眠ったまま(suspended)になり、**音が出なく
+ *    なります**。
+ */
+function ensureDeckAudioGraph(){
+
+    if(deckAudioCtx){ return; }
+
+    try{
+
+        deckAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        [deckAudioA,deckAudioB].forEach(function(deck){
+
+            const source = deckAudioCtx.createMediaElementSource(deck);
+
+            const gain = deckAudioCtx.createGain();
+
+            gain.gain.value = 1;
+
+            /*
+            源(曲)→ 音量つまみ → スピーカー、と数珠つなぎにします。
+            connect が「配線する」命令です。
+            */
+            source.connect(gain);
+            gain.connect(deckAudioCtx.destination);
+
+            deckGains.set(deck,gain);
+
+        });
+
+        console.log("デッキの音量回路を作りました");
+
+    }
+    catch(error){
+
+        /*
+        作れなかった時は、今までどおり <audio>.volume で音量を
+        変えます(下の各関数が自動的にそちらへ切り替わります)。
+
+        音は普通に鳴り続けるので、竹弘が困ることはありません。
+        フェードの滑らかさだけが落ちます。
+        */
+        console.error(
+            "音量回路を作れませんでした(音量は<audio>で制御します) :",
+            error.name,error.message
+        );
+
+        deckAudioCtx = null;
+        deckGains.clear();
+
+    }
+
+}
+
+/**
+ * 眠っている音量回路を起こします。
+ *
+ * AudioContext は、しばらく音を出さないでいるとブラウザやOSに
+ * 眠らされる(suspended)ことがあります。眠ったままだと**音が
+ * 一切出ません**。曲を鳴らす前と、竹弘が画面に触れた時に起こします。
+ *
+ * ⚠️ close() は絶対に呼ばないこと。v157で、閉じるとスマホの
+ *    オーディオ出力ごと止まり、次に音を出す時「ブッ」というノイズが
+ *    出る不具合になりました(竹弘が規則性を見つけて特定)。
+ */
+function resumeDeckAudio(){
+
+    if(!deckAudioCtx){ return; }
+
+    if(deckAudioCtx.state === "suspended"){
+
+        deckAudioCtx.resume().catch(function(error){
+
+            console.error("音量回路を起こせませんでした :",error.name,error.message);
+
+        });
+
+    }
+
+}
+
+/**
+ * デッキの音量を、その場で設定します。
+ *
+ * @param {HTMLAudioElement} deck   - 対象のデッキ
+ * @param {number}           volume - 0(無音)〜1(最大)
+ */
+function setDeckVolume(deck,volume){
+
+    const gain = deckGains.get(deck);
+
+    // 回路が無い時は、今までどおり <audio> の音量を使います
+    if(!gain){
+
+        deck.volume = volume;
+
+        return;
+
+    }
+
+    const now = deckAudioCtx.currentTime;
+
+    /*
+    先に、予約してある変化を取り消します。
+
+    これを忘れると、進行中のフェードと今回の指定が競合して、
+    音量が行ったり来たりします。
+    */
+    gain.gain.cancelScheduledValues(now);
+    gain.gain.setValueAtTime(volume,now);
+
+}
+
+/**
+ * デッキの音量を、あらかじめ用意した曲線に沿って変えるよう予約します。
+ *
+ * **これがv174の心臓部です。** 1回呼ぶだけで、あとは音を作る側が
+ * 正確に実行してくれます。メインスレッド(JavaScript)は解放され、
+ * 竹弘が画面を触っていても、画面が消えていても、音は乱れません。
+ *
+ * @param {HTMLAudioElement} deck        - 対象のデッキ
+ * @param {Float32Array}     curve       - 音量の道すじ(0〜1の値の並び)
+ * @param {number}           durationSec - かける時間(実秒)
+ */
+function rampDeckVolume(deck,curve,durationSec){
+
+    const gain = deckGains.get(deck);
+
+    if(!gain){
+
+        /*
+        回路が無い環境では、フェードせずに終わりの音量へ飛ばします。
+        AudioContext に対応していないブラウザはほぼ無いので、実際に
+        ここを通ることはまず起きません。
+        */
+        deck.volume = curve[curve.length - 1];
+
+        return;
+
+    }
+
+    const now = deckAudioCtx.currentTime;
+
+    gain.gain.cancelScheduledValues(now);
+
+    /*
+    setValueCurveAtTime は「この道すじを、この時間で辿って」という
+    予約です。曲線の形を自由に決められるので、クロスフェードの谷も
+    そのまま表現できます。
+    */
+    gain.gain.setValueCurveAtTime(curve,now,durationSec);
+
+}
+
+/*
+画面のどこかが触られたら、音量回路を起こします。
+
+【なぜ「どこでも」なのか】
+眠るきっかけ(バックグラウンドへ回る、OSの省電力)は、こちらから
+見えません。再生ボタンの中だけで起こす作りにすると、別の操作の
+後で眠ったまま曲が始まり、**無音のまま再生が進む**ことがあります。
+
+タップのたびに1回状態を見るだけなので、負担にはなりません。
+passive:true は「この処理は画面のスクロールを邪魔しません」という
+ブラウザへの申告で、指の動きが滑らかになります。
+*/
+[ "click","touchstart" ].forEach(function(eventName){
+
+    document.addEventListener(eventName,resumeDeckAudio,{passive:true});
+
+});
+
+
+// ==========================================================
 // 4. 両デッキで共通の設定
 // ==========================================================
 /**
@@ -368,7 +615,11 @@ function clearIdleDeck(){
     繋いでいる最中に音量を0まで下げたデッキが、そのまま次の出番を
     迎えると、**次の曲が無音で始まってしまう**ためです。片付けの
     たびに元に戻しておけば、どのデッキもいつでも使える状態で待てます。
+
+    v174から setDeckVolume() を通します。音量つまみ(GainNode)が
+    音量を持つようになったため、<audio>.volume を直に書き換えても
+    効かなくなったためです。
     */
-    idle.volume = 1;
+    setDeckVolume(idle,1);
 
 }

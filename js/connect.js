@@ -233,7 +233,7 @@ const CONNECT_RESEEK_THRESHOLD_SEC = 0.03;
 
 ⚠️ 無音モードのフェードインだけは、ここに番号を持ちません。
    接続の瞬間(doConnect)にこの状態を空にしてから予約するためです。
-   代わりに crossfadeGeneration(回数券)で見張っています。
+   代わりに connectGeneration(回数券)で見張っています。
 */
 let connectState = null;
 
@@ -246,24 +246,26 @@ let connectState = null;
 let isPreRolling = false;
 
 /*
-クロスフェードの「回数券の番号」です。
+接続の「回数券の番号」です。
 
 【なぜ番号が要るのか】
 
-クロスフェードは requestAnimationFrame で少しずつ音量を変え続けます。
-この繰り返しは、**竹弘が途中で別の曲を選んでも勝手には止まりません。**
+無音モードでは、フェードインを setTimeout で予約します。この予約は
+**竹弘が途中で別の曲を選んでも勝手には消えません。**
 
-    1. 曲Aから曲Bへクロスフェード中(Aの音量を下げ、Bを上げている)
-    2. 竹弘が曲一覧で曲Cをタップ
-    3. Cは、Aが載っていたデッキに載る
-    4. **クロスフェードは「そのデッキの音量を下げる」続きをやる**
-    5. 選んだばかりの曲Cが、勝手に小さくなっていく
+    1. 曲Aから曲Bへ、無音をはさんで接続中
+    2. 無音の間に、竹弘が曲一覧で曲Cをタップ
+    3. 予約の時刻が来て、**曲Bのフェードインが始まってしまう**
 
-そこで、始めるたびに番号を1つ進め、繰り返しの中で「自分の番号が
-まだ最新か」を確かめます。新しいクロスフェードが始まったり、
-取りやめられたりすると番号が変わるので、古い方は静かに退場します。
+そこで、接続や取りやめのたびに番号を1つ進め、予約が目を覚ました時に
+「自分の番号がまだ最新か」を確かめます。古ければ何もせず引き返します。
+
+⚠️ 音量そのものの予約(GainNode)には、この番号は要りません。
+   あちらは新しい予約を入れる時に cancelScheduledValues() で
+   古い予約を消すので、取り違えが起こらないためです
+   (js/deck.js の rampDeckVolume)。
 */
-let crossfadeGeneration = 0;
+let connectGeneration = 0;
 
 
 // ==========================================================
@@ -553,11 +555,15 @@ async function startPreRoll(nextTrackId,remainSec){
     /*
     音量を0にしてから鳴らします。
 
-    ⚠️ muted(消音)ではなく volume = 0 を使うこと。移植元の仕様書に
-       理由が明記されています:「OSの省電力機能による再生停止を防ぐ」。
+    ⚠️ muted(消音)ではなく音量0を使うこと。移植元の仕様書に理由が
+       明記されています:「OSの省電力機能による再生停止を防ぐ」。
        消音は「鳴っていない」と見なされることがあります。
+
+    v174から setDeckVolume() を通します。音量つまみ(GainNode)が
+    音量を持つようになったため、<audio>.volume を直に書き換えても
+    効かなくなったためです(js/deck.js の音量回路)。
     */
-    toDeck.volume = 0;
+    setDeckVolume(toDeck,0);
 
     // このデッキに載っている曲の元テンポで、速さを決めます
     applyPitchToDeck(toDeck,noriRunMyPitch);
@@ -905,17 +911,17 @@ function doConnect(){
         /*
         ⚠️ connectState はこの関数の先頭ですでに空にしてあるので、
            このフェードインの予約はタイマー台帳に載せられません。
-           代わりに**クロスフェードの回数券(crossfadeGeneration)**で
+           代わりに**クロスフェードの回数券(connectGeneration)**で
            見張ります。竹弘が途中で曲を選び直すと cancelConnect() が
            番号を進めるので、この予約は目を覚ました時に自分が
            古いことに気づいて、何もせず引き返します。
         */
-        const myGeneration = crossfadeGeneration;
+        const myGeneration = connectGeneration;
 
         setTimeout(function(){
 
             // 取りやめられていたら、何もしません
-            if(myGeneration !== crossfadeGeneration){ return; }
+            if(myGeneration !== connectGeneration){ return; }
 
             startFade(toDeck,0,1,fadeSec);
 
@@ -966,20 +972,24 @@ function doConnect(){
  * 0.5 + 0.5 = 1.0。**始めから終わりまで音の力が一定**になります。
  * DJミキサーのクロスフェーダーが昔からこの形をしています。
  *
+ * ただしノリRunでは、その等パワーのままだと音が大きすぎました。
+ * カーブを深くして谷を作っています(CONNECT_CROSSFADE_CURVE)。
+ *
  * ------------------------------------------------------------
- * 【⚠️ この関数は後で作り替える前提です】
+ * 【v174で作り替えました】
  *
- * requestAnimationFrame は「画面を描き直すたび」に呼ばれる仕組み
- * なので、**画面が消えている間は止まります。** 走行中はポケットの
- * 中で画面が消えているので、そこでどうなるかをSTEP6で実測します。
+ * v173までは requestAnimationFrame で毎コマ音量を書き換えていました
+ * が、竹弘の実機テストで**音程がヨレる**不具合が出ました。2曲同時に
+ * 速度変換(WSOLA)が走っている最中に、1秒120回も命令を飛ばしていた
+ * ことが原因です。
  *
- * 止まると分かったら、移植元の仕様書どおり Web Audio の
- * GainNode + 事前予約(linearRampToValueAtTime)へ移します。あちらは
- * 音を作る側のチップに「何秒後にこう変えて」と予約する方式なので、
- * 画面が消えていても正確に動きます。
+ * いまは音量の道すじを**1回だけ予約**し、音を作る側に任せています。
+ * 移植元の仕様書が「16msごとの逐次処理を廃止」「ボリューム曲線を
+ * ハードウェアへ書き込む」と記していたのと同じやり方です。
+ * 詳しい経緯は js/deck.js の音量回路のコメントにまとめました。
  *
- * **音量を変える処理をこの関数1つに閉じ込めてあるのは、その時に
- * ここだけ差し替えれば済むようにするためです。**
+ * おまけに、**画面が消えていても正確に動く**ようになりました
+ * (requestAnimationFrame は画面が消えると止まっていた)。
  *
  * @param {HTMLAudioElement} fromDeck    - 消えていく側(先行曲)
  * @param {HTMLAudioElement} toDeck      - 現れる側(後続曲)
@@ -988,68 +998,94 @@ function doConnect(){
 function startCrossfade(fromDeck,toDeck,durationSec){
 
     /*
-    performance.now() は、ページを開いてからの経過ミリ秒を返します。
-    Date.now() と違って時計合わせの影響を受けないので、時間の差を
-    測る用途にはこちらが向いています。
+    2本の道すじを用意して、それぞれのデッキに1回ずつ予約します。
+    予約したらこの関数の仕事は終わりで、あとは音を作る側が正確に
+    実行してくれます(v174。理由は js/deck.js の音量回路のコメント)。
     */
-    const startedAt = performance.now();
+    rampDeckVolume(fromDeck,buildCurve(1,0,CONNECT_CROSSFADE_CURVE),durationSec);
+    rampDeckVolume(toDeck,  buildCurve(0,1,CONNECT_CROSSFADE_CURVE),durationSec);
 
-    // 自分の回数券の番号を取っておきます(上のコメント参照)
-    crossfadeGeneration++;
+}
 
-    const myGeneration = crossfadeGeneration;
+/**
+ * 音量の「道すじ」を作ります(v174)。
+ *
+ * ------------------------------------------------------------
+ * 【道すじとは】
+ *
+ * Web Audio の音量つまみには、「この並びのとおりに音量を動かして」と
+ * 数値の列を渡せます。0.0秒でこの値、0.1秒でこの値…と、なめらかに
+ * つないで実行してくれます。
+ *
+ * 64個も点があれば、耳には完全になめらかに聞こえます。
+ * (v173まではこれを毎コマ計算して命令していました。同じ形の音量
+ *  変化を、**先に全部書いて渡してしまう**のがv174の考え方です)
+ *
+ * ------------------------------------------------------------
+ * 【power(カーブの深さ)について】
+ *
+ *     power = 1 … まっすぐ(直線)。無音モードの単独フェードで使う
+ *     power > 1 … 入れ替わりの真ん中で両方の音が小さくなる
+ *
+ * クロスフェードでは、cos と sin を power 乗して谷を作ります。
+ * 竹弘の「もう2段階くらい音が小さくなった所でクロスしたい」に
+ * 応えている部分です(詳しくは CONNECT_CROSSFADE_CURVE のコメント)。
+ *
+ * @param  {number} fromVol - 始めの音量(0〜1)
+ * @param  {number} toVol   - 終わりの音量(0〜1)
+ * @param  {number} power   - カーブの深さ。1ならまっすぐ
+ * @return {Float32Array} 音量の道すじ
+ */
+function buildCurve(fromVol,toVol,power){
 
-    function step(){
+    const STEPS = 64;
 
-        /*
-        自分より新しいクロスフェードが始まった(または取りやめられた)
-        場合は、ここで静かに退場します。続けると、竹弘が選び直した
-        ばかりの曲の音量を勝手に下げてしまいます。
-        */
-        if(myGeneration !== crossfadeGeneration){ return; }
+    /*
+    Float32Array は「小数だけを入れる、決まった長さの箱」です。
+    Web Audio が受け取れるのはこの形だけなので、ふつうの配列
+    ([] で作るもの)ではなく、こちらを使います。
+    */
+    const curve = new Float32Array(STEPS);
 
-        const elapsedSec = (performance.now() - startedAt) / 1000;
+    for(let i = 0; i < STEPS; i++){
 
         // 0(始め)から1(終わり)までの進み具合
-        const t = Math.min(elapsedSec / durationSec,1);
+        const t = i / (STEPS - 1);
 
-        // Math.PI / 2 はラジアンで90度です
-        const angle = t * Math.PI / 2;
+        if(power === 1){
+
+            // まっすぐ結ぶだけ
+            curve[i] = fromVol + (toVol - fromVol) * t;
+
+            continue;
+
+        }
 
         /*
-        cos と sin の結果を CONNECT_CROSSFADE_CURVE 乗しています(v172)。
+        谷のあるカーブ。Math.PI / 2 はラジアンで90度です。
 
-        Math.pow(a,b) は「aのb乗」を返す命令です。1乗なら何も変わらず
-        等パワーのまま、乗数を上げるほど**入れ替わりの真ん中で両方の
-        音が小さくなり、谷ができます。**
-
-        竹弘の「もう2段階くらい音が小さくなった所でクロスしたい」を
-        実現している行です(詳しい理由は定数のコメント)。
+        下がる側は cos(1から0へ)、上がる側は sin(0から1へ)を使い、
+        その結果を power 乗して谷を深くします。
         */
-        fromDeck.volume = Math.pow(Math.cos(angle),CONNECT_CROSSFADE_CURVE);
-        toDeck.volume   = Math.pow(Math.sin(angle),CONNECT_CROSSFADE_CURVE);
+        const angle = t * Math.PI / 2;
 
-        if(t < 1){
+        const shape = (fromVol > toVol)
+            ? Math.cos(angle)
+            : Math.sin(angle);
 
-            requestAnimationFrame(step);
-
-        }
-        else{
-
-            /*
-            きっちり0と1で終わらせます。
-
-            計算の誤差で 0.0001 のような値が残ると、消えたはずの曲が
-            かすかに鳴り続けてしまうためです。
-            */
-            fromDeck.volume = 0;
-            toDeck.volume   = 1;
-
-        }
+        curve[i] = Math.pow(shape,power);
 
     }
 
-    requestAnimationFrame(step);
+    /*
+    終わりの値をきっちり合わせます。
+
+    計算の誤差で 0.0001 のような値が残ると、消えたはずの曲が
+    かすかに鳴り続けてしまうためです。
+    */
+    curve[STEPS - 1] = toVol;
+
+    return curve;
 
 }
 
@@ -1066,10 +1102,9 @@ function startCrossfade(fromDeck,toDeck,durationSec){
  * 重なる真ん中を薄くする」ためでしたが、こちらはそもそも重ならない
  * ので、まっすぐ上げ下げするのがいちばん自然に聞こえます。
  *
- * ⚠️ 回数券(crossfadeGeneration)はクロスフェードと共有しています。
- *    フェードアウトとフェードインは無音をはさんで時間がずれるので、
+ * ⚠️ フェードアウトとフェードインは無音をはさんで時間がずれるので、
  *    互いに打ち消し合うことはありません。取りやめの時は
- *    cancelConnect() が番号を進めて、両方まとめて止めます。
+ *    cancelConnect() が音量の予約ごと消します。
  *
  * @param {HTMLAudioElement} deck        - 動かすデッキ
  * @param {number}           fromVol     - 始めの音量(0〜1)
@@ -1078,40 +1113,10 @@ function startCrossfade(fromDeck,toDeck,durationSec){
  */
 function startFade(deck,fromVol,toVol,durationSec){
 
-    const startedAt = performance.now();
+    // 始めの音量に合わせてから、道すじを予約します
+    setDeckVolume(deck,fromVol);
 
-    crossfadeGeneration++;
-
-    const myGeneration = crossfadeGeneration;
-
-    deck.volume = fromVol;
-
-    function step(){
-
-        if(myGeneration !== crossfadeGeneration){ return; }
-
-        const elapsedSec = (performance.now() - startedAt) / 1000;
-
-        const t = Math.min(elapsedSec / durationSec,1);
-
-        // fromVol から toVol へ、まっすぐ動かします
-        deck.volume = fromVol + (toVol - fromVol) * t;
-
-        if(t < 1){
-
-            requestAnimationFrame(step);
-
-        }
-        else{
-
-            // 計算の誤差を残さないよう、きっちり終わりの値にします
-            deck.volume = toVol;
-
-        }
-
-    }
-
-    requestAnimationFrame(step);
+    rampDeckVolume(deck,buildCurve(fromVol,toVol,1),durationSec);
 
 }
 
@@ -1139,14 +1144,27 @@ function cancelConnect(){
     clearConnectTimer();
 
     /*
-    進行中のクロスフェードも止めます。
+    まだ発火していないフェードインの予約を無効にします。
 
-    番号を進めるだけで、繰り返しの中の見張り(myGeneration !==
-    crossfadeGeneration)が次の1コマで気づいて退場します。
-    音量は、この後に呼ばれる clearIdleDeck() や、曲を載せ直す時の
-    playTrack() が1に戻してくれます。
+    番号を進めるだけで、予約が目を覚ました時に「自分は古い」と
+    気づいて何もせず引き返します(connectGeneration のコメント参照)。
     */
-    crossfadeGeneration++;
+    connectGeneration++;
+
+    /*
+    進行中の音量変化も、その場で止めます(v174)。
+
+    音量つまみ(GainNode)への予約は、JavaScriptの都合とは無関係に
+    音を作る側で走り続けます。**ここで消さないと、竹弘が選び直した
+    ばかりの曲の音量が、予約どおりに下げられていきます。**
+
+    setDeckVolume() は「今の音量をこれにして、予約は全部取り消す」
+    という命令なので、これ1つで両方を果たせます(js/deck.js)。
+
+    主役のデッキを1(最大)に戻すのは、繋いでいる途中で取りやめた時に
+    **中途半端な音量のまま鳴り続けるのを防ぐ**ためです。
+    */
+    setDeckVolume(audioPlayer,1);
 
     /*
     助走中だった裏のデッキを止めて片付けます。
@@ -1157,6 +1175,16 @@ function cancelConnect(){
     if(connectState || isPreRolling){
 
         clearIdleDeck();
+
+    }
+    else{
+
+        /*
+        繋ぎ終わった後(完走中の先行曲が裏にいる)も、その音量の予約を
+        消しておきます。クロスフェードの途中で取りやめた場合、裏の
+        デッキにはまだ「下げていく」予約が残っているためです。
+        */
+        setDeckVolume(getIdleDeck(),0);
 
     }
 
