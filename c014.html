@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v171)ノリRun
+        (v172)ノリRun
         メインメニュー
 
     </title>
@@ -2986,7 +2986,14 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         中を display:flex の縦並びにして、見出しを固定し、本文だけが
         スクロールする形にしています(上下2分割の考え方は #app と同じ)。
         */
-        #license-panel{
+        /*
+        #connect-panel(曲の繋ぎ方。v172)も、まったく同じ作りなので
+        セレクタを並べて共有しています。中の見出し・本文・閉じるボタンは
+        クラス(.license-header 等)をそのまま使い回すので、片方の見た目を
+        直せば両方に効きます。**ライセンス画面の見え方は変わりません。**
+        */
+        #license-panel,
+        #connect-panel{
             position:fixed;
             top:0;
             right:0;
@@ -2998,6 +3005,54 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
 
             display:flex;
             flex-direction:column;
+        }
+
+        /*
+        曲の繋ぎ方の選択肢(v172)。
+
+        この2つのスタイルは #connect-panel の中だけに効きます。
+        竹弘の「メニューのレイアウトは今のテストで崩したくない」に
+        従い、他の画面へ影響が出ない書き方にしています。
+        */
+        #connect-panel .connect-choice{
+            display:block;
+            width:100%;
+            box-sizing:border-box;
+
+            margin:0 0 12px 0;
+            padding:14px 16px;
+
+            background:var(--card-bg);
+            border:2px solid var(--border-color);
+            border-radius:12px;
+
+            color:var(--text-main);
+            font-size:1rem;
+            font-weight:bold;
+            text-align:left;
+
+            cursor:pointer;
+        }
+
+        /* いま選ばれている方。テーマ色(青 / 暁色)で囲みます */
+        #connect-panel .connect-choice-on{
+            border-color:var(--theme-color);
+            color:var(--theme-color);
+            background:rgba(var(--theme-rgb),0.1);
+        }
+
+        #connect-panel .connect-choice:active{
+            filter:brightness(0.85);
+        }
+
+        /* 選択肢の下に添える一言。少し小さく、控えめな色にします */
+        #connect-panel .connect-note{
+            display:block;
+            margin-top:4px;
+
+            font-size:0.8rem;
+            font-weight:normal;
+            color:var(--text-sub);
         }
 
         /* 見出し。flex-shrink:0 で、本文が長くても縮ませません */
@@ -4759,6 +4814,51 @@ INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
 CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.</pre>
+    </div>
+
+</div>
+
+<!--
+    設定 ⚙️ →「🎚️ 曲の繋ぎ方」で開く画面(v172)。
+
+    🕺ノリノリRun再生で、曲と曲を何拍かけて入れ替えるかを選びます。
+    見出し・本文・閉じるボタンのクラスは、上のライセンス画面と
+    そのまま共有しています(#license-panel と同じ見た目・同じ動き)。
+
+    ⚠️ data-beats の数字が、そのまま拍数として js/settings.js に
+       読み取られます。選択肢を増やす時は、この形の <button> を
+       1つ足すだけでよく、JavaScript側は直す必要がありません。
+-->
+<div id="connect-panel" style="display:none;">
+
+    <div class="license-header">
+        <span class="license-title">🎚️ 曲の繋ぎ方</span>
+        <button type="button" id="connect-close-btn" class="license-close-btn">✕</button>
+    </div>
+
+    <div class="license-body">
+
+        <p>
+            🕺ノリノリRun再生で、曲と曲が入れ替わる時の<br>
+            重なりの長さを選びます。
+        </p>
+
+        <button type="button" class="connect-choice" data-beats="16">
+            16拍でゆっくり繋ぐ
+            <span class="connect-note">マイピッチ170で約5.6秒。DJのミックスに近い長さ</span>
+        </button>
+
+        <button type="button" class="connect-choice" data-beats="8">
+            8拍でさっと繋ぐ
+            <span class="connect-note">マイピッチ170で約2.8秒。重なりが短く、すっきり</span>
+        </button>
+
+        <p class="connect-note">
+            ※ 秒ではなく拍で決めているので、<br>
+            　 マイピッチを上げると、その分だけ短くなります。<br>
+            　 走る歩数で数えると、いつも同じ歩数です。
+        </p>
+
     </div>
 
 </div>
