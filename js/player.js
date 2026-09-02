@@ -9,7 +9,7 @@
  曲一覧の再生ボタン(▶️)を押した時に、その曲を再生します。
 
    playTrack()         … 指定した曲を再生する
-   audioPlayer.onerror … 再生中にエラーが起きた時の受け止め
+   "error" の受け口    … 再生中にエラーが起きた時の受け止め
 
  なお、ここでの再生は「普通の速さで鳴らすだけ」です。
  本命であるビートマッチング(設定BPMに合わせた再生・曲間の接続)は
@@ -35,8 +35,22 @@
 */
 
 
-// 再生中の一時URL(曲を切り替える時に解放するため覚えておきます)
-let currentObjectUrl = null;
+/*
+再生中の一時URLの管理は、v168で js/deck.js へ引っ越しました。
+
+【なぜここから無くなったのか】
+
+v167まではこのファイルに currentObjectUrl という変数が1つあり、
+「今鳴っている曲の一時URL」を覚えていました。デッキが1枚だった頃は
+それで正しかったのですが、STEP5で2曲を同時に鳴らすと、**次の曲を
+載せた瞬間に、まだ鳴っている前の曲のURLを解放してしまい、音が
+壊れます。**
+
+そこで「どのデッキがどのURLを使っているか」をデッキごとに覚える
+台帳(deck.js の deckObjectUrls)へ移し、このファイルからは
+setDeckSource() を呼ぶだけにしました。解放のタイミングを
+1か所にまとめておくためです。
+*/
 
 /*
 今どの曲を選んで再生しているかを覚えておく変数です(v80で追加)。
@@ -160,12 +174,6 @@ async function playTrack(trackId){
         const file = await track.file_handle.getFile();
         logDebugEvent("getFile完了");
 
-        if(currentObjectUrl){
-            URL.revokeObjectURL(currentObjectUrl);
-        }
-
-        currentObjectUrl = URL.createObjectURL(file);
-
         /*
         ---- 🕺ノリノリRun再生では、鳴らすたびにデッキを交代します(v167) ----
 
@@ -193,7 +201,20 @@ async function playTrack(trackId){
         // 今どの曲を選んだかを覚えておきます(次に同じ曲がタップされた時の判定用)
         currentTrackId = trackId;
 
-        audioPlayer.src = currentObjectUrl;
+        /*
+        いま主役のデッキに、この曲を載せます(v168)。
+
+        setDeckSource()(js/deck.js)は、**このデッキが前に使っていた
+        一時URLだけ**を解放してから、新しいURLを作って src に入れます。
+        もう一枚のデッキが使っているURLには触れないので、繋いでいる
+        最中に前の曲の音が壊れることがありません。
+
+        ⚠️ 順番が大事です。上の swapActiveDeck() より**後**に呼んでいる
+           ので、ここでの audioPlayer は「これから鳴らす方」を指して
+           います。先に呼ぶと、まだ鳴っている方に次の曲を上書きして
+           しまいます。
+        */
+        setDeckSource(audioPlayer,file);
 
         /*
         1曲リピート中かどうかを、audio要素自身の loop 属性に反映します
@@ -355,17 +376,46 @@ play()の時点ではエラーにならなくても、
 実際にファイルを読み込んで再生しようとした段階で
 コーデック非対応と分かることがあります。
 
-その場合はこちらのonerrorイベントで検知します。
+その場合はこちらの "error" イベントで検知します。
+
+------------------------------------------------------------
+⚠️ v168で bindDeckEvent(js/deck.js)を通すように直しました。
+
+【v167までの穴】
+以前はここが
+
+    audioPlayer.onerror = function(){ ... }
+
+と書かれていました。この1行は**このファイルが読み込まれた瞬間に
+1回だけ**実行されます。その時点の audioPlayer はデッキAなので、
+**受け口はデッキAにしか付きませんでした。**
+
+v167でデッキが2枚になり、🕺ノリノリRun再生では曲を鳴らすたびに
+主役が交代します。デッキBに交代した後にコーデック非対応の曲を
+掴むと、**このエラーを誰も受け取れず、除外の案内も出ません。**
+
+bindDeckEvent は2枚とも受け口を付けたうえで、いま鳴っている方の
+知らせだけを通してくれるので、どちらが主役でも同じように働きます。
 ============================================================
 */
-audioPlayer.onerror = function(){
+bindDeckEvent("error",function(event){
 
-    if(!audioPlayer.error){ return; }
+    /*
+    event.target は「このエラーを出した <audio> 要素」です。
+
+    bindDeckEvent が主役でないデッキからの知らせを弾いてくれる
+    ので、ここに届く時点で event.target は audioPlayer と同じ
+    ものですが、**どの要素の話をしているのかが読んで分かる**ように
+    event.target から取り出しています。
+    */
+    const deckError = event.target.error;
+
+    if(!deckError){ return; }
 
     console.error(
         "audio要素エラー :",
-        audioPlayer.error.code,
-        audioPlayer.error.message
+        deckError.code,
+        deckError.message
     );
 
     /*
@@ -385,7 +435,7 @@ audioPlayer.onerror = function(){
     です。エラーイベント自体は曲を教えてくれないので、こちらで
     覚えている値を使います。
     */
-    if(isCodecMediaError(audioPlayer.error) && currentTrackId){
+    if(isCodecMediaError(deckError) && currentTrackId){
 
         reportPlaybackFailure(currentTrackId);
 
@@ -401,4 +451,4 @@ audioPlayer.onerror = function(){
     */
     console.error("再生できませんでした(コーデック以外のaudio要素エラー) :",currentTrackId);
 
-};
+});
