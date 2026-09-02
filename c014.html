@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v169)ノリRun
+        (v170)ノリRun
         メインメニュー
 
     </title>
@@ -5062,6 +5062,13 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
 <script src="js/player.js"></script>
 <script src="js/queue.js"></script>
 <script src="js/media-session.js"></script>
+<!--
+    曲接続モジュール(v170)。拍で曲と曲を繋ぐ司令塔。
+    js/deck.js より後に読み込むこと(読み込んだその場で bindDeckEvent を
+    呼ぶため)。次の曲を決めるのに js/queue.js の findNextTrackId を
+    使うので、こちらより後に置いている。
+-->
+<script src="js/connect.js"></script>
 <!-- 【開発用・調査専用】原因判明後に削除(CLAUDE.md参照) -->
 <script src="js/debug-log.js"></script>
 <script src="js/drag-sort.js"></script>
