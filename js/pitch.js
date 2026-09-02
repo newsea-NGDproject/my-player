@@ -366,10 +366,12 @@ function drawOutOfRangeMask(centerBpm,width,height,centerX){
 /**
  * 再生速度を変えて、画面(再生ピッチ・元ピッチ・定規)を更新します。
  *
- * @param {Number}  rate       … 基準に対する速度の倍率(1.0で等速)
- * @param {Boolean} shouldSave … DBに保存するかどうか
+ * @param {Number}  rate        … 基準に対する速度の倍率(1.0で等速)
+ * @param {Boolean} shouldSave  … DBに保存するかどうか
+ * @param {Boolean} keepMyPitch … 🕺ノリノリRun再生で、マイピッチを
+ *                                書き換えずにそのままにするか(v171)
  */
-function applyTempo(rate,shouldSave){
+function applyTempo(rate,shouldSave,keepMyPitch){
 
     const track = libraryMap[currentTrackId];
 
@@ -430,7 +432,41 @@ function applyTempo(rate,shouldSave){
     */
     if(isNoriRunMode){
 
-        noriRunMyPitch = currentBpm;
+        /*
+        ---- ⚠️ マイピッチを書き換えてよい場面かどうか(v171で修正) ----
+
+        【v170で実際に起きた不具合】
+
+        竹弘の実機報告:「先行曲のマイピッチが急に変わり、マイピッチ
+        表示も値が変わってしまい、接続もなんかおかしくなってしまった」
+
+        原因は、**曲を切り替えるたびにここを通っていた**ことです。
+
+            曲を再生 → showNowPlaying → updatePitchDisplay
+            → applyTrackTempo → **applyTempo(ここ)**
+
+        currentBpm は「その曲を今の倍率で鳴らした時の、丸めた見かけの
+        BPM」です。**結果の値**であって、竹弘が決めた走るテンポでは
+        ありません。それをマイピッチに書き戻すと、こうなります:
+
+            マイピッチ170 / 曲の元BPM 80
+              倍率 170 ÷ 80 = 2.125 → 安全装置(RATE_MAX)で 2.0 に
+              currentBpm = 80 × 2.0 = 160
+              **マイピッチが 170 → 160 に化ける**
+
+        マイピッチが変われば接続の計算はすべて狂います(1拍の長さも、
+        両デッキの速さも、助走の開始位置も、この値から出しているため)。
+
+        【どう直したか】
+        竹弘が **定規を動かした時だけ** 書き換えます。曲を切り替えた
+        だけの時(applyTrackTempo からの呼び出し)は keepMyPitch が
+        立っているので、マイピッチには指一本触れません。
+        */
+        if(!keepMyPitch){
+
+            noriRunMyPitch = currentBpm;
+
+        }
 
         updateNoriRunPitchDisplay();
 
@@ -526,8 +562,15 @@ function applyTrackTempo(track){
     /*
     保存しないのは、ここが「前回の続きを再現しているだけ」で、
     竹弘が新しく選び直したわけではないためです。
+
+    ⚠️ 第3引数の true が「マイピッチには触るな」の合図です(v171)。
+
+    ここは**曲を切り替えた時**に通る道で、竹弘がテンポを決め直した
+    わけではありません。にもかかわらずv170では、この呼び出しの先で
+    マイピッチが上書きされ、曲が変わるたびに走るテンポが化けていく
+    不具合になっていました(詳しい経緯は applyTempo の中のコメント)。
     */
-    applyTempo(targetBpm / base,false);
+    applyTempo(targetBpm / base,false,true);
 
 }
 

@@ -574,9 +574,41 @@ function doConnect(){
 
     if(!connectState){ return; }
 
-    const fromDeck    = connectState.fromDeck;
-    const toDeck      = connectState.toDeck;
-    const nextTrackId = connectState.nextTrackId;
+    /*
+    ---- ⚠️ 状態は「いちばん先に」空にします(v171で修正) ----
+
+    【v170で実際に起きた不具合】
+
+    この関数は下の方で showNowPlaying() を呼びます。その先で
+
+        showNowPlaying → updatePitchDisplay → applyTrackTempo
+        → applyTempo → rescheduleConnect → scheduleConnect
+        → **doConnect(2回目)**
+
+    と一周して、自分自身がもう一度呼ばれていました。v170では状態を
+    空にするのがこの関数の最後だったため、2回目の入場を止められず、
+    **swapActiveDeck() が2回走って主役が先行曲に戻る**という事故に
+    なっていました(竹弘の実機報告:「停止ボタンを押すと後続曲が止まり、
+    先行曲が流れてしまう」「接続点以降の先行曲のピッチが急に早くなる」)。
+
+    自分を呼び出しうる処理に触れる**前に**、通り道を閉じておきます。
+    これで2回目の doConnect() は先頭の if で静かに引き返します。
+
+    【この形を崩さないこと】
+    今後この関数に処理を足す時も、**状態を空にするのは必ず先頭**です。
+    後ろに移すと同じ事故が再発します。
+    */
+    const state = connectState;
+
+    // 予約の取り消しは connectState を見るので、空にする前に済ませます
+    clearConnectTimer();
+
+    connectState = null;
+    isPreRolling = false;
+
+    const fromDeck    = state.fromDeck;
+    const toDeck      = state.toDeck;
+    const nextTrackId = state.nextTrackId;
 
     const nextTrack = libraryMap[nextTrackId];
 
@@ -662,14 +694,13 @@ function doConnect(){
     );
 
     /*
-    次の接続に備えて、状態を空にします。
+    ⚠️ 状態を空にする処理は、この関数の**先頭**にあります(v171)。
+       ここに戻さないこと。理由は先頭のコメントに書いてあります。
 
     ⚠️ 裏のデッキ(いま完走中の先行曲)は片付けません。まだ鳴っている
        からです。次の助走で setDeckSource() が呼ばれた時に、その中の
        releaseDeckUrl() が古い一時URLを解放します。
     */
-    connectState = null;
-    isPreRolling = false;
 
 }
 
