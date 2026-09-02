@@ -257,17 +257,24 @@ function refreshConnectPanel(){
     panel.querySelectorAll(".connect-choice").forEach(function(button){
 
         /*
-        data-beats はHTML側に書いた「この選択肢は何拍か」です。
-        dataset で読み出すと文字列で返るので、Number() で数に直して
-        比べます(文字の "16" と数の 16 は === では一致しないため)。
+        data-beats / data-silence はHTML側に書いた「この選択肢は
+        フェード何拍・無音何拍か」です。dataset で読み出すと文字列で
+        返るので、Number() で数に直して比べます
+        (文字の "16" と数の 16 は === では一致しないため)。
         */
-        const beats = Number(button.dataset.beats);
+        const beats   = Number(button.dataset.beats);
+        const silence = Number(button.dataset.silence);
 
         /*
+        **2つとも一致した選択肢だけ**に印を付けます。フェードの長さが
+        同じでも、無音の有無が違えば別の設定だからです。
+
         classList.toggle は、第2引数が true ならクラスを付け、
         false なら外します。if文を書かずに済む書き方です。
         */
-        button.classList.toggle("connect-choice-on",beats === crossfadeBeats);
+        const isOn = (beats === crossfadeBeats && silence === silenceBeats);
+
+        button.classList.toggle("connect-choice-on",isOn);
 
     });
 
@@ -407,12 +414,15 @@ function closeLicensePanel(){
         button.addEventListener("click",function(){
 
             /*
-            setCrossfadeBeats(js/connect.js)は保存まで済ませます。
+            setConnectStyle(js/connect.js)は保存まで済ませます。
             await せずに呼んでいるのは、保存の完了を待たなくても
-            画面と次の接続には即座に効くためです(長さの値そのものは
+            画面と次の接続には即座に効くためです(設定の値そのものは
             この関数の中で先に切り替わります)。
             */
-            setCrossfadeBeats(Number(button.dataset.beats));
+            setConnectStyle(
+                Number(button.dataset.beats),
+                Number(button.dataset.silence)
+            );
 
             // 選ばれている印を付け替えます
             refreshConnectPanel();

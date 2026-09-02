@@ -115,6 +115,48 @@ const CROSSFADE_BEATS_SHORT = 8;    // さっと繋ぐ  (マイピッチ170で�
 let crossfadeBeats = CROSSFADE_BEATS_LONG;
 
 /*
+接続点をはさんで無音にする長さ(拍)。**ノリRunの本命の機能です。**
+
+    12拍 … マイピッチ170で約4.2秒(仕様書の「計4秒間」に相当)
+     0拍 … 無音なし(DJのように重ねて繋ぐ)
+
+------------------------------------------------------------
+【なぜ無音が要るのか ―― 竹弘の発見(2026-09-02)】
+
+    「同じピッチでただ接続するだけだと、イッチ、ニッ、イッチ、ニッ、
+      てノッテ走っているのが、ニッ、イッチ、ニッ、イッチという曲接続
+      される可能性があり、これがランナーにとってズッコケる、
+      転ぶ要因となる」
+
+「13=0」接続は**拍の間隔**を守りますが、**どちらの足で踏む拍か**まで
+は揃えられません。先行曲の13拍目が小節の何拍目か、後続曲の0拍目が
+何拍目かは曲ごとに違うためです。テンポは完璧に合っているのに、
+表と裏が入れ替わって足が乱れる、ということが起こります。
+
+    「無音から曲が流れ始めた時に、人間の脳内が自動的に
+      イッチ、ニッ、イッチ、ニッというように脳内整理される」
+
+無音をはさむと、脳は次に鳴り出した音を「1拍目」として捉え直します。
+**DJのように繋ぐ必要はなく、むしろ繋がない方が転ばない。**
+移植元の仕様書がこれを「脳内整理モード(おもてなし制御)」と呼び、
+本番機能と位置づけていた理由がここにあります。
+
+------------------------------------------------------------
+【⚠️ 無音でも音は止めません】
+
+音量を0にするだけで、両方のデッキは鳴らし続けます。pause すると
+OSから見て「再生が終わった」ことになり、画面ロック中に次が鳴らなく
+なるためです(仕様書にも「muted ではなく volume = 0 を使用。OSの
+省電力機能による再生停止を防ぐ」と明記されています)。
+**耳には無音、OSには再生中** ―― これが両立の要です。
+*/
+const SILENCE_BEATS_ON  = 12;
+const SILENCE_BEATS_OFF = 0;
+
+// いま選ばれている無音の長さ。設定画面で切り替え、DBにも残します
+let silenceBeats = SILENCE_BEATS_OFF;
+
+/*
 クロスフェードのカーブの深さ。
 
 【この数字が効くところ】
@@ -181,13 +223,17 @@ const CONNECT_RESEEK_THRESHOLD_SEC = 0.03;
 助走が始まってから接続が終わるまでの間だけ、中身が入ります。
 繋いでいない時は null です。
 
-    nextTrackId  … 次に鳴らす曲
-    fromDeck     … 先行曲が載っているデッキ
-    toDeck       … 後続曲が載っているデッキ(助走中)
-    connectAtSec … 接続点(先行曲の曲内秒)。ずらす設定を足した後の値
-    beat0AtSec   … 後続曲の0拍目(後続曲の曲内秒)
-    timerId      … 接続の予約(setTimeoutの番号)
-    startedAt    … 助走を始めた時刻(実秒。ズレの計算に使います)
+    nextTrackId    … 次に鳴らす曲
+    fromDeck       … 先行曲が載っているデッキ
+    toDeck         … 後続曲が載っているデッキ(助走中)
+    connectAtSec   … 接続点(先行曲の曲内秒)。ずらす設定を足した後の値
+    beat0AtSec     … 後続曲の0拍目(後続曲の曲内秒)
+    timerId        … 接続の瞬間の予約(setTimeoutの番号)
+    fadeOutTimerId … 先行曲フェードアウト開始の予約(無音モードのみ)
+
+⚠️ 無音モードのフェードインだけは、ここに番号を持ちません。
+   接続の瞬間(doConnect)にこの状態を空にしてから予約するためです。
+   代わりに crossfadeGeneration(回数券)で見張っています。
 */
 let connectState = null;
 
@@ -530,16 +576,23 @@ async function startPreRoll(nextTrackId,remainSec){
     const fromTrack = libraryMap[currentTrackId];
 
     connectState = {
-        nextTrackId : nextTrackId,
-        fromDeck    : audioPlayer,
-        toDeck      : toDeck,
-        connectAtSec: getConnectAtSec(fromTrack),
-        beat0AtSec  : beat0AtSec,
-        timerId     : null
+        nextTrackId   : nextTrackId,
+        fromDeck      : audioPlayer,
+        toDeck        : toDeck,
+        connectAtSec  : getConnectAtSec(fromTrack),
+        beat0AtSec    : beat0AtSec,
+        timerId       : null,
+        fadeOutTimerId: null
     };
 
     // 接続の瞬間を予約します
     scheduleConnect();
+
+    /*
+    無音モードでは、フェードアウトは**接続点より前**から始まります。
+    そのぶんの予約も、ここで入れておきます(無音なしの時は何もしません)。
+    */
+    scheduleFadeOut();
 
     console.log(
         "助走を開始しました :",nextTrack.file_name,
@@ -596,16 +649,102 @@ function scheduleConnect(){
 
 /**
  * 予約を取り消します。
+ *
+ * 接続点・フェードアウト・フェードインの3つを、まとめて消します。
+ * **1つでも消し忘れると、後からその時刻に発火して音量を勝手に
+ * いじられます。** 増やした時はここにも必ず足すこと。
  */
 function clearConnectTimer(){
 
-    if(connectState && connectState.timerId !== null){
+    if(!connectState){ return; }
 
-        clearTimeout(connectState.timerId);
+    [ "timerId","fadeOutTimerId" ].forEach(function(key){
 
-        connectState.timerId = null;
+        if(connectState[key] !== null){
+
+            clearTimeout(connectState[key]);
+
+            connectState[key] = null;
+
+        }
+
+    });
+
+}
+
+/**
+ * 無音モードで、先行曲のフェードアウト開始を予約します(v173)。
+ *
+ * ------------------------------------------------------------
+ * 【時間の並び(接続点をTとします)】
+ *
+ *     T − 無音/2 − フェード … 先行曲フェードアウト開始
+ *     T − 無音/2           … 先行曲が無音に
+ *     T                    … ★接続点(後続曲の0拍目・デッキ交代)
+ *     T + 無音/2           … 後続曲フェードイン開始
+ *     T + 無音/2 + フェード … 後続曲がフル音量
+ *
+ * **無音が接続点をまたぐ**のがポイントです。移植元の仕様書の
+ * 「EndTS(0秒地点)を中心に、前後2秒ずつ(計4秒間)を完全無音とする」を
+ * そのまま拍で表しています。
+ *
+ * 走っている人から見ると「曲が消える → 少し無音 → 新しい曲が始まる」
+ * となり、脳が新しい曲の頭を1拍目として捉え直せます。
+ */
+function scheduleFadeOut(){
+
+    if(!connectState){ return; }
+
+    // 無音なし(クロスフェード)の時は、接続点でまとめて入れ替えます
+    if(silenceBeats === 0){ return; }
+
+    const fromTrack = getDeckTrack(connectState.fromDeck);
+
+    if(!fromTrack){ return; }
+
+    const beatSec = getBeatSec();
+
+    // 接続点の何秒前にフェードアウトを始めるか
+    const leadSec = (silenceBeats / 2 + crossfadeBeats) * beatSec;
+
+    const remainSec =
+        (connectState.connectAtSec - connectState.fromDeck.currentTime)
+        / getTrackRate(fromTrack);
+
+    const waitSec = remainSec - leadSec;
+
+    /*
+    もうその時刻を過ぎている場合は、待たずに始めます。
+
+    助走が短くなった曲(0拍目が曲の先頭に近い曲)では、助走を始めた
+    時点ですでにフェードアウトの開始時刻を過ぎていることがあります。
+    */
+    if(waitSec <= 0){
+
+        startConnectFadeOut();
+
+        return;
 
     }
+
+    connectState.fadeOutTimerId = setTimeout(startConnectFadeOut,waitSec * 1000);
+
+}
+
+/**
+ * 先行曲のフェードアウトを始めます(無音モードのみ)。
+ */
+function startConnectFadeOut(){
+
+    if(!connectState){ return; }
+
+    connectState.fadeOutTimerId = null;
+
+    const fadeSec = crossfadeBeats * getBeatSec();
+
+    startFade(connectState.fromDeck,1,0,fadeSec);
+
+    console.log("フェードアウト開始 :",crossfadeBeats + "拍 =",fadeSec.toFixed(2) + "秒");
 
 }
 
@@ -725,19 +864,73 @@ function doConnect(){
     incrementPlayCount(nextTrackId);
 
     /*
-    ---- クロスフェード ----
+    ---- 音の入れ替え ----
 
     長さは「拍数 × 1拍の長さ」。竹弘の指示で秒ではなく拍で決めます。
+    やり方は設定によって2通りに分かれます。
     */
-    const fadeSec = crossfadeBeats * getBeatSec();
+    const beatSec = getBeatSec();
+    const fadeSec = crossfadeBeats * beatSec;
 
-    startCrossfade(fromDeck,toDeck,fadeSec);
+    if(silenceBeats === 0){
 
-    console.log(
-        "接続しました :",nextTrack.file_name,
-        "/ クロスフェード " + crossfadeBeats + "拍 =",
-        fadeSec.toFixed(2) + "秒"
-    );
+        /*
+        ---- ① クロスフェード(DJのように重ねて繋ぐ) ----
+
+        先行曲を下げながら、同時に後続曲を上げます。音は途切れません。
+        */
+        startCrossfade(fromDeck,toDeck,fadeSec);
+
+        console.log(
+            "接続しました :",nextTrack.file_name,
+            "/ クロスフェード " + crossfadeBeats + "拍 =",
+            fadeSec.toFixed(2) + "秒"
+        );
+
+    }
+    else{
+
+        /*
+        ---- ② 脳内整理モード(無音をはさんで繋ぐ) ----
+
+        先行曲のフェードアウトは、この時点で**すでに終わっています**
+        (scheduleFadeOut が接続点より前に始めているため)。いまは無音の
+        真ん中で、これから後続曲が出てくるのを待つところです。
+
+        竹弘の発見のとおり、ここで一度音が消えることで、走っている人の
+        脳が次の曲の頭を「1拍目」として取り直せます。
+        */
+        const halfSilenceSec = (silenceBeats / 2) * beatSec;
+
+        /*
+        ⚠️ connectState はこの関数の先頭ですでに空にしてあるので、
+           このフェードインの予約はタイマー台帳に載せられません。
+           代わりに**クロスフェードの回数券(crossfadeGeneration)**で
+           見張ります。竹弘が途中で曲を選び直すと cancelConnect() が
+           番号を進めるので、この予約は目を覚ました時に自分が
+           古いことに気づいて、何もせず引き返します。
+        */
+        const myGeneration = crossfadeGeneration;
+
+        setTimeout(function(){
+
+            // 取りやめられていたら、何もしません
+            if(myGeneration !== crossfadeGeneration){ return; }
+
+            startFade(toDeck,0,1,fadeSec);
+
+            console.log("フェードイン開始 :",crossfadeBeats + "拍");
+
+        },halfSilenceSec * 1000);
+
+        console.log(
+            "接続しました :",nextTrack.file_name,
+            "/ 無音 " + silenceBeats + "拍 =",
+            (silenceBeats * beatSec).toFixed(2) + "秒",
+            "/ フェード " + crossfadeBeats + "拍"
+        );
+
+    }
 
     /*
     ⚠️ 状態を空にする処理は、この関数の**先頭**にあります(v171)。
@@ -851,6 +1044,68 @@ function startCrossfade(fromDeck,toDeck,durationSec){
             */
             fromDeck.volume = 0;
             toDeck.volume   = 1;
+
+        }
+
+    }
+
+    requestAnimationFrame(step);
+
+}
+
+/**
+ * 1枚のデッキだけを、時間をかけて上げ下げします(v173)。
+ *
+ * 無音をはさむ「脳内整理モード」で使います。クロスフェードが2枚を
+ * 同時に動かすのに対し、こちらは片方だけです。
+ *
+ *     フェードアウト … startFade(先行曲, 1, 0, 秒)
+ *     フェードイン   … startFade(後続曲, 0, 1, 秒)
+ *
+ * カーブは付けません。クロスフェードで谷を作っていたのは「2曲が
+ * 重なる真ん中を薄くする」ためでしたが、こちらはそもそも重ならない
+ * ので、まっすぐ上げ下げするのがいちばん自然に聞こえます。
+ *
+ * ⚠️ 回数券(crossfadeGeneration)はクロスフェードと共有しています。
+ *    フェードアウトとフェードインは無音をはさんで時間がずれるので、
+ *    互いに打ち消し合うことはありません。取りやめの時は
+ *    cancelConnect() が番号を進めて、両方まとめて止めます。
+ *
+ * @param {HTMLAudioElement} deck        - 動かすデッキ
+ * @param {number}           fromVol     - 始めの音量(0〜1)
+ * @param {number}           toVol       - 終わりの音量(0〜1)
+ * @param {number}           durationSec - かける時間(実秒)
+ */
+function startFade(deck,fromVol,toVol,durationSec){
+
+    const startedAt = performance.now();
+
+    crossfadeGeneration++;
+
+    const myGeneration = crossfadeGeneration;
+
+    deck.volume = fromVol;
+
+    function step(){
+
+        if(myGeneration !== crossfadeGeneration){ return; }
+
+        const elapsedSec = (performance.now() - startedAt) / 1000;
+
+        const t = Math.min(elapsedSec / durationSec,1);
+
+        // fromVol から toVol へ、まっすぐ動かします
+        deck.volume = fromVol + (toVol - fromVol) * t;
+
+        if(t < 1){
+
+            requestAnimationFrame(step);
+
+        }
+        else{
+
+            // 計算の誤差を残さないよう、きっちり終わりの値にします
+            deck.volume = toVol;
 
         }
 
@@ -989,17 +1244,18 @@ function rescheduleConnect(){
 */
 
 /**
- * クロスフェードの長さを変えて、保存します。
+ * 曲の繋ぎ方を変えて、保存します。
  *
- * @param {number} beats - CROSSFADE_BEATS_LONG か CROSSFADE_BEATS_SHORT
+ * @param {number} beats   - フェードの長さ(CROSSFADE_BEATS_LONG / SHORT)
+ * @param {number} silence - 無音の長さ(SILENCE_BEATS_ON / OFF)
  */
-async function setCrossfadeBeats(beats){
+async function setConnectStyle(beats,silence){
 
     /*
-    知らない値が入ってきた時は、長い方に倒します。
+    知らない値が入ってきた時は、安全な方へ倒します。
 
     設定画面のボタン以外から呼ばれることは今のところありませんが、
-    保存してある値が将来の版と食い違った時に、変な長さで繋いで
+    保存してある値が将来の版と食い違った時に、変な繋ぎ方をして
     しまわないようにするための関門です。
     */
     if(beats !== CROSSFADE_BEATS_LONG && beats !== CROSSFADE_BEATS_SHORT){
@@ -1008,14 +1264,26 @@ async function setCrossfadeBeats(beats){
 
     }
 
-    crossfadeBeats = beats;
+    if(silence !== SILENCE_BEATS_ON && silence !== SILENCE_BEATS_OFF){
 
-    console.log("曲の繋ぎ方を変えました :",crossfadeBeats + "拍");
+        silence = SILENCE_BEATS_OFF;
+
+    }
+
+    crossfadeBeats = beats;
+    silenceBeats   = silence;
+
+    console.log(
+        "曲の繋ぎ方を変えました :",
+        "フェード " + crossfadeBeats + "拍 /",
+        (silenceBeats === 0 ? "無音なし" : "無音 " + silenceBeats + "拍")
+    );
 
     try{
 
         // settings ストアはキーを自分で指定する形なので、3つ目の引数に渡します
         await idbPut(STORE_SETTINGS,crossfadeBeats,"crossfade_beats");
+        await idbPut(STORE_SETTINGS,silenceBeats,"connect_silence_beats");
 
     }
     catch(error){
@@ -1035,16 +1303,23 @@ async function loadCrossfadeSetting(){
 
     try{
 
-        const saved = await idbGet(STORE_SETTINGS,"crossfade_beats");
+        const savedBeats   = await idbGet(STORE_SETTINGS,"crossfade_beats");
+        const savedSilence = await idbGet(STORE_SETTINGS,"connect_silence_beats");
 
         /*
-        今のコードが知っている2つのどちらかである時だけ受け入れます。
+        今のコードが知っている値である時だけ受け入れます。
         将来この選択肢を変えた場合に、古い値が残っていても壊れない
         ようにするためです(再生モードの読み込みと同じ守り方)。
         */
-        if(saved === CROSSFADE_BEATS_LONG || saved === CROSSFADE_BEATS_SHORT){
+        if(savedBeats === CROSSFADE_BEATS_LONG || savedBeats === CROSSFADE_BEATS_SHORT){
 
-            crossfadeBeats = saved;
+            crossfadeBeats = savedBeats;
+
+        }
+
+        if(savedSilence === SILENCE_BEATS_ON || savedSilence === SILENCE_BEATS_OFF){
+
+            silenceBeats = savedSilence;
 
         }
 
