@@ -57,7 +57,7 @@ const SETTINGS_DEFINITIONS = [
     {
         key: "metronome",
         icon: "🥁",
-        label: "メトロノーム"
+        label: "のりのりアシスト"
     },
     {
         key: "license",
@@ -317,13 +317,20 @@ function closeConnectPanel(){
 
 
 // ==========================================================
-// 3-3. メトロノーム(v177)
+// 3-3. のりのりアシスト(v177 / v178で改名・音色を追加)
 // ==========================================================
 /*
-🕺ノリノリRun再生で、拍に合わせてカチッと鳴らすかを選びます。
+🕺ノリノリRun再生で、マイピッチに合わせて音を鳴らすかを選びます。
+
+【名前について】
+竹弘の命名(2026-09-05):「この機能を一旦『のりのりアシスト』と
+命名したい」。⚠️ 変えたのは**画面に出る名前だけ**で、ファイル名
+(js/metronome.js)や変数名は metronome のままにしています。
+「一旦」という言葉どおり、呼び名が変わってもコードを直さずに
+済むようにするためです。
 
 【なぜ設定画面に置いたか】
-竹弘の指示(2026-09-05):「ON、OFFは設定ボタンにてお願いします」。
+竹弘の指示:「ON、OFFは設定ボタンにてお願いします」。
 上半分の画面は10等分の窮屈な作りで、ボタンを1つ足すと他の段が
 潰れます(「曲の繋ぎ方」を設定に入れたのと同じ理由)。
 
@@ -332,14 +339,17 @@ function closeConnectPanel(){
 2つ理由があって画面を開く形にしました。
 
   ① いま鳴る設定なのかが、開けば一目で分かる
-  ② 竹弘と約束している「メトロノーム音を手拍子(クラップ)に
-     変えられるようにする」を足す場所が、ここに要る
+  ② 音色の選択(v178)のように、後から増える設定を置く場所が要る
 
-鳴らす/鳴らさない の実際の処理は js/metronome.js にあります。
+実際に鳴らす処理は js/metronome.js にあります。
 */
 
 /**
  * 選ばれている方のボタンに印を付け直します。
+ *
+ * この画面には**2つのグループ**(鳴らすかどうか / 音色)があります。
+ * どちらも .connect-choice というクラスを共有しているので、
+ * **どちらのグループのボタンかは data-* の有無で見分けます。**
  */
 function refreshMetronomePanel(){
 
@@ -350,13 +360,31 @@ function refreshMetronomePanel(){
     panel.querySelectorAll(".connect-choice").forEach(function(button){
 
         /*
+        鳴らすかどうかのボタン。
+
         data-metronome は "on" か "off" という**文字**です。
         metronomeEnabled は true/false なので、比べる前に
         同じ形に直します。
         */
-        const isOn = (button.dataset.metronome === "on");
+        if(button.dataset.metronome){
 
-        button.classList.toggle("connect-choice-on",isOn === metronomeEnabled);
+            const isOn = (button.dataset.metronome === "on");
+
+            button.classList.toggle("connect-choice-on",isOn === metronomeEnabled);
+
+            return;
+
+        }
+
+        // 音色のボタン(v178)。こちらは文字どうしをそのまま比べます
+        if(button.dataset.metronomeSound){
+
+            button.classList.toggle(
+                "connect-choice-on",
+                button.dataset.metronomeSound === metronomeSound
+            );
+
+        }
 
     });
 
@@ -523,22 +551,33 @@ function closeLicensePanel(){
     }
 
     /*
-    鳴らす / 鳴らさない の選択肢。
+    「鳴らすかどうか」と「音色」の選択肢(v178)。
 
-    繋ぎ方の選択肢とまったく同じ作りです。まとめて耳を付けているので、
-    将来「手拍子で鳴らす」を足す時も、HTMLに1行足すだけで済みます。
+    2つのグループのボタンをまとめて拾い、**押されたボタンが
+    どちらのグループのものかは data-* の有無で見分けます。**
+    グループごとに querySelectorAll を書くより、選択肢が増えた時に
+    直す場所が少なくて済みます。
+
+    setMetronomeEnabled / setMetronomeSound(js/metronome.js)は
+    保存まで済ませます。await せずに呼んでいるのは、保存の完了を
+    待たなくても音と画面には即座に効くためです(繋ぎ方の設定と同じ)。
     */
     document.querySelectorAll("#metronome-panel .connect-choice").forEach(function(button){
 
         button.addEventListener("click",function(){
 
-            /*
-            setMetronomeEnabled(js/metronome.js)は保存まで済ませます。
-            await せずに呼んでいるのは、保存の完了を待たなくても
-            音と画面には即座に効くためです(繋ぎ方の設定と同じ)。
-            */
-            setMetronomeEnabled(button.dataset.metronome === "on");
+            if(button.dataset.metronome){
 
+                setMetronomeEnabled(button.dataset.metronome === "on");
+
+            }
+            else if(button.dataset.metronomeSound){
+
+                setMetronomeSound(button.dataset.metronomeSound);
+
+            }
+
+            // 選ばれている印を付け替えます
             refreshMetronomePanel();
 
         });

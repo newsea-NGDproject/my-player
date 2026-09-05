@@ -107,6 +107,24 @@ const METRONOME_GAIN = 0.6;
 */
 const METRONOME_MAX_BEATS_PER_TICK = 64;
 
+/*
+音色の名前です(v178)。
+
+竹弘の要望(2026-09-05):
+「音色をマイピッチ設定で使っている音色か、のり注入で使っている
+  波形音か選択式にしてもらう事は可能かな」
+
+  "click" … click.wav。初期設定の定規(js/setup.js)で鳴っている音
+  "beep"  … 1500Hzの矩形波。ノリ注入(js/tap.js)で鳴っている電子音
+
+⚠️ "beep" の音の作り方(高さ・長さ・音量)は、**js/tap.js の
+   TAP_CLICK_* をそのまま借ります。** 自前で同じ数値を書き写すと、
+   タップ補正側の音を調整した時に、こちらだけ古い音のまま残って
+   「同じ音のはずなのに違う」という食い違いが起きるためです。
+*/
+const METRONOME_SOUND_CLICK = "click";
+const METRONOME_SOUND_BEEP  = "beep";
+
 
 // ==========================================================
 // 2. 状態
@@ -114,6 +132,34 @@ const METRONOME_MAX_BEATS_PER_TICK = 64;
 
 // 竹弘が設定画面で選んだON/OFF。初期値はOFF(ふだん走る時は鳴らさない)
 let metronomeEnabled = false;
+
+/*
+選んでいる音色(v178)。初期値は click.wav の方です。
+
+マイピッチ設定の定規で聞き慣れている音なので、初めて鳴らした時に
+「何の音か分からない」とならないためです。
+*/
+let metronomeSound = METRONOME_SOUND_CLICK;
+
+/*
+最後に拍を予約した時のマイピッチです(v178)。
+
+竹弘の要望「このマイピッチに合わせて鳴るように」を、**走りながら
+変えた時にもすぐ効かせる**ために持っています。
+
+【なぜ必要か】
+拍は2秒先まで先に予約してあります。走行中にマイピッチを変えても、
+予約済みのぶんは**古い歩数のまま鳴り続けます。** 2秒とはいえ、
+足を合わせている最中にズレた音が鳴るのは走りを乱します。
+
+→ マイピッチが変わったことに気づいたら、予約を取り消して
+   新しい歩数で入れ直します。
+
+⚠️ この形にしたのは、**js/pitch.js に手を入れないため**でもあります
+   (向こうから「変わったよ」と教えてもらう作りにすると、完成して
+   動いている定規の処理を触ることになります)。
+*/
+let metronomeLastPitch = null;
 
 /*
 click.wav を音として使える形にしたものです。
@@ -244,8 +290,21 @@ function canRingMetronome(){
     // 🕺ノリノリRun再生の時だけです(竹弘の指示。冒頭のコメント参照)
     if(!isNoriRunMode){ return false; }
 
-    // 音の準備ができていなければ鳴らせません
-    if(!deckAudioCtx || !metronomeClickBuffer){ return false; }
+    // 音を出す回路そのものが無ければ鳴らせません
+    if(!deckAudioCtx){ return false; }
+
+    /*
+    「カチッ」の時だけ、音源(click.wav)の読み込み待ちがあります。
+
+    「ピッ」は録音ではなくその場で合成する音なので、読み込みを
+    待つ必要がありません(v178)。ここを音色で分けずに書くと、
+    click.wav が読めない環境で「ピッ」まで鳴らなくなります。
+    */
+    if(metronomeSound === METRONOME_SOUND_CLICK && !metronomeClickBuffer){
+
+        return false;
+
+    }
 
     // 曲が止まっていたら刻む必要がありません
     if(audioPlayer.paused){ return false; }
@@ -359,6 +418,29 @@ function scheduleMetronomeBeats(){
     }
 
     /*
+    走りながらマイピッチを変えたら、予約を入れ直します(v178)。
+
+    竹弘の要望「このマイピッチに合わせて鳴るように」。予約済みの
+    2秒ぶんは古い歩数のまま鳴るので、そのままでは足を合わせている
+    最中にズレた音が鳴ります。
+
+    clearScheduledClicks() は予約を取り消したうえで
+    metronomeLastBeatIndex も空にするので、この下の計算が
+    **新しいマイピッチで最初から**やり直されます。
+
+    ⚠️ 曲の切り替え判定より後に置くこと。曲が変わった時は
+       どのみち数え直しになるので、順番を逆にすると
+       「変わっていないのに取り消す」無駄が生じます。
+    */
+    if(metronomeLastPitch !== null && metronomeLastPitch !== noriRunMyPitch){
+
+        clearScheduledClicks();
+
+    }
+
+    metronomeLastPitch = noriRunMyPitch;
+
+    /*
     どこまで予約するか(曲内秒)。
 
     予約窓は「腕時計で2秒先まで」なので、曲内秒に直すには再生速度を
@@ -435,14 +517,20 @@ function scheduleMetronomeClick(atCtxSec){
     Web Audio の決まりで、一度 start() した音源は二度目が使えません
     (使い捨ての花火のようなものです)。作る負担はごく軽いので、
     これが正しい使い方です。
+
+    音色によって、作る部品の種類が変わります(v178):
+
+        "click" … createBufferSource … 録音された音(click.wav)を鳴らす
+        "beep"  … createOscillator   … その場で電子音を合成して鳴らす
+
+    どちらも「予約して鳴らし、鳴り終わったら捨てる」点は同じなので、
+    下の後片付けは共通で使えます。
     */
-    const source = deckAudioCtx.createBufferSource();
+    const source = (metronomeSound === METRONOME_SOUND_BEEP)
+        ? createMetronomeBeep(atCtxSec)
+        : createMetronomeClick(atCtxSec);
 
-    source.buffer = metronomeClickBuffer;
-
-    source.connect(metronomeGainNode);
-
-    source.start(atCtxSec);
+    if(!source){ return; }
 
     // 取り消せるように控えておきます
     metronomeScheduled.push(source);
@@ -461,6 +549,93 @@ function scheduleMetronomeClick(atCtxSec){
         if(index >= 0){ metronomeScheduled.splice(index,1); }
 
     };
+
+}
+
+/**
+ * 「カチッ」(click.wav)を1つ予約します。
+ *
+ * マイピッチ設定の定規(js/setup.js)で鳴っているのと同じ音源です。
+ *
+ * @param  {number} atCtxSec - いつ鳴らすか
+ * @return {AudioNode|null} 予約した音(取り消しに使います)
+ */
+function createMetronomeClick(atCtxSec){
+
+    // 音源がまだ読めていなければ、この拍は諦めます
+    if(!metronomeClickBuffer){ return null; }
+
+    const source = deckAudioCtx.createBufferSource();
+
+    source.buffer = metronomeClickBuffer;
+
+    source.connect(metronomeGainNode);
+
+    source.start(atCtxSec);
+
+    return source;
+
+}
+
+/**
+ * 「ピッ」(1500Hzの矩形波)を1つ予約します。
+ *
+ * ノリ注入(js/tap.js)で鳴っているのと同じ電子音です。竹弘の実機
+ * テストで「派手な曲でも埋もれない」と確認済みの音でもあります。
+ *
+ * ⚠️ 高さ・長さ・音量は js/tap.js の TAP_CLICK_* を借ります
+ *    (同じ音であり続けるため。理由は冒頭の定数のコメント参照)。
+ *
+ * @param  {number} atCtxSec - いつ鳴らすか
+ * @return {AudioNode|null} 予約した音(取り消しに使います)
+ */
+function createMetronomeBeep(atCtxSec){
+
+    /*
+    オシレーターは「決まった高さの音を作り続ける発振器」です。
+    録音を鳴らすのではなく、その場で波形を合成します。
+    矩形波(square)は角のある硬い音で、曲に埋もれにくい音色です。
+    */
+    const osc = deckAudioCtx.createOscillator();
+
+    osc.type = TAP_CLICK_TYPE;
+    osc.frequency.setValueAtTime(TAP_CLICK_HZ,atCtxSec);
+
+    /*
+    発振器は放っておくと「ピー」と鳴り続けます。**音量をすとんと
+    落として「ピッ」という短い音に切り取る**のがここの役割です。
+
+    exponentialRampToValueAtTime は「その時刻に向けて、なめらかに
+    音量を変える」命令です。0にはできない決まりがあるので、
+    0.001というほぼ無音の値まで落としています
+    (js/tap.js のメトロノームと同じ作り方)。
+
+    ⚠️ この音専用の音量つまみを、鳴らすたびに作っています。
+       共通の metronomeGainNode に直接つなぐと、**次の拍の
+       「音量を上げる」と、今の拍の「音量を下げる」が同じつまみを
+       取り合って**音が途切れたり伸びたりします(v156でタップ補正の
+       ノイズを直した時と同じ理屈)。
+    */
+    const gain = deckAudioCtx.createGain();
+
+    gain.gain.setValueAtTime(TAP_CLICK_GAIN,atCtxSec);
+    gain.gain.exponentialRampToValueAtTime(0.001,atCtxSec + TAP_CLICK_SEC);
+
+    osc.connect(gain);
+    gain.connect(metronomeGainNode);
+
+    osc.start(atCtxSec);
+
+    /*
+    止める時刻も一緒に予約します。
+
+    これが無いと発振器が動き続け、走っている間ずっと数が増えます。
+    少し余裕(2倍)を持たせているのは、音量が落ちきる前に切ると
+    「プツッ」という切り口の音が出るためです。
+    */
+    osc.stop(atCtxSec + TAP_CLICK_SEC * 2);
+
+    return osc;
 
 }
 
@@ -598,11 +773,83 @@ async function setMetronomeEnabled(on){
 }
 
 /**
- * 保存してあるON/OFFを読み込みます。
+ * 音色を切り替えて、保存します(v178)。
+ *
+ * 設定画面(js/settings.js)のボタンから呼ばれます。
+ *
+ * @param {string} sound - METRONOME_SOUND_CLICK / METRONOME_SOUND_BEEP
+ */
+async function setMetronomeSound(sound){
+
+    /*
+    知らない値が来たら、安全な方(カチッ)に倒します。
+
+    保存してある値が将来の版と食い違った時に、音が出なくなるのを
+    防ぐための関門です(繋ぎ方の設定と同じ守り方)。
+    */
+    if(sound !== METRONOME_SOUND_CLICK && sound !== METRONOME_SOUND_BEEP){
+
+        sound = METRONOME_SOUND_CLICK;
+
+    }
+
+    metronomeSound = sound;
+
+    console.log("のりのりアシストの音色 :",metronomeSound);
+
+    /*
+    予約済みの拍を取り消します。
+
+    2秒先まで予約してあるので、取り消さないと**切り替えた後も
+    2秒間は前の音色で鳴り続けます。** 竹弘が聞き比べる時に、
+    押した音色がすぐ鳴らないと比べようがありません。
+    */
+    clearScheduledClicks();
+
+    // カチッに切り替えたなら、音源が要ります(まだ無ければここで読みます)
+    if(metronomeSound === METRONOME_SOUND_CLICK){
+
+        loadMetronomeClick();
+
+    }
+
+    try{
+
+        await idbPut(STORE_SETTINGS,metronomeSound,"metronome_sound");
+
+    }
+    catch(error){
+
+        console.error("音色の保存に失敗 :",error.name,error.message);
+
+    }
+
+}
+
+/**
+ * 保存してあるON/OFFと音色を読み込みます。
  *
  * js/main.js の起動処理から呼ばれます。
  */
 async function loadMetronomeSetting(){
+
+    try{
+
+        const savedSound = await idbGet(STORE_SETTINGS,"metronome_sound");
+
+        // 今のコードが知っている音色の時だけ受け入れます
+        if(savedSound === METRONOME_SOUND_CLICK || savedSound === METRONOME_SOUND_BEEP){
+
+            metronomeSound = savedSound;
+
+        }
+
+    }
+    catch(error){
+
+        console.error("音色の読み込みに失敗 :",error.name,error.message);
+
+    }
 
     try{
 
