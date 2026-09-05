@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v177)ノリRun
+        (v178)ノリRun
         メインメニュー
 
     </title>
@@ -2992,8 +2992,22 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         クラス(.license-header 等)をそのまま使い回すので、片方の見た目を
         直せば両方に効きます。**ライセンス画面の見え方は変わりません。**
         */
+        /*
+        ⚠️ **新しくパネルを足す時は、必ずこのセレクタにも並べること。**
+
+        v177で #metronome-panel を作った時、中身のスタイル
+        (.connect-choice など)だけを共有し、**この「全画面で覆う」
+        指定に並べ忘れました。** すると position:fixed も z-index も
+        効かないため、パネルは画面を覆わずページの下の方に置かれ、
+        開いても何も見えないという症状になります(竹弘の実機報告:
+        「ボタンを押しても設定が開かなかった」)。
+
+        display:flex にするだけでは画面は覆えません。**覆う指定は
+        こちらにあります。**
+        */
         #license-panel,
-        #connect-panel{
+        #connect-panel,
+        #metronome-panel{
             position:fixed;
             top:0;
             right:0;
@@ -3049,7 +3063,8 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         }
 
         /* 選択肢のグループ見出し(v173)。少し上に間を空けます */
-        #connect-panel .connect-heading{
+        #connect-panel .connect-heading,
+        #metronome-panel .connect-heading{
             margin:20px 0 8px 0;
 
             font-size:0.9rem;
@@ -4894,37 +4909,56 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
 </div>
 
 <!--
-    設定 ⚙️ →「🥁 メトロノーム」で開く画面(v177)。
+    設定 ⚙️ →「🥁 のりのりアシスト」で開く画面(v177 / v178で改名)。
 
-    🕺ノリノリRun再生の間、拍に合わせてカチッと鳴らすかを選びます。
+    🕺ノリノリRun再生の間、マイピッチに合わせて音を鳴らします。
     見出し・本文・閉じるボタン・選択肢のクラスは、上の
     「🎚️ 曲の繋ぎ方」とそのまま共有しています(同じ見た目・同じ動き)。
 
-    ⚠️ data-metronome の値("on" / "off")が、そのまま
-       js/settings.js に読み取られます。
+    ⚠️ 画面上の名前は「のりのりアシスト」ですが、ファイル名と
+       変数名は metronome のままにしています(竹弘の「一旦」という
+       言葉どおり、呼び名が変わっても中身を直さずに済むように)。
+
+    ⚠️ data-metronome("on"/"off")と data-metronome-sound
+       ("click"/"beep")が、そのまま js/settings.js に読み取られます。
 -->
 <div id="metronome-panel" style="display:none;">
 
     <div class="license-header">
-        <span class="license-title">🥁 メトロノーム</span>
+        <span class="license-title">🥁 のりのりアシスト</span>
         <button type="button" id="metronome-close-btn" class="license-close-btn">✕</button>
     </div>
 
     <div class="license-body">
 
         <p>
-            🕺ノリノリRun再生で、曲の拍に<br>
-            合わせてカチッと鳴らします。
+            🕺ノリノリRun再生で、マイピッチに<br>
+            合わせて音を鳴らし、走るリズムを<br>
+            とりやすくします。
         </p>
+
+        <p class="connect-heading">🥁 鳴らすかどうか</p>
 
         <button type="button" class="connect-choice" data-metronome="on">
             🥁 鳴らす
-            <span class="connect-note">曲と曲の繋ぎ目で拍がズレていないか、耳で確かめられます</span>
+            <span class="connect-note">マイピッチの歩数どおりに刻みます。繋ぎ目でズレなければ、拍が正しく繋がっています</span>
         </button>
 
         <button type="button" class="connect-choice" data-metronome="off">
             🔇 鳴らさない
-            <span class="connect-note">ふだん走る時はこちら</span>
+            <span class="connect-note">曲だけで走る時はこちら</span>
+        </button>
+
+        <p class="connect-heading">🔊 音色</p>
+
+        <button type="button" class="connect-choice" data-metronome-sound="click">
+            🥁 カチッ
+            <span class="connect-note">マイピッチ設定の定規で鳴っている音と同じ</span>
+        </button>
+
+        <button type="button" class="connect-choice" data-metronome-sound="beep">
+            📻 ピッ
+            <span class="connect-note">ノリ注入(タップ補正)で鳴っている電子音と同じ。派手な曲でも埋もれません</span>
         </button>
 
         <p class="connect-note">
@@ -4933,8 +4967,8 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
             　 ノリ注入をしていない曲は拍の位置が<br>
             　 分からないため、鳴らしても合いません。<br>
             <br>
-            ※ 繋ぎ目でカチッがズレなければ、<br>
-            　 曲と曲が正しい拍で繋がっています。
+            ※ 走りながらマイピッチを変えると、<br>
+            　 その場で新しい歩数に合わせて鳴ります。
         </p>
 
     </div>
