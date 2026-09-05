@@ -83,6 +83,29 @@
 const CONNECT_PRE_ROLL_SEC = 15;
 
 /*
+助走として、最低でもこれだけは確保する秒数です(v184)。
+
+【なぜ必要か ―― 「助走が届かない曲」の問題】
+
+後続曲は0拍目より**手前**から鳴らし始めますが、0拍目が曲の頭に近い曲
+では手前に遡れません(曲が始まる前には行けないため)。v183は「遡れる
+限界より先には助走を始めない」作りなので、限界が0秒に近い曲では
+**助走がいつまでも始まらず、その曲へは繋がらないまま曲が終わります。**
+しかも警告すら出ないので、静かに接続だけが失われます。
+
+図解と経緯は `docs/connect-preroll-limit.html` にまとめてあります。
+
+【3秒という数字について】
+
+竹弘の判断:「A地点の遡りはあまり重要ではないので、安全策の3秒でいいよ」。
+
+ファイルの読み込み(権限確認・getFile・loadedmetadata)にかかる時間を
+吸収できる長さです。竹弘のハイエンド機での実測は43〜80msでしたが、
+**ミドルクラス機ではもっとかかる**ので、余裕を持たせています。
+*/
+const CONNECT_MIN_PRE_ROLL_SEC = 3;
+
+/*
 クロスフェードの長さ(拍)の選び方。設定 ⚙️ →「🎚️ 曲の繋ぎ方」で
 竹弘が選びます(v172)。
 
@@ -361,6 +384,76 @@ function getBeat0AtSec(track){
 }
 
 /**
+ * 後続曲を「どの拍に合わせて繋ぐか」を、曲内秒で返します(v184)。
+ *
+ * ふつうは0拍目です。**助走が足りない曲のときだけ、拍の単位で後ろへ
+ * ずらします。**
+ *
+ * 【なぜ拍の単位でずらすのか ―― ここが要】
+ *
+ * 秒でずらすと、繋いだ瞬間に足のリズムが崩れます。拍の単位でずらせば
+ * **拍の格子はまったく同じまま**なので、ランナーの足は乱れません。
+ * 変わるのは「後続曲の頭が数拍ぶん飛ぶ」という聴こえ方だけです。
+ *
+ *     0拍目  1拍  2拍  3拍  4拍  …   ← 格子は動かない
+ *       ┊    ┊   ┊   ┊   ┊
+ *       ✗                ●            ← ここに合わせて繋ぐ(例:3拍目)
+ *     遡れない         ここなら手前に3秒とれる
+ *
+ * 【これは保険で、ふだんは発動しない】
+ *
+ * 竹弘の実機ログでの遡れる限界は 7.07〜30.19秒でした。3秒を下回るのは
+ * **A地点を曲の頭ぎりぎりに置いた曲だけ**です。さらに v184 でA地点に
+ * 下限を設けたので、これから注入する曲では起きません。
+ * **すでに注入済みの曲を救うための道**として用意しています。
+ *
+ * @param  {Object} track - 後続曲
+ * @return {number} 繋ぐ拍の位置(曲内秒)
+ */
+function getConnectAnchorSec(track){
+
+    const beat0AtSec = getBeat0AtSec(track);
+
+    const rate = getTrackRate(track);
+
+    // 0拍目に合わせた場合、手前に何秒とれるか(実秒)
+    const maxPreRollSec = beat0AtSec / rate;
+
+    // 足りているなら、今までどおり0拍目で繋ぎます
+    if(maxPreRollSec >= CONNECT_MIN_PRE_ROLL_SEC){ return beat0AtSec; }
+
+    /*
+    足りない分を、拍いくつぶんで埋められるかを求めます。
+
+    ⚠️ 2つの時間軸を行き来する点に注意してください。足りない量は
+       「腕時計で何秒」ですが、拍の長さは「曲の中で何秒」なので、
+       再生速度を掛けて曲の時間軸へ直してから割ります。
+    */
+    const beatDurSongSec = 60 / getEffectiveBaseBpm(track);
+
+    if(!isFinite(beatDurSongSec) || beatDurSongSec <= 0){ return beat0AtSec; }
+
+    const shortRealSec = CONNECT_MIN_PRE_ROLL_SEC - maxPreRollSec;
+
+    const shortSongSec = shortRealSec * rate;
+
+    // Math.ceil(切り上げ)なので、足りないまま終わることはありません
+    const beats = Math.ceil(shortSongSec / beatDurSongSec);
+
+    const anchorSec = beat0AtSec + beats * beatDurSongSec;
+
+    console.log(
+        "繋ぐ拍をずらしました :",track.file_name,
+        "/ 0拍目では手前に " + maxPreRollSec.toFixed(2) + "秒しかとれないため",
+        "/ " + beats + "拍うしろへ",
+        "/ 曲の頭 " + anchorSec.toFixed(2) + "秒地点で接続"
+    );
+
+    return anchorSec;
+
+}
+
+/**
  * その曲を、いまのマイピッチで鳴らす時の再生速度を返します。
  */
 function getTrackRate(track){
@@ -494,7 +587,15 @@ function maybeStartPreRoll(){
     */
     const nextRate = getTrackRate(nextTrack);
 
-    const maxPreRollSec = getBeat0AtSec(nextTrack) / nextRate;
+    /*
+    ⚠️ getBeat0AtSec ではなく getConnectAnchorSec を使います(v184)。
+
+    助走が足りない曲では繋ぐ拍を後ろへずらすので、遡れる限界も
+    そのぶん伸びます。**下の startPreRoll() と同じ関数を使うこと。**
+    片方だけ0拍目のままにすると、「始めてよい」と判断した時刻と
+    実際に置く位置が食い違い、また接続がズレます。
+    */
+    const maxPreRollSec = getConnectAnchorSec(nextTrack) / nextRate;
 
     /*
     「今から始めてよい」時刻。15秒と、その曲の限界の**短い方**です。
@@ -568,7 +669,18 @@ async function startPreRoll(nextTrackId,remainSec){
     こうすると、両方のデッキが同じだけ時間を進めた結果、接続点で
     「先行曲=endTS」「後続曲=0拍目」がぴたりと揃います。
     */
-    const beat0AtSec = getBeat0AtSec(nextTrack);
+    /*
+    ⚠️ 変数名は beat0AtSec のままですが、v184からは**必ずしも0拍目とは
+       限りません。** 助走が足りない曲では、getConnectAnchorSec() が
+       拍の単位で後ろへずらした位置を返します(拍の格子は同じなので、
+       ランナーの足は乱れません)。
+
+       名前を変えなかったのは、この値が connectState 経由で
+       doConnect() のログや rescheduleConnect() の位置計算まで
+       流れており、**まとめて改名すると触る範囲が広がる**ためです。
+       意味は「後続曲が接続点で居るべき位置」で一貫しています。
+    */
+    const beat0AtSec = getConnectAnchorSec(nextTrack);
 
     const nextRate = getTrackRate(nextTrack);
 
