@@ -55,6 +55,11 @@ const SETTINGS_DEFINITIONS = [
         label: "曲の繋ぎ方"
     },
     {
+        key: "metronome",
+        icon: "🥁",
+        label: "メトロノーム"
+    },
+    {
         key: "license",
         icon: "📜",
         label: "ライセンス"
@@ -212,6 +217,10 @@ function openSettingsItem(key){
         openConnectPanel();
     }
 
+    if(key === "metronome"){
+        openMetronomePanel();
+    }
+
     if(key === "license"){
         openLicensePanel();
     }
@@ -299,6 +308,79 @@ function openConnectPanel(){
 function closeConnectPanel(){
 
     const panel = document.getElementById("connect-panel");
+
+    if(!panel){ return; }
+
+    panel.style.display = "none";
+
+}
+
+
+// ==========================================================
+// 3-3. メトロノーム(v177)
+// ==========================================================
+/*
+🕺ノリノリRun再生で、拍に合わせてカチッと鳴らすかを選びます。
+
+【なぜ設定画面に置いたか】
+竹弘の指示(2026-09-05):「ON、OFFは設定ボタンにてお願いします」。
+上半分の画面は10等分の窮屈な作りで、ボタンを1つ足すと他の段が
+潰れます(「曲の繋ぎ方」を設定に入れたのと同じ理由)。
+
+【なぜON/OFFなのに画面を開く形にしたか】
+メニューを押しただけで切り替わる形(トグル)にもできますが、
+2つ理由があって画面を開く形にしました。
+
+  ① いま鳴る設定なのかが、開けば一目で分かる
+  ② 竹弘と約束している「メトロノーム音を手拍子(クラップ)に
+     変えられるようにする」を足す場所が、ここに要る
+
+鳴らす/鳴らさない の実際の処理は js/metronome.js にあります。
+*/
+
+/**
+ * 選ばれている方のボタンに印を付け直します。
+ */
+function refreshMetronomePanel(){
+
+    const panel = document.getElementById("metronome-panel");
+
+    if(!panel){ return; }
+
+    panel.querySelectorAll(".connect-choice").forEach(function(button){
+
+        /*
+        data-metronome は "on" か "off" という**文字**です。
+        metronomeEnabled は true/false なので、比べる前に
+        同じ形に直します。
+        */
+        const isOn = (button.dataset.metronome === "on");
+
+        button.classList.toggle("connect-choice-on",isOn === metronomeEnabled);
+
+    });
+
+}
+
+function openMetronomePanel(){
+
+    const panel = document.getElementById("metronome-panel");
+
+    if(!panel){ return; }
+
+    refreshMetronomePanel();
+
+    panel.style.display = "flex";
+
+    const body = panel.querySelector(".license-body");
+
+    if(body){ body.scrollTop = 0; }
+
+}
+
+function closeMetronomePanel(){
+
+    const panel = document.getElementById("metronome-panel");
 
     if(!panel){ return; }
 
@@ -426,6 +508,38 @@ function closeLicensePanel(){
 
             // 選ばれている印を付け替えます
             refreshConnectPanel();
+
+        });
+
+    });
+
+    // メトロノームの画面(v177)
+    const metronomeCloseBtn = document.getElementById("metronome-close-btn");
+
+    if(metronomeCloseBtn){
+        metronomeCloseBtn.addEventListener("click",function(){
+            closeMetronomePanel();
+        });
+    }
+
+    /*
+    鳴らす / 鳴らさない の選択肢。
+
+    繋ぎ方の選択肢とまったく同じ作りです。まとめて耳を付けているので、
+    将来「手拍子で鳴らす」を足す時も、HTMLに1行足すだけで済みます。
+    */
+    document.querySelectorAll("#metronome-panel .connect-choice").forEach(function(button){
+
+        button.addEventListener("click",function(){
+
+            /*
+            setMetronomeEnabled(js/metronome.js)は保存まで済ませます。
+            await せずに呼んでいるのは、保存の完了を待たなくても
+            音と画面には即座に効くためです(繋ぎ方の設定と同じ)。
+            */
+            setMetronomeEnabled(button.dataset.metronome === "on");
+
+            refreshMetronomePanel();
 
         });
 
