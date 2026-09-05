@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v176)ノリRun
+        (v177)ノリRun
         メインメニュー
 
     </title>
@@ -3014,7 +3014,8 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         竹弘の「メニューのレイアウトは今のテストで崩したくない」に
         従い、他の画面へ影響が出ない書き方にしています。
         */
-        #connect-panel .connect-choice{
+        #connect-panel .connect-choice,
+        #metronome-panel .connect-choice{
             display:block;
             width:100%;
             box-sizing:border-box;
@@ -3035,13 +3036,15 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         }
 
         /* いま選ばれている方。テーマ色(青 / 暁色)で囲みます */
-        #connect-panel .connect-choice-on{
+        #connect-panel .connect-choice-on,
+        #metronome-panel .connect-choice-on{
             border-color:var(--theme-color);
             color:var(--theme-color);
             background:rgba(var(--theme-rgb),0.1);
         }
 
-        #connect-panel .connect-choice:active{
+        #connect-panel .connect-choice:active,
+        #metronome-panel .connect-choice:active{
             filter:brightness(0.85);
         }
 
@@ -3055,7 +3058,8 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         }
 
         /* 選択肢の下に添える一言。少し小さく、控えめな色にします */
-        #connect-panel .connect-note{
+        #connect-panel .connect-note,
+        #metronome-panel .connect-note{
             display:block;
             margin-top:4px;
 
@@ -4889,6 +4893,54 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
 
 </div>
 
+<!--
+    設定 ⚙️ →「🥁 メトロノーム」で開く画面(v177)。
+
+    🕺ノリノリRun再生の間、拍に合わせてカチッと鳴らすかを選びます。
+    見出し・本文・閉じるボタン・選択肢のクラスは、上の
+    「🎚️ 曲の繋ぎ方」とそのまま共有しています(同じ見た目・同じ動き)。
+
+    ⚠️ data-metronome の値("on" / "off")が、そのまま
+       js/settings.js に読み取られます。
+-->
+<div id="metronome-panel" style="display:none;">
+
+    <div class="license-header">
+        <span class="license-title">🥁 メトロノーム</span>
+        <button type="button" id="metronome-close-btn" class="license-close-btn">✕</button>
+    </div>
+
+    <div class="license-body">
+
+        <p>
+            🕺ノリノリRun再生で、曲の拍に<br>
+            合わせてカチッと鳴らします。
+        </p>
+
+        <button type="button" class="connect-choice" data-metronome="on">
+            🥁 鳴らす
+            <span class="connect-note">曲と曲の繋ぎ目で拍がズレていないか、耳で確かめられます</span>
+        </button>
+
+        <button type="button" class="connect-choice" data-metronome="off">
+            🔇 鳴らさない
+            <span class="connect-note">ふだん走る時はこちら</span>
+        </button>
+
+        <p class="connect-note">
+            ※ 🕺ノリノリRun再生でだけ鳴ります。<br>
+            　 メインメニューの再生では鳴りません。<br>
+            　 ノリ注入をしていない曲は拍の位置が<br>
+            　 分からないため、鳴らしても合いません。<br>
+            <br>
+            ※ 繋ぎ目でカチッがズレなければ、<br>
+            　 曲と曲が正しい拍で繋がっています。
+        </p>
+
+    </div>
+
+</div>
+
 <!-- ================================================================
      【開発用デバッグログパネル】ここから
      実機確認が終わったら、この範囲をまるごと削除してよい。
@@ -5195,6 +5247,15 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
     使うので、こちらより後に置いている。
 -->
 <script src="js/connect.js"></script>
+<!--
+    メトロノーム(L3)。v177。
+
+    ⚠️ js/connect.js より後に読み込むこと。拍の位置を求めるのに
+    connect.js の getBeat0AtSec / getTrackRate を使うため。
+    また js/deck.js の bindDeckEvent を読み込んだその場で呼ぶので、
+    deck.js より後であることも必要(deck.jsは先頭付近にある)。
+-->
+<script src="js/metronome.js"></script>
 <!-- 【開発用・調査専用】原因判明後に削除(CLAUDE.md参照) -->
 <script src="js/debug-log.js"></script>
 <script src="js/drag-sort.js"></script>
