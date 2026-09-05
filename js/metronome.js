@@ -108,6 +108,18 @@ const METRONOME_GAIN = 0.6;
 const METRONOME_MAX_BEATS_PER_TICK = 64;
 
 /*
+「再生位置が飛んだ」と判断する幅(秒)です(v180)。
+
+シークバーで位置をずらした時に、古い拍と新しい拍が重なって鳴るのを
+防ぐために使います(詳しくは metronomeLastSongSec のコメント)。
+
+0.5秒にしているのは、**ふつうの誤差では絶対に届かず、意味のある
+シークなら必ず超える**ところに線を引くためです。静かに再生している
+間の食い違いはふつう数十ミリ秒しかありません。
+*/
+const METRONOME_SEEK_GAP_SEC = 0.5;
+
+/*
 音色の名前です(v178)。
 
 竹弘の要望(2026-09-05):
@@ -222,8 +234,55 @@ let metronomeTimerId = null;
 止める時(OFFにした・曲を変えた)に、**まだ鳴っていない予約を
 取り消す**ために持っています。持っていないと、OFFにしたのに
 2秒間カチカチ鳴り続けることになります。
+
+⚠️ v180から、音そのものではなく **{ node, atCtxSec } という組**で
+   持ちます。「いつ鳴る予定か」を一緒に覚えておくためです。
+
+【なぜ必要になったか ―― 竹弘の実機報告】
+
+    「繋ぎ目で音が変になる時がある」
+
+v179までは、取り消す時に一覧の**全部**を stop() していました。
+ところが stop() は「今すぐ止めろ」という命令なので、**ちょうど
+鳴っている最中の音まで途中でぶった切ります。**
+
+    ♪♪♪♪|      ← 波形の途中で断ち切られる = 「プツッ」
+
+音の波は途中で切ると、そこに段差ができてノイズになります(v156で
+タップ補正のノイズを直した時と同じ理屈)。曲の繋ぎ目はまさに
+「取り消しが起きる瞬間」なので、そこで鳴っていた拍が切られて
+いました。
+
+→ 予定時刻を覚えておけば、**まだ鳴っていないものだけ**を取り消し、
+   鳴っている音は最後まで鳴らしきれます。
 */
 let metronomeScheduled = [];
+
+/*
+前回の見張りで見た再生位置です(v180)。
+
+**シークバーで再生位置を飛ばしたこと**を見つけるために持っています。
+
+【なぜ必要か ―― 竹弘の実機報告】
+
+    「シークバーで再生位置をずらした時に、新たな拍の鳴り始めと
+      古い拍のが2拍くらい被ってなっているような事象が発生する」
+
+拍は2秒先まで予約してあります。シークしても曲もマイピッチも
+変わらないため、v179までは**古い位置の予約を取り消す機会が
+どこにもありませんでした。**
+
+    前へ飛ばした → 古い予約が残ったまま、新しい拍も鳴る = 二重
+    後ろへ飛ばした → 「前回どこまで予約したか」の記録が先に進んだ
+                     ままなので、**飛んだ先とは無関係な遠い未来**の
+                     拍を予約してしまい、しばらく鳴らなくなる
+
+⚠️ 曲が変わった時と違い、シークは currentTrackId も noriRunMyPitch も
+   変えません。**何も変わっていないように見えて、位置だけが飛ぶ**の
+   がこの問題の厄介なところでした。
+*/
+let metronomeLastSongSec = null;
+let metronomeLastCtxSec = null;
 
 /*
 「どの曲の、何番目の拍まで予約したか」の記録です。
@@ -499,6 +558,48 @@ function scheduleMetronomeBeats(){
     metronomeLastPitch = noriRunMyPitch;
 
     /*
+    再生位置が飛んでいたら、予約を入れ直します(v180)。
+
+    竹弘の実機報告:「シークバーで再生位置をずらした時に、新たな拍の
+    鳴り始めと古い拍のが2拍くらい被ってなっている」
+
+    【どうやって見つけるか】
+    ふつうに再生されているなら、前回この見張りが起きてからの経過時間
+    だけ曲は進んでいるはずです。
+
+        あるべき今の位置 = 前回の位置 + 経過した実時間 × 再生速度
+
+    この予想と実際が大きく食い違っていたら、**誰かが再生位置を
+    飛ばした**ということです。
+
+    ⚠️ シークは曲もマイピッチも変えないため、上の2つの判定では
+       まったく引っかかりません。**何も変わっていないように見えて、
+       位置だけが飛ぶ**のがこの問題の厄介なところでした。
+
+    ⚠️ 0.5秒という幅は「ふつうの誤差では絶対に届かず、意味のある
+       シークなら必ず超える」ところに置いています。再生中の誤差は
+       ふつう数十ミリ秒で、見張りの間隔(0.5秒)ぶんの進み方も
+       計算に入っているので、静かに再生している限り引っかかりません。
+    */
+    if(metronomeLastSongSec !== null && metronomeLastCtxSec !== null){
+
+        const elapsedSec  = nowCtxSec - metronomeLastCtxSec;
+        const expectedSec = metronomeLastSongSec + elapsedSec * rate;
+
+        if(Math.abs(nowSongSec - expectedSec) > METRONOME_SEEK_GAP_SEC){
+
+            console.log("のりのりアシスト : 再生位置が飛んだので拍を取り直します");
+
+            clearScheduledClicks();
+
+        }
+
+    }
+
+    metronomeLastSongSec = nowSongSec;
+    metronomeLastCtxSec  = nowCtxSec;
+
+    /*
     どこまで予約するか(曲内秒)。
 
     予約窓は「腕時計で2秒先まで」なので、曲内秒に直すには再生速度を
@@ -590,8 +691,16 @@ function scheduleMetronomeClick(atCtxSec){
 
     if(!source){ return; }
 
-    // 取り消せるように控えておきます
-    metronomeScheduled.push(source);
+    /*
+    取り消せるように控えておきます。
+
+    「いつ鳴る予定か(atCtxSec)」を一緒に持つのが要です。取り消す時に
+    **もう鳴り始めているかどうか**を見分けられないと、鳴っている音を
+    途中で切ってノイズを出してしまいます(v180)。
+    */
+    const entry = { node: source, atCtxSec: atCtxSec };
+
+    metronomeScheduled.push(entry);
 
     /*
     鳴り終わったら、控えから自分を外します。
@@ -602,7 +711,7 @@ function scheduleMetronomeClick(atCtxSec){
     */
     source.onended = function(){
 
-        const index = metronomeScheduled.indexOf(source);
+        const index = metronomeScheduled.indexOf(entry);
 
         if(index >= 0){ metronomeScheduled.splice(index,1); }
 
@@ -714,23 +823,44 @@ function createMetronomeBeep(atCtxSec){
  */
 function clearScheduledClicks(){
 
-    metronomeScheduled.forEach(function(source){
+    const now = deckAudioCtx ? deckAudioCtx.currentTime : 0;
 
-        /*
-        stop() は「鳴らすのをやめる」命令です。まだ鳴り始めていない
-        予約に対しても使え、その場合は「鳴らさずに取り消す」意味に
-        なります。
+    /*
+    ⚠️ **まだ鳴り始めていない予約だけ**を取り消します(v180)。
 
-        try で囲むのは、ちょうど鳴り終わった直後の音に stop() を
-        呼ぶとエラーになることがあるためです。止めたいだけなので、
-        エラーは黙って捨てて構いません。
-        */
-        try{ source.stop(); }
-        catch(error){ /* もう終わっていた音。何もしません */ }
+    stop() は「今すぐ止めろ」という命令なので、鳴っている最中の音に
+    使うと**波形を途中でぶった切って「プツッ」というノイズ**を出します
+    (竹弘の実機報告「繋ぎ目で音が変になる時がある」の原因)。
+
+    予定時刻がまだ先のものは、まだ音が出ていないので安全に取り消せます。
+    すでに鳴り始めているものは触らず、**最後まで鳴らしきらせます。**
+    カチッもピッも0.05〜0.3秒の短い音なので、放っておいてもすぐ
+    終わり、次の拍と混ざる心配はありません。
+
+    filter は「条件に合うものだけを残した新しい一覧を作る」書き方です。
+    ここでは「取り消さなかったもの(＝まだ鳴っている音)」だけを残します。
+    */
+    metronomeScheduled = metronomeScheduled.filter(function(entry){
+
+        // まだ鳴っていない → 取り消して、一覧からも外す
+        if(entry.atCtxSec > now){
+
+            /*
+            try で囲むのは、ちょうど鳴り終わった直後の音に stop() を
+            呼ぶとエラーになることがあるためです。止めたいだけなので、
+            エラーは黙って捨てて構いません。
+            */
+            try{ entry.node.stop(); }
+            catch(error){ /* もう終わっていた音。何もしません */ }
+
+            return false;
+
+        }
+
+        // 鳴っている最中 → そのまま鳴らしきる(一覧に残す)
+        return true;
 
     });
-
-    metronomeScheduled = [];
 
     // 次に鳴らす時は、拍を数え直します
     metronomeLastBeatIndex = null;
@@ -980,6 +1110,16 @@ bindDeckEvent("pause",function(){
     2秒ぶん鳴ってしまうので、ここで取り消します。
     */
     clearScheduledClicks();
+
+    /*
+    位置の記録も忘れます(v180)。
+
+    止まっている間、曲は進みませんが**壁の時計は進みます。** 記録を
+    残したまま再開すると、その差を「再生位置が飛んだ」と読み違えて
+    しまいます。空にしておけば、再開した時に新しく測り直します。
+    */
+    metronomeLastSongSec = null;
+    metronomeLastCtxSec  = null;
 
 });
 
