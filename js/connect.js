@@ -513,10 +513,6 @@ async function startPreRoll(nextTrackId,remainSec){
     */
     const maxPreRollSec = beat0AtSec / nextRate;
 
-    const preRollSec = Math.min(remainSec,maxPreRollSec);
-
-    const startAtSec = beat0AtSec - preRollSec * nextRate;
-
     const toDeck = getIdleDeck();
 
     // 裏のデッキに次の曲を載せます(古い一時URLはここで解放されます)
@@ -550,7 +546,103 @@ async function startPreRoll(nextTrackId,remainSec){
     */
     if(!isPreRolling){ return; }
 
+    /*
+    ================================================================
+    ⚠️⚠️ 助走の開始位置は、**待ち終わったここで**計算します(v182)
+    ================================================================
+
+    【v181まであった、接続がズレる原因】
+
+    この関数に入ってから、ここへ来るまでに**3回も待って**います。
+
+        await queryPermission()   … 権限の確認
+        await getFile()           … ファイルの取り出し
+        await loadedmetadata      … 音声の読み込み
+
+    端末やファイルの大きさによって、この待ち時間は**数十ミリ秒から
+    数百ミリ秒**まで変わります。そして**待っている間も、先行曲は
+    進み続けています。**
+
+    v181までは、この関数を**呼ぶ前**に測った remainSec で開始位置を
+    決めていました。つまり:
+
+        呼ばれた時   「接続点まで、あと15.0秒」 ← この前提で位置を決めた
+        待ち終わった時「接続点まで、あと14.8秒」 ← 実際はこう
+
+    後続曲を「15秒ぶん手前」に置いてしまうので、接続点が来た時には
+    **まだ0拍目に0.2秒ぶん届いていない**ことになります。
+    マイピッチ170なら1拍が0.353秒なので、**0.57拍のズレ**です。
+
+    【これが竹弘の報告した2つのパターンを両方説明します】
+
+      パターン1「各曲はメトロノームと合うのに、接続で合わない」
+        → メトロノームは**その曲の実際の再生位置**から拍を計算するので、
+          どちらの曲も単独では必ず合います。合わなくなるのは
+          「後続曲がいるべき位置にいない」接続の瞬間だけ
+
+      パターン2「同じ曲でも、うまく行く時とズレる時がある」
+        → **読み込み時間は毎回違います**(OSのキャッシュに載っているか、
+          その瞬間に端末がどれだけ忙しいか)。だからズレ幅も毎回変わる。
+          **再現しないこと自体が、この原因を指していました**
+
+    → **待ち終わった「今」の残り時間で計算し直せば、待ち時間が
+       どれだけかかっても吸収されます。**
+
+    ⚠️ 今後この関数に await を足す時は、**必ずこの計算より前に置くこと。**
+       後ろに足すと、その待ち時間ぶんが再びズレになります。
+    */
+    const fromTrack = libraryMap[currentTrackId];
+
+    if(!fromTrack){ cancelConnect(); return; }
+
+    const connectAtSec = getConnectAtSec(fromTrack);
+
+    const freshRemainSec =
+        (connectAtSec - audioPlayer.currentTime) / getTrackRate(fromTrack);
+
+    /*
+    読み込みに手間取って、接続点を過ぎてしまった時は繋ぎません。
+
+    無理に繋ぐと、0拍目を通り過ぎた位置から後続曲が鳴り始め、
+    **拍が合わないまま曲が変わります。** それなら繋がずに、
+    曲が終わってから次へ進む方が安全です(今までどおりの動き)。
+    */
+    if(freshRemainSec <= 0){
+
+        console.warn("助走が間に合わなかったため、繋ぎません :",nextTrack.file_name);
+
+        cancelConnect();
+
+        return;
+
+    }
+
+    const preRollSec = Math.min(freshRemainSec,maxPreRollSec);
+
+    const startAtSec = beat0AtSec - preRollSec * nextRate;
+
     toDeck.currentTime = startAtSec;
+
+    /*
+    【開発用調査ログ】狙った位置と、実際に置かれた位置のズレ(v182)
+
+    <audio> の currentTime は、**指定した位置ぴったりには止まりません。**
+    MP3やAACは音を小さな塊(フレーム)にまとめて保存しており、その
+    区切りの位置にしか飛べないためです(MP3で約26ミリ秒、AACで約23
+    ミリ秒の粒)。
+
+    上の待ち時間を直した後も接続がズレるなら、**次に疑うのはここ**です。
+    数値が見えていないと当てずっぽうになるので、記録に残します。
+
+    ⚠️ 原因が判明したら、この console.log は消してよい(CLAUDE.mdの
+       「本番リリース前に削除するもの」の考え方)。
+    */
+    console.log(
+        "助走の位置 : 狙い " + startAtSec.toFixed(3) + "秒" +
+        " / 実際 " + toDeck.currentTime.toFixed(3) + "秒" +
+        " / ズレ " + ((toDeck.currentTime - startAtSec) * 1000).toFixed(0) + "ms" +
+        " / 読み込み待ちの補正 " + ((remainSec - freshRemainSec) * 1000).toFixed(0) + "ms"
+    );
 
     /*
     音量を0にしてから鳴らします。
@@ -597,13 +689,18 @@ async function startPreRoll(nextTrackId,remainSec){
 
     }
 
-    const fromTrack = libraryMap[currentTrackId];
+    /*
+    ⚠️ connectAtSec は、上で位置を計算した時と**同じ値**を使います(v182)。
 
+    ここでもう一度 getConnectAtSec() を呼ぶこともできますが、その間に
+    マイピッチが変わっていると**位置の計算に使った接続点と、予約に使う
+    接続点が食い違います。** 一度決めた値を使い回すのが安全です。
+    */
     connectState = {
         nextTrackId   : nextTrackId,
         fromDeck      : audioPlayer,
         toDeck        : toDeck,
-        connectAtSec  : getConnectAtSec(fromTrack),
+        connectAtSec  : connectAtSec,
         beat0AtSec    : beat0AtSec,
         timerId       : null,
         fadeOutTimerId: null
@@ -826,6 +923,53 @@ function doConnect(){
         cancelConnect();
 
         return;
+
+    }
+
+    /*
+    【開発用調査ログ】接続の瞬間に、本当に拍が揃っているか(v182)
+
+    ここがノリRunの心臓部です。この瞬間、2つの曲は
+
+        先行曲 … ちょうど接続点(endTS)にいるはず
+        後続曲 … ちょうど0拍目(beat0)にいるはず
+
+    でなければなりません。**耳で「少しズレた」と感じた時、それが
+    何ミリ秒なのかを数字で見られるようにします。**
+
+    ズレを「拍」でも出しているのは、竹弘が判断しやすいためです。
+    0.5拍なら裏返っている(表と裏が入れ替わった)、0.1拍なら
+    わずかなズレ、という読み方ができます。
+
+    ⚠️ 原因が判明したら、この console.log は消してよい。
+    */
+    const fromTrackNow = getDeckTrack(fromDeck);
+
+    if(fromTrackNow && nextTrack){
+
+        // 変数名を logBeatSec としているのは、下の方にある beatSec と
+        // 見分けやすくするためです(別のブロックなので衝突はしません)
+        const logBeatSec = getBeatSec();
+
+        const fromGapSec = fromDeck.currentTime - state.connectAtSec;
+        const toGapSec   = toDeck.currentTime - state.beat0AtSec;
+
+        /*
+        曲内秒のズレを、実際の時間(実秒)に直してから拍に換算します。
+        曲は再生速度で伸び縮みしているので、曲内秒のままでは
+        「耳に聞こえるズレ」になりません。
+        */
+        const fromGapRealSec = fromGapSec / getTrackRate(fromTrackNow);
+        const toGapRealSec   = toGapSec / getTrackRate(nextTrack);
+
+        const totalGapSec = fromGapRealSec - toGapRealSec;
+
+        console.log(
+            "★接続の瞬間 : 先行曲 " + (fromGapRealSec * 1000).toFixed(0) + "ms" +
+            " / 後続曲 " + (toGapRealSec * 1000).toFixed(0) + "ms" +
+            " / 拍のズレ " + (totalGapSec * 1000).toFixed(0) + "ms" +
+            " (" + (totalGapSec / logBeatSec).toFixed(2) + "拍)"
+        );
 
     }
 
