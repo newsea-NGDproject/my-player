@@ -198,6 +198,97 @@ const deckObjectUrls = new Map();
 */
 const deckTrackIds = new Map();
 
+/*
+「いま音量0で助走中のデッキ」を覚えておく名簿です(v176)。
+
+【なぜこれが要るのか ―― 聞こえない音のために、CPUを使っていた】
+
+再生速度を変えても音の高さを変えない仕組み(preservesPitch)は、
+**WSOLA**という方法で動いています。ざっくり言うと、音を数十ミリ秒の
+カケラに切り、「今鳴らし終えたカケラと一番よく似た形の波」を毎回
+探してから貼り合わせる、という処理です。
+
+    この「一番似た場所を探す」が、力ずくの総当たり計算です。
+    数百通りの位置を試して、そのたびに数百回の掛け算をする。
+    それを数十ミリ秒ごとに、音が鳴っている間ずっと、左右2つ分。
+
+つまり preservesPitch = true にしている間、ブラウザは**ずっと重い
+計算を回し続けています。**
+
+ところが助走中(接続点の15秒前から)、裏のデッキは**音量0で誰にも
+聞こえていません。** 聞こえない音のために、この重い計算を全力で
+回していたことになります。しかも先行曲のぶんと合わせて2曲同時。
+
+    竹弘の実機報告(2026-09-02):
+    「後続曲の立ち上がりのフェードインだけど、曲再生が音程が
+      ヨレヨレに聞こえる時がある。たまに再生中の曲もヨレヨレする」
+
+WSOLAは計算が間に合わないと、探索を打ち切って似ていない場所で
+貼ります。すると波の周期が乱れ、それが「音程のヨレ」として
+聞こえます。**2曲同時のWSOLAが、その負荷の正体でした。**
+
+【なぜ音程が狂わないのか】
+
+助走中は preservesPitch を切る(false)ので、その間の裏デッキは
+昔のテープの早送りのように音程がずれています。しかし**音量0なので
+誰にも聞こえません。** 接続点=音が聞こえ始める瞬間に true へ戻すので、
+耳に届く時にはもう正しい音程になっています。
+
+⚠️ preservesPitch は「音の作り方」だけを変えるもので、**時間の進み方
+   (playbackRate)には影響しません。** だから助走の逆算 ―― 接続点で
+   ちょうど0拍目に着くという設計 ―― は1ミリも狂いません。ここが
+   この対策を安全に使える理由です。
+
+【なぜ旗(名簿)という形にしたのか ―― ここが実装の要】
+
+「助走を始める時に false にする」だけでは**元に戻ってしまいます。**
+走りながら定規でテンポを変えると、
+
+    pitch.js の applyTempo() → connect.js の rescheduleConnect()
+    → applyPitchToDeck()  ← ここで preservesPitch を上書き
+
+という道を通るためです。速さを変えるたびに true へ戻され、いつの間にか
+2曲ともWSOLAが回っている状態に逆戻りします。
+
+そこで**状態を名簿で持ち、applyPitchToDeck() が毎回それを見て決める**
+形にしました。こうすれば、どこから何度呼ばれても答えは同じになります。
+*/
+const deckSilentPreRoll = new Set();
+
+/**
+ * そのデッキが「音量0で助走中」かどうかを設定します(v176)。
+ *
+ * 上の deckSilentPreRoll のコメントに、何のための仕組みかを
+ * 詳しく書いてあります。
+ *
+ * @param {HTMLAudioElement} deck - 対象のデッキ
+ * @param {boolean}          on   - true=助走中(音程維持を切る) / false=解除
+ */
+function setDeckSilentPreRoll(deck,on){
+
+    if(on){
+
+        deckSilentPreRoll.add(deck);
+
+    }
+    else{
+
+        deckSilentPreRoll.delete(deck);
+
+    }
+
+    /*
+    名簿を書き換えるだけでなく、その場で <audio> にも反映します。
+
+    名簿だけ直して applyPitchToDeck() が次に呼ばれるのを待つ作りだと、
+    **呼ばれないまま音が聞こえ始める**場面で音程が狂ったままになります。
+    旗を下ろした瞬間に必ず正しくなる、という形にしておきます。
+    */
+    deck.preservesPitch = !on;
+    deck.webkitPreservesPitch = !on;
+
+}
+
 /**
  * デッキに曲のファイルを載せます。
  *
@@ -573,9 +664,22 @@ function applyPitchToDeck(deck,targetBpm){
     preservesPitch は「速度を変えても音の高さは変えない」という指定です。
     webkitPreservesPitch も一緒に書くのは、古いブラウザがこちらの名前
     しか知らないためです(知らない方は黙って無視されます)。
+
+    ⚠️ v176から、無条件に true にはしません。
+
+    音量0で助走中のデッキだけは false(音程維持を切る)にします。
+    聞こえない音のためにWSOLAという重い計算を回し続けると、その負荷が
+    「音程のヨレ」になって**聞こえている方の曲**に出るためです。
+    詳しい理由は、このファイルの deckSilentPreRoll のコメントにあります。
+
+    ここで名簿を見る形にしているのが要です。この関数は走行中に
+    テンポを変えるたびに呼ばれるので、**呼ばれるたびに名簿から
+    答えを出し直せば、設定が勝手に元へ戻ることがありません。**
     */
-    deck.preservesPitch = true;
-    deck.webkitPreservesPitch = true;
+    const preserve = !deckSilentPreRoll.has(deck);
+
+    deck.preservesPitch = preserve;
+    deck.webkitPreservesPitch = preserve;
     deck.playbackRate = rate;
 
     return true;
@@ -638,6 +742,19 @@ function clearIdleDeck(){
 
     // どの曲が載っていたかの記録も消します(v170)
     deckTrackIds.delete(idle);
+
+    /*
+    「音量0で助走中」の旗も下ろします(v176)。
+
+    片付けたデッキは、次に主役として使われます。旗が立ったままだと
+    音程維持が切れた状態(preservesPitch=false)で鳴り始め、**次の曲の
+    声が甲高くなったり低くなったりします。** 片付けの時に必ず下ろす
+    ことで、どのデッキもいつでも正しい状態で待てるようにします。
+
+    setDeckSilentPreRoll() は名簿と <audio> の両方を戻すので、
+    これ1つで元の状態に復帰します。
+    */
+    setDeckSilentPreRoll(idle,false);
 
     /*
     音量を1(最大)に戻しておきます。

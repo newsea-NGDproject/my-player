@@ -565,6 +565,24 @@ async function startPreRoll(nextTrackId,remainSec){
     */
     setDeckVolume(toDeck,0);
 
+    /*
+    「音量0で助走中」の旗を立てます(v176)。
+
+    これを立てると、このデッキは音程維持(preservesPitch)を切った状態
+    で鳴ります。音程維持はWSOLAという重い計算で成り立っており、
+    **音量0で誰にも聞こえていない15秒間、その計算を回し続けるのは
+    まるごと無駄**だからです。その負荷が、聞こえている側の曲の
+    「音程のヨレ」になって出ていました(竹弘の実機報告)。
+
+    ⚠️ 順番が大事です。**必ず applyPitchToDeck() より前に立てます。**
+       applyPitchToDeck() はこの旗を見て preservesPitch を決めるので、
+       後から立てると、この場では音程維持が入ったままになります。
+
+    詳しい仕組みは js/deck.js の deckSilentPreRoll のコメントに
+    書いてあります。
+    */
+    setDeckSilentPreRoll(toDeck,true);
+
     // このデッキに載っている曲の元テンポで、速さを決めます
     applyPitchToDeck(toDeck,noriRunMyPitch);
 
@@ -810,6 +828,26 @@ function doConnect(){
         return;
 
     }
+
+    /*
+    ---- 音程維持を戻す(v176) ----
+
+    助走の間、後続曲は音程維持(preservesPitch)を切った状態で鳴って
+    いました。音量0で聞こえていない音のために、WSOLAという重い計算を
+    回すのが無駄だったためです(js/deck.js の deckSilentPreRoll 参照)。
+
+    **ここが、その後続曲が初めて耳に届く瞬間です。** この行より後に
+    クロスフェードが始まり、音量が0から上がっていきます。だから
+    ここで戻せば、聞こえる時にはもう正しい音程になっています。
+
+    ⚠️ この位置(クロスフェードより前)から動かさないこと。後ろへ
+       ずらすと、音が出始めてから音程が切り替わることになり、
+       **繋ぎ目で音程がガクッと動いて聞こえます。**
+
+    ⚠️ 逆に、ここより前へ大きく戻すのも意味がありません。無駄な
+       WSOLAを回す時間が、そのぶん延びるだけです。
+    */
+    setDeckSilentPreRoll(toDeck,false);
 
     /*
     ---- 主役の交代 ----
