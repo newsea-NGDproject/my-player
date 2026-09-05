@@ -91,12 +91,53 @@ const METRONOME_LOOKAHEAD_SEC = 2.0;
 const METRONOME_TIMER_MS = 500;
 
 /*
-メトロノームの音量です。
+のりのりアシストの音量です(v181で音色ごとに分けました)。
 
-曲と同時に鳴るので、埋もれず、うるさすぎない値にしています。
-1.0にすると曲より目立ちすぎ、拍を確かめるどころか曲が聴けません。
+【竹弘の要望(2026-09-05)】
+
+    のり注入に行く際に、曲のボリュームを落としていた。今回の曲に
+    合わせてのメトロノームの「ピッ」なんだけど、逆に同じ割合で
+    ボリュームをあげて欲しい。
+
+【ノリ注入とのりのりアシストは、音の環境がまるで違う】
+
+    ノリ注入(js/tap.js)  … 曲を 0.5 に**落として**、拍を 0.6 で鳴らす
+                            → 曲より拍の方が大きい(1 : 1.2)
+    のりのりアシスト     … 曲は 1.0 のまま(走りながら音楽を楽しむ
+                            ためのものなので、落とせない)
+
+つまり同じ「聞こえ方」にするには、**曲を落とせないぶん、拍の方を
+上げる**しかありません。竹弘の言うとおりです。
+
+【v180までの実際の音量 ―― 「ピッ」だけ二重に絞られていた】
+
+    カチッ … click.wav(最大)      × 0.6            = 0.6
+    ピッ   … 矩形波(最大) × 0.6   × 0.6            = 0.36  ← 二重掛け
+
+「ピッ」は音の高さと長さを js/tap.js から借りていますが、**音量まで
+借りたのが誤り**でした。そこへ共通の音量つまみ(0.6)が重ねて掛かり、
+ノリ注入時の比率(1.2)の3分の1ほどまで小さくなっていました。
+
+→ **音の「形」(高さ・長さ)は tap.js から借り、「音量」はこちらで
+   決める。** 用途が違うのだから、音量まで揃える理由はありません。
+
+【なぜ 1.2 ではなく 1.0 にしたか】
+
+竹弘の言う「同じ割合」を厳密に守るなら、曲が1.0なので拍は1.2です。
+しかし音は 1.0 を超えると**波の頭が切り落とされて歪みます**
+(クリッピング)。せっかく大きくしても音が汚れては本末転倒なので、
+歪まないぎりぎりの 1.0 にしました。
+
+**それでも「ピッ」は今までの約2.8倍**になります。実機で聴いて
+まだ足りないようなら、この数字を上げれば済みます(歪みと引き換え)。
+
+⚠️ 音色ごとに分けているのは、click.wav と矩形波では**同じ数字でも
+   聞こえる大きさが違う**ためです(矩形波はずっと最大値の近くに
+   いるので、同じ数字だと大きく聞こえます)。耳で合わせられるよう、
+   最初から別々の数字にしてあります。
 */
-const METRONOME_GAIN = 0.6;
+const METRONOME_GAIN_CLICK = 1.0;
+const METRONOME_GAIN_BEEP  = 1.0;
 
 /*
 1回の見張りで予約する拍の数の上限です。
@@ -359,13 +400,39 @@ async function loadMetronomeClick(){
  */
 function ensureMetronomeGain(){
 
-    if(metronomeGainNode || !deckAudioCtx){ return; }
+    if(!deckAudioCtx){ return; }
 
-    metronomeGainNode = deckAudioCtx.createGain();
+    if(!metronomeGainNode){
 
-    metronomeGainNode.gain.value = METRONOME_GAIN;
+        metronomeGainNode = deckAudioCtx.createGain();
 
-    metronomeGainNode.connect(deckAudioCtx.destination);
+        metronomeGainNode.connect(deckAudioCtx.destination);
+
+    }
+
+    /*
+    音量は毎回、今の音色に合った値へ揃えます(v181)。
+
+    音色を切り替えた時に音量も変わるので、つまみを作った時に一度
+    決めるだけでは足りません。ここで毎回揃えておけば、**どの経路で
+    音色が変わっても音量が置き去りにならない**ので確実です
+    (拍を鳴らす直前に必ず通る関数なので、置き場所としても適切)。
+    */
+    metronomeGainNode.gain.value = getMetronomeGain();
+
+}
+
+/**
+ * いまの音色に合った音量を返します(v181)。
+ *
+ * click.wav と矩形波では、同じ数字でも聞こえる大きさが違うため、
+ * 音色ごとに別々の値を持っています(理由は定数のコメント)。
+ */
+function getMetronomeGain(){
+
+    return (metronomeSound === METRONOME_SOUND_BEEP)
+        ? METRONOME_GAIN_BEEP
+        : METRONOME_GAIN_CLICK;
 
 }
 
@@ -797,7 +864,18 @@ function createMetronomeBeep(atCtxSec){
     */
     const gain = deckAudioCtx.createGain();
 
-    gain.gain.setValueAtTime(TAP_CLICK_GAIN,atCtxSec);
+    /*
+    ⚠️ v181から、ここは **1.0(そのまま)から落とします。**
+
+    v180までは js/tap.js の TAP_CLICK_GAIN(0.6)を使っていましたが、
+    この後さらに共通の音量つまみ(0.6)を通るため、**0.36まで二重に
+    絞られて**いました(竹弘の「ピッの音を上げてほしい」の原因)。
+
+    音の**形**(高さ・長さ)は tap.js から借りますが、**大きさ**は
+    共通の音量つまみ側だけで決めます。絞る場所を1か所にまとめて
+    おけば、二度と二重掛けは起きません。
+    */
+    gain.gain.setValueAtTime(1.0,atCtxSec);
     gain.gain.exponentialRampToValueAtTime(0.001,atCtxSec + TAP_CLICK_SEC);
 
     osc.connect(gain);
