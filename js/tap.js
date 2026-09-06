@@ -376,6 +376,42 @@ const tapState = {
     latencyMs: 0,       // Bluetoothの遅延調整値
 
     /*
+    拍の格子を半拍ずらしているか(v186)。
+
+    【何のための旗か ―― 表打ちと裏打ち】
+
+    曲に合わせて叩く時、拍の頭(表)ではなく拍と拍の間(裏)を叩いて
+    しまうことがあります。ノリのいい曲ほど起こりやすい間違いです。
+
+        表打ち … タン ・ タン ・ タン    ← 拍の頭を叩いている
+        裏打ち … ・ タン ・ タン ・ タン  ← 半拍ずれた所を叩いている
+
+    **裏打ちでもBPMは正しく測れます**(叩く間隔は同じなので)。
+    ずれるのは startTS と endTS だけ、それも**ちょうど半拍**です。
+
+    【裏打ちのままだと何が起こるか】
+
+    接続そのものは壊れません(先行曲も後続曲も同じ13拍目=0拍目で
+    繋ぐので、拍の間隔は保たれます)。困るのは次の3つです。
+
+        ・どちらの足で踏む拍かが入れ替わる
+        ・のりのりアシストが曲の裏で鳴る
+        ・曲のキック(ドン)と足が合わない
+
+    ⚠️ 1つ目は「無音をはさんで繋ぐ」(v173)で既に対策済みです。無音から
+       入ると脳が「イチ」を取り直すため。だから半拍ずらしは
+       **「転ばないため」ではなく「気持ちよく合わせるため」**の機能で、
+       優先度はそう高くありません。
+
+    【なぜ旗が要るのか】
+
+    ずらす時は beatOriginSec(格子の原点)そのものを動かします。動かした
+    後の値からは「元がどこだったか」が分かりません。もう一度押して
+    元に戻せるようにするために、ずらしたかどうかを覚えておきます。
+    */
+    halfShifted: false,
+
+    /*
     前に測った値を読み戻して開いたか(v153)。
 
     🕺の曲(測定済み)を開くと、タップを飛ばして微調整画面から始まります。
@@ -513,6 +549,9 @@ async function openTapCorrection(trackId){
     tapState.targetBeat = 1;
     tapState.startTS = 0;
     tapState.endTS = 0;
+
+    // 半拍ずらしは曲ごとの設定なので、別の曲を開いたら解除します(v186)
+    tapState.halfShifted = false;
 
     // 位置は毎回この初期値から始めます(前回位置は保存していません)
     tapState.posSec = TAP_POS_A_DEFAULT_SEC;
@@ -881,6 +920,15 @@ function restoreTapGridAt(ts){
 
     tapState.targetBeat = 1;
     tapState.beatOriginSec = ts - beatDur;
+
+    /*
+    読み戻した格子を「基準」として扱います(v186)。
+
+    保存してあるのは補正済みの秒(startTS)なので、**その値自体がもう
+    正しい位置**です。旗を立てたままにすると、開いただけで「ずらして
+    いる」表示になり、押すと逆に狂います。
+    */
+    tapState.halfShifted = false;
 
 }
 
@@ -1673,6 +1721,15 @@ function goToTapAdjust(){
         ? 1
         : TAP_END_BEAT_NUMBER;
 
+    /*
+    叩き直したら、半拍ずらしは解除します(v186)。
+
+    いま引いた線は**新しく叩いた12回から作った格子**なので、前の格子に
+    かけていた補正を引きずる意味がありません。引きずると「ずらしたつもり
+    がないのにずれている」という分かりにくい状態になります。
+    */
+    tapState.halfShifted = false;
+
     updateTapTargetTS();
 
     /*
@@ -1714,6 +1771,9 @@ function showTapAdjustPanel(guideText,fromSec){
     // 確定ボタンの文言は、今どちらの地点かで変わります
     updateTapConfirmLabel();
 
+    // 「半拍ずらす / もどす」の文字も、今の状態に合わせます(v186)
+    updateTapHalfShiftLabel();
+
     updateTapMonitor();
 
     // ここからはメトロノームを重ねて鳴らします
@@ -1753,6 +1813,89 @@ function adjustTapBpm(delta){
     updateTapMonitor();
 
     playTapSongFrom(tapState.playOffset,true);
+
+}
+
+/**
+ * 拍の格子を半拍ずらします。もう一度押すと元に戻ります(v186)。
+ *
+ * 【なぜ beatOriginSec を動かすのか ―― ここが要】
+ *
+ * 「狙っている拍(targetBeat)を半拍ずらす」という直し方もありますが、
+ * それでは **メトロノームが動きません。** メトロノームは格子の原点
+ * (beatOriginSec)から拍を並べているためです。ずらしたのに耳で
+ * 確かめられないのでは、この機能の意味がありません。
+ *
+ * **格子そのものを動かせば、全部まとめて追従します。**
+ *
+ *     メトロノームの鳴る位置  … 原点から並ぶので、ずれる ✅
+ *     startTS / endTS        … updateTapTargetTS() が原点から計算 ✅
+ *
+ * v151で「本物の値は beatOriginSec・bpm・targetBeat の3つだけ」という
+ * 作りにしてあるので、原点を1つ動かすだけで全部の辻褄が合います。
+ *
+ * ⚠️ BPMは1ミリも変えません。裏打ちで叩いても**間隔は正しい**ので、
+ *    直すのは位置だけです。
+ */
+function toggleTapHalfBeat(){
+
+    const beatDur = 60 / tapState.bpm;
+
+    if(!isFinite(beatDur) || beatDur <= 0){ return; }
+
+    /*
+    ずらす向きは「後ろへ半拍」。戻す時は逆に動かします。
+
+    前後どちらへずらしても同じ格子になりますが(半拍ずれた位置は
+    1つしかないため)、**後ろへ動かす方が安全**です。前へずらすと
+    原点が0秒より手前に出てしまう曲があり、その場合に
+    getBeat0AtSec() が0で頭打ちになって格子が狂います。
+    */
+    tapState.beatOriginSec += tapState.halfShifted
+        ? -beatDur * 0.5
+        :  beatDur * 0.5;
+
+    tapState.halfShifted = !tapState.halfShifted;
+
+    console.log(
+        "拍の格子を半拍ずらしました :",
+        tapState.halfShifted ? "裏へ" : "元へ戻した",
+        "/ 原点 " + tapState.beatOriginSec.toFixed(3) + "s"
+    );
+
+    // 狙っている拍の秒(startTS / endTS)を計算し直します
+    updateTapTargetTS();
+
+    updateTapHalfShiftLabel();
+
+    updateTapMonitor();
+
+    // メトロノームを鳴らし直して、耳で確かめられるようにします
+    playTapSongFrom(tapState.playOffset,true);
+
+}
+
+/**
+ * 「半拍ずらす」ボタンの文字を、今の状態に合わせます(v186)。
+ *
+ * 押した後に文字が変わらないと、**効いたのかどうかが分かりません。**
+ * ずらしている間は「もどす」に変えて、今どちらの状態かを示します。
+ */
+function updateTapHalfShiftLabel(){
+
+    const button = document.getElementById("tap-half-shift");
+
+    if(!button){ return; }
+
+    button.textContent = tapState.halfShifted
+        ? "⇄ 半拍もどす"
+        : "⇄ 半拍ずらす";
+
+    /*
+    ずらしている時は、ボタン自体にも印を付けます。文字だけだと、
+    走り終わった後に画面を見返した時に見落とすためです。
+    */
+    button.classList.toggle("tap-half-on",tapState.halfShifted);
 
 }
 
@@ -2226,3 +2369,19 @@ tapAdjustPanel.querySelectorAll("[data-lat]").forEach(function(button){
     };
 
 });
+
+/*
+半拍ずらすボタン(v186)。
+
+上の2つと違って**押すたびに向きが入れ替わる**ので、data-* に値を
+持たせず、1つのボタンとして扱っています。
+*/
+const tapHalfShiftBtn = document.getElementById("tap-half-shift");
+
+if(tapHalfShiftBtn){
+
+    tapHalfShiftBtn.onclick = function(){
+        toggleTapHalfBeat();
+    };
+
+}
