@@ -834,6 +834,41 @@ function setTapLockUI(shown){
 function setTapAdjustUI(shown){
 
     tapAdjustPanel.style.display = shown ? "block" : "none";
+
+    refreshTapRetryVisible();
+
+}
+
+/**
+ * 「タップからやり直す」ボタンを出すかどうかを決めます(v188)。
+ *
+ * 【なぜ専用の関数にしたのか ―― v187で実際に消えた】
+ *
+ * このボタンは**微調整画面と表打ちの確認画面のどちらでも出したい**もの
+ * です。v187ではその2つの関数が**それぞれ勝手にこのボタンを触っていた**
+ * ため、こういう事故が起きました。
+ *
+ *     setTapAdjustUI(true);   ← ここで表示した
+ *     setTapFinalUI(false);   ← 直後にこれが消してしまう
+ *
+ * 竹弘の報告:「微調整画面の下に『やめる』ボタンと半分ずつで『タップから
+ * やり直す』ボタンがあった気がするのですが、なくなってませんか?」
+ * ―― そのとおりで、のりが「念のため閉じる」つもりで足した1行が原因でした。
+ *
+ * 順番を入れ替えれば直りますが、それでは**また同じ間違いが起きます**。
+ * 「2つのうちどちらかが開いていれば出す」という判断を**1か所に集めて**、
+ * 呼ぶ順番に左右されない形にしました。
+ *
+ * ⚠️ 新しくパネルを増やして、そこにもこのボタンを出したくなったら、
+ *    **この関数に条件を1つ足すだけ**にすること。パネル側から直接
+ *    tapRetryAdjust を触らないでください。
+ */
+function refreshTapRetryVisible(){
+
+    const shown =
+        tapAdjustPanel.style.display !== "none" ||
+        tapFinalPanel.style.display  !== "none";
+
     tapRetryAdjust.style.display = shown ? "block" : "none";
 
 }
@@ -2001,22 +2036,21 @@ function updateTapFinalLabel(){
 }
 
 /**
- * 表打ち確認の画面を出し入れします(v187)。
+ * 表打ち確認の画面(#tap-final)を出し入れします(v187)。
  *
- * setTapLockUI() / setTapAdjustUI() と同じ考え方で、必ず一緒に動くものを
- * 1か所に集めています。
+ * ⚠️ 「タップからやり直す」ボタンは**ここでは直接触りません**(v188)。
+ *    このパネルと微調整パネルの両方で出したいボタンなので、判断は
+ *    refreshTapRetryVisible() に集めてあります(そちらのコメント参照)。
  *
- *   #tap-final        … 確認パネル(案内・表打ちボタン・確定保存)
- *   #tap-retry-adjust … タップからやり直すボタン(画面いちばん下の行)
- *
- * ⚠️ 「やめる」は常に出ているので、ここでは触りません。竹弘の指示
+ * ⚠️ 「やめる」は常に出ているので、こちらも触りません。竹弘の指示
  *    「『やめる』ボタンと『タップからやり直す』は最後の『裏打ち』確認
- *    でも設置しておいてくださいね」を、この2つで満たしています。
+ *    でも設置しておいてくださいね」は、この2つで満たしています。
  */
 function setTapFinalUI(shown){
 
     tapFinalPanel.style.display = shown ? "block" : "none";
-    tapRetryAdjust.style.display = shown ? "block" : "none";
+
+    refreshTapRetryVisible();
 
 }
 
