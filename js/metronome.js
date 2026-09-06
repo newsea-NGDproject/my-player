@@ -326,6 +326,36 @@ let metronomeLastSongSec = null;
 let metronomeLastCtxSec = null;
 
 /*
+最後に予約した拍の時刻(AudioContextの時計)です(v192)。
+
+**曲が止まっている間も拍を刻み続ける**ために持っています。
+
+【何のために要るのか ―― 頭出し接続の無音】
+
+🎬 頭出し接続では、先行曲を最後まで鳴らしきってから止め、無音をはさんで
+次の曲を頭から鳴らします。その無音の間、**曲の位置は止まったまま**です。
+
+メトロノームはふだん「今の曲の位置」から拍を計算しますが、位置が止まって
+いるとその計算が使えません(同じ場所を指し続けるので、拍の間隔が
+めちゃくちゃになります)。
+
+→ 無音の間は**曲を見ずに、最後に鳴らした拍から一定の間隔で**刻みます。
+   その起点になるのがこの値です。
+
+    竹弘の要望(2026-09-06):
+    「曲と曲の間だけ無音となるのは、『のりのりアシスト』機能を
+      OFFにしている時だけ」
+*/
+let metronomeLastScheduledCtx = null;
+
+/*
+無音の間、次に鳴らす拍の時刻(AudioContextの時計)です(v192)。
+
+無音が明けたら null に戻し、また曲の位置から計算する形へ戻ります。
+*/
+let metronomeFreeRunNextCtx = null;
+
+/*
 「どの曲の、何番目の拍まで予約したか」の記録です。
 
 同じ拍を二度予約すると、カチッが二重に鳴って濁ります。前回どこまで
@@ -470,8 +500,15 @@ function canRingMetronome(){
 
     }
 
-    // 曲が止まっていたら刻む必要がありません
-    if(audioPlayer.paused){ return false; }
+    /*
+    曲が止まっていたら刻む必要がありません。
+
+    ⚠️ ただし**頭出し接続の無音の間は例外**です(v192)。曲は止まって
+       いますが、**拍は続いています。** ここで止めてしまうと、竹弘の
+       言う「曲と曲の間だけ音がなくなる」状態になり、繋ぎ目がうまく
+       いったかを耳で確かめられません。
+    */
+    if(audioPlayer.paused && !isConnectSilence()){ return false; }
 
     const track = libraryMap[currentTrackId];
 
@@ -536,6 +573,30 @@ function scheduleMetronomeBeats(){
         return;
 
     }
+
+    /*
+    ---- 曲が止まっている間(頭出し接続の無音)は、実時間で刻みます ----
+
+    曲の位置が止まっているので、下の「曲の時間軸で求める」計算は使え
+    ません(同じ場所を指し続け、拍の間隔が壊れます)。最後に鳴らした拍
+    から、マイピッチの間隔でそのまま続けます(v192)。
+    */
+    if(audioPlayer.paused){
+
+        scheduleMetronomeFreeRun();
+
+        return;
+
+    }
+
+    /*
+    無音が明けました。実時間モードを終わりにします(v192)。
+
+    この後の計算は曲の位置から拍を出し直すので、**無音の間に刻んでいた
+    拍とつながります**(頭出し接続は、後続曲の0拍目が同じ格子に乗るよう
+    無音の長さを決めているためです)。
+    */
+    metronomeFreeRunNextCtx = null;
 
     const track = libraryMap[currentTrackId];
 
@@ -724,6 +785,78 @@ function scheduleMetronomeBeats(){
 }
 
 /**
+ * 曲が止まっている間、実時間で拍を刻み続けます(v192)。
+ *
+ * 頭出し接続(🎬)の無音の間だけ通ります。
+ *
+ * 【ふだんの刻み方と何が違うのか】
+ *
+ *     ふだん … 曲の位置から「次の拍は曲の何秒目か」を求め、実時刻に直す
+ *     ここ   … **最後に鳴らした拍から、マイピッチの間隔で足していくだけ**
+ *
+ * 曲の位置が止まっている以上、曲を物差しにはできません。かわりに
+ * AudioContext の時計だけを頼りに、同じ間隔で刻み続けます。
+ *
+ * 【無音が明けた後、拍がずれない理由】
+ *
+ * 頭出し接続は、**後続曲の0拍目が同じ拍の格子に乗るように無音の長さを
+ * 決めています**(js/connect.js の startHeadConnect)。だから曲の位置から
+ * 計算し直しても、ここで刻んでいた拍と地続きになります。
+ */
+function scheduleMetronomeFreeRun(){
+
+    const beatSec = getBeatSec();
+
+    if(!isFinite(beatSec) || beatSec <= 0){ return; }
+
+    const nowCtxSec = deckAudioCtx.currentTime;
+
+    /*
+    刻み始める起点を決めます。
+
+    通常の刻みで最後に予約した拍の**次**から続けるのが基本です。まだ
+    一度も鳴らしていない時(いきなり無音から始まった時)だけ、今から
+    1拍後にします。
+    */
+    if(metronomeFreeRunNextCtx === null){
+
+        const base = (metronomeLastScheduledCtx !== null)
+            ? metronomeLastScheduledCtx
+            : nowCtxSec;
+
+        metronomeFreeRunNextCtx = base + beatSec;
+
+    }
+
+    /*
+    もう過ぎてしまった拍は鳴らせないので、今より後まで進めます。
+
+    見張りが遅れた時や、一時停止をはさんだ時に起こります。何拍か
+    まとめて飛ばすことになりますが、**格子の位置(位相)は保たれます**。
+    */
+    while(metronomeFreeRunNextCtx <= nowCtxSec){
+
+        metronomeFreeRunNextCtx += beatSec;
+
+    }
+
+    const untilCtxSec = nowCtxSec + METRONOME_LOOKAHEAD_SEC;
+
+    let count = 0;
+
+    while(metronomeFreeRunNextCtx < untilCtxSec && count < METRONOME_MAX_BEATS_PER_TICK){
+
+        scheduleMetronomeClick(metronomeFreeRunNextCtx);
+
+        metronomeFreeRunNextCtx += beatSec;
+
+        count++;
+
+    }
+
+}
+
+/**
  * カチッという音を1つ、指定の時刻に予約します。
  *
  * @param {number} atCtxSec - AudioContextの時計で、いつ鳴らすか
@@ -768,6 +901,18 @@ function scheduleMetronomeClick(atCtxSec){
     const entry = { node: source, atCtxSec: atCtxSec };
 
     metronomeScheduled.push(entry);
+
+    /*
+    最後に予約した拍の時刻を控えます(v192)。
+
+    曲が止まった時(頭出し接続の無音)に、**ここから拍を続ける**ための
+    起点になります。詳しくは metronomeLastScheduledCtx のコメント。
+    */
+    if(metronomeLastScheduledCtx === null || atCtxSec > metronomeLastScheduledCtx){
+
+        metronomeLastScheduledCtx = atCtxSec;
+
+    }
 
     /*
     鳴り終わったら、控えから自分を外します。
@@ -942,6 +1087,15 @@ function clearScheduledClicks(){
 
     // 次に鳴らす時は、拍を数え直します
     metronomeLastBeatIndex = null;
+
+    /*
+    実時間モードの状態も忘れます(v192)。
+
+    ここへ来たということは「予約をやり直す」場面なので、無音の間の
+    刻みも引き継ぎません。次に必要になった時、その時点の
+    metronomeLastScheduledCtx から組み直します。
+    */
+    metronomeFreeRunNextCtx = null;
 
 }
 
@@ -1179,6 +1333,14 @@ bindDeckEvent("play",function(){
 });
 
 bindDeckEvent("pause",function(){
+
+    /*
+    ⚠️ 頭出し接続の無音では、何もしません(v192)。
+
+    曲は止まりますが**拍は続いています。** ここで予約を取り消すと、
+    竹弘の言う「曲と曲の間だけ音がなくなる」状態に戻ってしまいます。
+    */
+    if(isConnectSilence()){ return; }
 
     /*
     ⚠️ 見張りは止めず、予約だけ取り消します。
