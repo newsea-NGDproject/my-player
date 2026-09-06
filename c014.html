@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v185)ノリRun
+        (v186)ノリRun
         メインメニュー
 
     </title>
@@ -3779,6 +3779,30 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             border-left-color:#ffcc00;
         }
 
+        /*
+        半拍ずらし(v186)。左の線の色で、3つのグループを見分けます。
+
+            緑(#00ff88)   … メトロノームの速さ
+            黄(#ffcc00)   … Bluetoothの遅延
+            水色(#00d5ff) … 拍の位置(ここ)
+        */
+        .tap-adj-group.tap-adj-half{
+            border-left-color:#00d5ff;
+        }
+
+        /*
+        いま半拍ずらしている時のボタン。
+
+        **押した結果が見て分かる**ようにするための色です。文字だけだと、
+        後から画面を見返した時に見落とします。
+        */
+        .tap-adj-group button.tap-half-on{
+            background:#00d5ff;
+            color:#141221;
+        }
+
+        .tap-adj-group button.tap-half-on:active{ background:#33ddff; }
+
         .tap-adj-group button{
             flex:1;
             padding:13px 2px;
@@ -4728,6 +4752,22 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
                 <button type="button" data-lat="-1">-1ms</button>
                 <button type="button" data-lat="1">+1ms</button>
                 <button type="button" data-lat="10">+10ms</button>
+            </div>
+
+            <!--
+                拍の位置がずれている時の直し(v186)。
+
+                メトロノームが曲の「裏」で鳴っている＝叩く時に拍の頭では
+                なく拍と拍の間を叩いていた、という時に使います。押すと
+                拍の格子ごと半拍動くので、メトロノームで確かめられます。
+
+                ⚠️ **見出し(.tap-desc)を付けていません。** 竹弘の
+                「タップ補正画面はスクロールなしの1画面に収めたい」を
+                守るため、行数を増やさずボタンの文言だけで意味を伝えます。
+                足りなければ見出しを足してください(1行増えます)。
+            -->
+            <div class="tap-adj-group tap-adj-half">
+                <button type="button" id="tap-half-shift">⇄ 半拍ずらす</button>
             </div>
 
             <!--
