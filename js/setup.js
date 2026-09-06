@@ -644,6 +644,16 @@ function closeMyPitchSetting() {
     document.getElementById("app").style.display = "flex";
 
     /*
+    隠していた間に高さの計算がずれるので、必ず直します(v189)。
+
+    タップ補正から戻った時に竹弘が見つけた「下に不思議な余白ができて、
+    曲一覧の角丸が隠れる」不具合と**まったく同じ原因**です。この画面も
+    #app を display:none で消しているため、同じことが起こります。
+    詳しい理由は js/config.js の refreshAppHeight() に書いてあります。
+    */
+    refreshAppHeight();
+
+    /*
     🕺ノリノリRun再生の最中だった場合は、新しいマイピッチを
     すぐ反映します(v166)。
 

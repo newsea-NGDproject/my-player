@@ -2330,7 +2330,19 @@ function closeTapCorrection(){
     (マイピッチ設定と同じ考え方)。
     */
     tapScreen.style.display = "none";
+
+    /*
+    次に開いた時に、いちばん上から見えるようにします(v189)。
+
+    #tap-screen は overflow-y:auto なので、下の方までスクロールした状態で
+    閉じると、その位置を覚えたまま次に開きます。
+    */
+    tapScreen.scrollTop = 0;
+
     document.getElementById("app").style.display = "flex";
+
+    // ⚠️ 隠していた間に高さの計算がずれるので、必ず直します(下の関数を参照)
+    refreshAppHeight();
 
     // 開く前に鳴っていた曲を、続きから鳴らし直します
     if(tapState.wasPlaying){
