@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v184)ノリRun
+        (v185)ノリRun
         メインメニュー
 
     </title>
@@ -2584,6 +2584,30 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             */
             content-visibility:auto;
             contain-intrinsic-size:56px;
+        }
+
+        /*
+        いま鳴っている曲の行(v185)。
+
+        竹弘の要望:「下半分の曲一覧で再生中の曲が分かるように。
+        曲の角丸の外枠線に色が欲しい」
+
+        ⚠️ **必ず .music-row より後に書くこと。** どちらもクラス1つぶんの
+           強さなので、同じ指定(border)がぶつかった時は**後に書いた方が
+           勝ちます**。前に置くと .music-row の border に上書きされ、
+           色がまったく出ません。
+
+        ⚠️ 色を直に書かず var(--theme-color) を使うのが要です。これで
+           メインメニューでは青(#00a2ff)、🕺ノリノリRun再生では
+           暁色(#ff8c42)に**自動で入れ替わります**。個々の色を
+           塗り分けて回る必要はありません。
+
+        ⚠️ 枠線を1px→2pxにしても行の高さは変わりません
+           (box-sizing:border-box なので、太さは内側に食い込みます)。
+        */
+        .music-row-playing{
+            border-color:var(--theme-color);
+            border-width:2px;
         }
 
         .square-btn{
