@@ -103,6 +103,25 @@ function createRowElement(trackId){
     row.dataset.trackId = trackId;
 
     /*
+    いま鳴っている曲なら、ここで印を付けておきます(v185)。
+
+    【なぜ行を作る時にも必要なのか ―― markPlayingRow だけでは足りない】
+
+    曲一覧は、並び替え・モードの切り替え・検索・メタデータの解析などで
+    **何度も作り直されます。** 作り直した行はまっさらな状態なので、
+    印を付け直さないと**鳴っている最中に色だけ消えます。**
+
+    「曲が変わった時に印を付け替える(markPlayingRow)」と
+    「行を作る時に今の状態を反映する(ここ)」の**両方**があって、
+    はじめてどんな場面でも色が正しく出ます。
+    */
+    if(trackId === currentTrackId){
+
+        row.classList.add("music-row-playing");
+
+    }
+
+    /*
     再生できないと分かっている曲は、行ごと薄いグレーにします(v110)。
 
     竹弘の指示:
@@ -414,6 +433,64 @@ function triggerMarquee(areaElement){
     textElement.addEventListener("animationend",function(){
         textElement.classList.remove("scroll-active");
     },{once:true});
+
+}
+
+/**
+ * いま鳴っている曲の行に、印を付け替えます(v185)。
+ *
+ * 竹弘の要望(2026-09-05):
+ *     「下半分の曲一覧で再生中の曲が分かるように。
+ *       曲の角丸の外枠線に色が欲しい」
+ *
+ * js/upper-area.js の showNowPlaying() から呼ばれます。**曲が変わる
+ * 瞬間に必ず通る場所**なので、手で選んだ時も、自動で次へ進んだ時も、
+ * 接続で入れ替わった時も、ここ1か所で追従できます。
+ *
+ * ⚠️ 行を作り直す側(createRowElement)にも同じ判定が要ります。
+ *    理由はあちらのコメントに書いてあります。
+ *
+ * @param {string} trackId - いま鳴っている曲(何も鳴っていなければ空でも可)
+ */
+function markPlayingRow(trackId){
+
+    /*
+    まず、前に印が付いていた行から外します。
+
+    「今その印が付いている行」だけを探すので、369行すべてを見る
+    必要がありません(querySelectorAll はクラス名で直接引けます)。
+    */
+    const marked = menuListEl.querySelectorAll(".music-row-playing");
+
+    marked.forEach(function(row){
+
+        row.classList.remove("music-row-playing");
+
+    });
+
+    if(!trackId){ return; }
+
+    // 新しく鳴り始めた曲の行に付けます
+    const rows = menuListEl.querySelectorAll(".music-row");
+
+    for(const row of rows){
+
+        if(row.dataset.trackId === trackId){
+
+            row.classList.add("music-row-playing");
+
+            return;
+
+        }
+
+    }
+
+    /*
+    見つからないことがあります。🕺ノリノリRun再生では注入済みの曲しか
+    並んでいないので、メインメニューから未注入の曲を持ち込んだ時などです。
+    その場合は**どの行にも印が付かない**のが正しい状態なので、
+    ここでは何もしません。
+    */
 
 }
 

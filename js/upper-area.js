@@ -65,6 +65,17 @@ function showNowPlaying(track){
 
     if(!track){ return; }
 
+    /*
+    曲一覧でも、いま鳴っている曲の行に色を付けます(v185)。
+
+    この関数は **曲が変わる瞬間に必ず通る**(js/player.js で手動再生した
+    時も、js/connect.js で接続して入れ替わった時も呼ばれる)ので、
+    ここから1回呼ぶだけで、どの経路でも追従できます。
+
+    実際の付け替えは js/list-view.js の markPlayingRow() が行います。
+    */
+    markPlayingRow(track.track_id);
+
     // ---- 1行目：曲のタイトル ----
     /*
     textContent は「文字としてそのまま入れる」書き込み方です。
