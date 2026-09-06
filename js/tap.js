@@ -412,6 +412,17 @@ const tapState = {
     halfShifted: false,
 
     /*
+    いま「表打ちの確認」画面にいるか(v187)。
+
+    A地点・B地点を測り終えた最後の一歩です。**フェーズ(phase)を増やさず
+    旗にしたのが要**で、こうすると `phase === TAP_PHASE_A` で分かれている
+    既存の10か所を1つも書き換えずに済みます(モニターの表示・位置調整の
+    範囲・案内文など)。この画面ではそれらの分岐を通らないため、
+    B地点のままで支障がありません。
+    */
+    finalCheck: false,
+
+    /*
     前に測った値を読み戻して開いたか(v153)。
 
     🕺の曲(測定済み)を開くと、タップを飛ばして微調整画面から始まります。
@@ -466,6 +477,9 @@ v148では上の #tap-lock-actions の中にありましたが、実機で画面
 */
 const tapRetryLock = document.getElementById("tap-retry-lock");
 const tapAdjustPanel = document.getElementById("tap-adjust");
+
+// 表打ちの確認パネル(v187)。出し入れは setTapFinalUI() 経由だけで行う
+const tapFinalPanel = document.getElementById("tap-final");
 const tapToast = document.getElementById("tap-toast");
 
 // 確定ボタン。文言が地点によって変わるので、ここで掴んでおきます
@@ -550,8 +564,14 @@ async function openTapCorrection(trackId){
     tapState.startTS = 0;
     tapState.endTS = 0;
 
-    // 半拍ずらしは曲ごとの設定なので、別の曲を開いたら解除します(v186)
+    /*
+    半拍ずらしと表打ち確認の状態も、曲ごとに初期化します(v186-v187)。
+
+    別の曲を開いたのに前の曲の判断が残っていると、いきなり
+    「ずらしている」状態から始まってしまいます。
+    */
     tapState.halfShifted = false;
+    tapState.finalCheck = false;
 
     // 位置は毎回この初期値から始めます(前回位置は保存していません)
     tapState.posSec = TAP_POS_A_DEFAULT_SEC;
@@ -841,8 +861,28 @@ function resetTapPhase(){
     */
     tapState.measured = false;
 
+    /*
+    表打ちの確認からやり直す時は、**A地点まで戻します**(v187)。
+
+    竹弘の指示で、この画面にも「タップからやり直す」を置いています。
+    ここで押すということは、表打ちボタンで直しきれなかった＝**測定
+    そのものをやり直したい**ということです。表裏はA地点の格子で決まる
+    ので、A地点から測り直すのが筋になります。
+
+    ⚠️ この関数はB地点の微調整画面からも呼ばれます。その時はフェーズを
+       動かしません(B地点だけ叩き直したい場面なので)。
+    */
+    if(tapState.finalCheck){
+
+        tapState.finalCheck = false;
+        tapState.phase = TAP_PHASE_A;
+        tapState.posSec = TAP_POS_A_DEFAULT_SEC;
+
+    }
+
     setTapLockUI(false);
     setTapAdjustUI(false);
+    setTapFinalUI(false);
     tapZone.style.display = "flex";
     tapPosRow.style.display = "flex";
 
@@ -1766,13 +1806,16 @@ function showTapAdjustPanel(guideText,fromSec){
     setTapLockUI(false);
     setTapAdjustUI(true);
 
+    /*
+    表打ちの確認画面から戻ってくる道はありませんが、念のため閉じます
+    (v187)。同じ場所に2つのパネルが重なって出るのを防ぐためです。
+    */
+    setTapFinalUI(false);
+
     setTapGuide(guideText);
 
     // 確定ボタンの文言は、今どちらの地点かで変わります
     updateTapConfirmLabel();
-
-    // 「半拍ずらす / もどす」の文字も、今の状態に合わせます(v186)
-    updateTapHalfShiftLabel();
 
     updateTapMonitor();
 
@@ -1817,27 +1860,90 @@ function adjustTapBpm(delta){
 }
 
 /**
- * 拍の格子を半拍ずらします。もう一度押すと元に戻ります(v186)。
+ * 表打ちの確認画面を出します(v187)。A地点・B地点を測り終えた後の最後の一歩。
  *
- * 【なぜ beatOriginSec を動かすのか ―― ここが要】
+ * 【何をする画面か ―― 竹弘の方針(2026-09-06)】
  *
- * 「狙っている拍(targetBeat)を半拍ずらす」という直し方もありますが、
- * それでは **メトロノームが動きません。** メトロノームは格子の原点
- * (beatOriginSec)から拍を並べているためです。ずらしたのに耳で
- * 確かめられないのでは、この機能の意味がありません。
+ *     のり注入では『表打ち』『裏打ち』どちらでも自由に打ってもらい、
+ *     ここでは、リズムに合わせてタップしてもらう事を重要視したい
  *
- * **格子そのものを動かせば、全部まとめて追従します。**
+ * 叩いている最中に「今は表か裏か」と考えさせると、リズムに乗れません。
+ * **叩く時は自由に、判断は最後に1回だけ。** ここがその1回です。
  *
- *     メトロノームの鳴る位置  … 原点から並ぶので、ずれる ✅
- *     startTS / endTS        … updateTapTargetTS() が原点から計算 ✅
+ * ⚠️ 鳴らすのは **A地点のあたり**です。竹弘の説明どおり、A地点は
+ *    「曲が安定したリズムを刻み始めた所」なので表裏が判別しやすい。
+ *    B地点(終盤)はリズムが崩れがちで、確認には向きません。
+ *    竹弘の言葉:「Bは、endTSが取得できれば十分です」。
+ */
+function startTapFinalCheck(){
+
+    tapState.finalCheck = true;
+    tapState.halfShifted = false;
+
+    const beatDur = 60 / tapState.bpm;
+
+    /*
+    メトロノームを **A地点の格子** で鳴らし直します。
+
+    beatOriginSec は直前までB地点の格子を指しています。この画面では
+    A地点付近を聴いてもらうので、A地点の1拍目(startTS)の1拍前を原点に
+    置き直します(restoreTapGridAt と同じ考え方)。
+
+    ⚠️ ここで restoreTapGridAt() を呼ばないのは、あちらが halfShifted を
+       false に戻す作りだからです。この関数では上で明示的に false へ
+       しており、順番が入れ替わると分かりにくくなるため直に書いています。
+    */
+    if(isFinite(beatDur) && beatDur > 0){
+
+        tapState.beatOriginSec = tapState.startTS - beatDur;
+
+    }
+
+    // 1拍目の少し手前から鳴らして、拍が来るのを構えて聴けるようにします
+    tapState.posSec = Math.max(0,tapState.startTS - TAP_REPLAY_LEAD_SEC);
+
+    tapZone.style.display = "none";
+    tapPosRow.style.display = "none";
+
+    setTapLockUI(false);
+    setTapAdjustUI(false);
+    setTapFinalUI(true);
+
+    setTapGuide(
+        "最後の確認です。メトロノームが曲の拍と重なって聞こえますか。" +
+        "拍と拍の間で鳴っていたら「表打ちにする」を押してください。"
+    );
+
+    updateTapFinalLabel();
+
+    updateTapMonitor();
+
+    // メトロノームを重ねて鳴らします
+    playTapSongFrom(tapState.posSec,true);
+
+}
+
+/**
+ * 表打ち／裏打ちを入れ替えます。もう一度押すと元に戻ります(v187)。
  *
- * v151で「本物の値は beatOriginSec・bpm・targetBeat の3つだけ」という
- * 作りにしてあるので、原点を1つ動かすだけで全部の辻褄が合います。
+ * 【なぜ startTS と endTS を直に動かすのか】
+ *
+ * 微調整画面までは「beatOriginSec・bpm・targetBeat の3つが本物」という
+ * 作りで、秒は毎回そこから計算していました(v151)。しかしこの画面では
+ * **A地点とB地点という別々の格子から出た2つの値**を、同時に半拍ずらす
+ * 必要があります。targetBeat は片方ぶんしか指せないので、ここでは
+ * 確定済みの秒を直に動かすのが正しい形になります。
+ *
+ *     startTS … A地点の格子から出た値
+ *     endTS   … B地点の格子から出た値
+ *
+ * ⚠️ beatOriginSec も同じだけ動かします。そうしないと**メトロノームだけ
+ *    元の位置で鳴り続け**、耳で確かめられません。
  *
  * ⚠️ BPMは1ミリも変えません。裏打ちで叩いても**間隔は正しい**ので、
  *    直すのは位置だけです。
  */
-function toggleTapHalfBeat(){
+function toggleTapFinalHalfBeat(){
 
     const beatDur = 60 / tapState.bpm;
 
@@ -1846,56 +1952,71 @@ function toggleTapHalfBeat(){
     /*
     ずらす向きは「後ろへ半拍」。戻す時は逆に動かします。
 
-    前後どちらへずらしても同じ格子になりますが(半拍ずれた位置は
-    1つしかないため)、**後ろへ動かす方が安全**です。前へずらすと
-    原点が0秒より手前に出てしまう曲があり、その場合に
-    getBeat0AtSec() が0で頭打ちになって格子が狂います。
+    前後どちらへずらしても同じ格子になりますが(半拍ずれた位置は1つしか
+    ないため)、**後ろへ動かす方が安全**です。前へずらすと startTS が
+    0秒より手前に出る曲があり、その場合に接続の計算が狂います。
     */
-    tapState.beatOriginSec += tapState.halfShifted
-        ? -beatDur * 0.5
-        :  beatDur * 0.5;
+    const shiftSec = tapState.halfShifted ? -beatDur * 0.5 : beatDur * 0.5;
+
+    tapState.startTS       += shiftSec;
+    tapState.endTS         += shiftSec;
+    tapState.beatOriginSec += shiftSec;
 
     tapState.halfShifted = !tapState.halfShifted;
 
     console.log(
-        "拍の格子を半拍ずらしました :",
-        tapState.halfShifted ? "裏へ" : "元へ戻した",
-        "/ 原点 " + tapState.beatOriginSec.toFixed(3) + "s"
+        "拍の位置を半拍ずらしました :",
+        tapState.halfShifted ? "ずらした" : "元へ戻した",
+        "/ 1拍目 " + tapState.startTS.toFixed(3) + "s",
+        "/ 13拍目 " + tapState.endTS.toFixed(3) + "s"
     );
 
-    // 狙っている拍の秒(startTS / endTS)を計算し直します
-    updateTapTargetTS();
-
-    updateTapHalfShiftLabel();
+    updateTapFinalLabel();
 
     updateTapMonitor();
 
     // メトロノームを鳴らし直して、耳で確かめられるようにします
-    playTapSongFrom(tapState.playOffset,true);
+    playTapSongFrom(tapState.posSec,true);
 
 }
 
 /**
- * 「半拍ずらす」ボタンの文字を、今の状態に合わせます(v186)。
+ * 「表打ちにする」ボタンの文字を、今の状態に合わせます(v187)。
  *
  * 押した後に文字が変わらないと、**効いたのかどうかが分かりません。**
- * ずらしている間は「もどす」に変えて、今どちらの状態かを示します。
  */
-function updateTapHalfShiftLabel(){
+function updateTapFinalLabel(){
 
-    const button = document.getElementById("tap-half-shift");
+    const button = document.getElementById("tap-final-half");
 
     if(!button){ return; }
 
     button.textContent = tapState.halfShifted
-        ? "⇄ 半拍もどす"
-        : "⇄ 半拍ずらす";
+        ? "⇄ 元に戻す"
+        : "⇄ 表打ちにする";
 
-    /*
-    ずらしている時は、ボタン自体にも印を付けます。文字だけだと、
-    走り終わった後に画面を見返した時に見落とすためです。
-    */
+    // 色でも分かるようにします(文字だけだと見落とすため)
     button.classList.toggle("tap-half-on",tapState.halfShifted);
+
+}
+
+/**
+ * 表打ち確認の画面を出し入れします(v187)。
+ *
+ * setTapLockUI() / setTapAdjustUI() と同じ考え方で、必ず一緒に動くものを
+ * 1か所に集めています。
+ *
+ *   #tap-final        … 確認パネル(案内・表打ちボタン・確定保存)
+ *   #tap-retry-adjust … タップからやり直すボタン(画面いちばん下の行)
+ *
+ * ⚠️ 「やめる」は常に出ているので、ここでは触りません。竹弘の指示
+ *    「『やめる』ボタンと『タップからやり直す』は最後の『裏打ち』確認
+ *    でも設置しておいてくださいね」を、この2つで満たしています。
+ */
+function setTapFinalUI(shown){
+
+    tapFinalPanel.style.display = shown ? "block" : "none";
+    tapRetryAdjust.style.display = shown ? "block" : "none";
 
 }
 
@@ -2112,9 +2233,13 @@ function showTapScreen(){
     なります。曲の読み込みが終わるまで resetTapPhase() は動かないので、
     その数秒間だけ前回の微調整パネルが見えてしまう、という
     分かりにくい残像を防ぐための後始末です。
+
+    ⚠️ v187で「表打ちの確認」パネルが増えたので、こちらも一緒に
+       閉じます。**パネルを増やした時は、ここに足すのを忘れないこと。**
     */
     setTapLockUI(false);
     setTapAdjustUI(false);
+    setTapFinalUI(false);
     tapZone.style.display = "flex";
     tapPosRow.style.display = "flex";
     tapCountLabel.textContent = "READY";
@@ -2281,7 +2406,30 @@ async function confirmTapPhase(){
     }
 
     /*
-    ここから下はB地点の確定 ＝ この曲のノリ注入の仕上げです。
+    B地点の確定 → **保存の前に「表打ちの確認」を挟みます**(v187)。
+
+    竹弘の方針で、叩いている最中は表裏を気にせずリズムに乗ってもらい、
+    判断は最後に1回だけにしました(startTapFinalCheck のコメント参照)。
+
+    ⚠️ この画面を通るまで保存はしません。**確定保存を押して初めて**
+       DBに書き込み、🕺の印を付けます。
+    */
+    if(!tapState.finalCheck){
+
+        console.log(
+            "B地点を確定しました :",
+            "BPM " + tapState.bpm.toFixed(2),
+            "/ 13拍目 " + tapState.endTS.toFixed(3) + "s"
+        );
+
+        startTapFinalCheck();
+
+        return;
+
+    }
+
+    /*
+    ここから下は表打ち確認の確定 ＝ この曲のノリ注入の仕上げです。
 
     【順番が大事】
     値の保存に成功してから🕺の印を付けます。逆にすると、保存が
@@ -2371,17 +2519,29 @@ tapAdjustPanel.querySelectorAll("[data-lat]").forEach(function(button){
 });
 
 /*
-半拍ずらすボタン(v186)。
+表打ちの確認画面の2つのボタン(v187)。
 
-上の2つと違って**押すたびに向きが入れ替わる**ので、data-* に値を
-持たせず、1つのボタンとして扱っています。
+「表打ちにする」は上の2つと違って**押すたびに向きが入れ替わる**ので、
+data-* に値を持たせず、1つのボタンとして扱っています。
+
+「確定保存」は confirmTapPhase をそのまま呼びます。同じ関数が
+「A地点の確定」「B地点の確定」「表打ち確認の確定」の3役をこなし、
+今どこにいるかで進み先を選びます(関数の中の分岐を参照)。
 */
-const tapHalfShiftBtn = document.getElementById("tap-half-shift");
+const tapFinalHalfBtn = document.getElementById("tap-final-half");
 
-if(tapHalfShiftBtn){
+if(tapFinalHalfBtn){
 
-    tapHalfShiftBtn.onclick = function(){
-        toggleTapHalfBeat();
+    tapFinalHalfBtn.onclick = function(){
+        toggleTapFinalHalfBeat();
     };
+
+}
+
+const tapFinalSaveBtn = document.getElementById("tap-final-save");
+
+if(tapFinalSaveBtn){
+
+    tapFinalSaveBtn.onclick = confirmTapPhase;
 
 }
