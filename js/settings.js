@@ -271,6 +271,25 @@ function refreshConnectPanel(){
     panel.querySelectorAll(".connect-choice").forEach(function(button){
 
         /*
+        頭出し接続のボタン(v190)。
+
+        こちらは拍数を持たない**別の種類**の繋ぎ方なので、印を付けるか
+        どうかは connectStyle だけで決まります。
+        */
+        if(button.dataset.connectStyle){
+
+            button.classList.toggle(
+                "connect-choice-on",
+                connectStyle === CONNECT_STYLE_HEAD
+            );
+
+            return;
+
+        }
+
+        /*
+        13拍目=0拍目で繋ぐ4つの選択肢。
+
         data-beats / data-silence はHTML側に書いた「この選択肢は
         フェード何拍・無音何拍か」です。dataset で読み出すと文字列で
         返るので、Number() で数に直して比べます
@@ -280,13 +299,15 @@ function refreshConnectPanel(){
         const silence = Number(button.dataset.silence);
 
         /*
-        **2つとも一致した選択肢だけ**に印を付けます。フェードの長さが
-        同じでも、無音の有無が違えば別の設定だからです。
-
-        classList.toggle は、第2引数が true ならクラスを付け、
-        false なら外します。if文を書かずに済む書き方です。
+        **3つとも一致した選択肢だけ**に印を付けます。フェードの長さが
+        同じでも、無音の有無が違えば別の設定だからです。v190からは
+        「頭出し接続を選んでいる間は、この4つのどれにも印を付けない」
+        という条件も加わりました。
         */
-        const isOn = (beats === crossfadeBeats && silence === silenceBeats);
+        const isOn =
+            connectStyle === CONNECT_STYLE_BEAT &&
+            beats === crossfadeBeats &&
+            silence === silenceBeats;
 
         button.classList.toggle("connect-choice-on",isOn);
 
@@ -534,10 +555,25 @@ function closeLicensePanel(){
             画面と次の接続には即座に効くためです(設定の値そのものは
             この関数の中で先に切り替わります)。
             */
-            setConnectStyle(
-                Number(button.dataset.beats),
-                Number(button.dataset.silence)
-            );
+            if(button.dataset.connectStyle === "head"){
+
+                /*
+                頭出し接続(v190)。拍数を使わない繋ぎ方なので、前の値を
+                そのまま渡して**種類だけ**を切り替えます。こうしておくと
+                13拍目=0拍目の繋ぎ方に戻した時、竹弘が前に選んでいた
+                長さがそのまま残ります。
+                */
+                setConnectStyle(crossfadeBeats,silenceBeats,CONNECT_STYLE_HEAD);
+
+            }
+            else{
+
+                setConnectStyle(
+                    Number(button.dataset.beats),
+                    Number(button.dataset.silence)
+                );
+
+            }
 
             // 選ばれている印を付け替えます
             refreshConnectPanel();

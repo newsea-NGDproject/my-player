@@ -180,6 +180,84 @@ const SILENCE_BEATS_OFF = 0;
 let silenceBeats = SILENCE_BEATS_OFF;
 
 /*
+======================================================================
+ 繋ぎ方の「種類」(v190)
+======================================================================
+
+上の crossfadeBeats / silenceBeats は、どちらも **13拍目=0拍目で繋ぐ**
+という同じやり方の中の調整でした。v190で、**やり方そのものが違う**
+繋ぎ方が加わったので、種類を持つようにします。
+
+    "beat" … 13拍目=0拍目で繋ぐ(これまでの4つ)
+             先行曲の途中(13拍目)で次の曲へ渡す。曲の後半は聴けない
+
+    "head" … 頭出し接続(v190で追加)
+             **先行曲を最後まで聴いて、無音をはさみ、次の曲を頭から**
+
+【竹弘の構想(2026-09-05)】
+
+    13拍目=0拍目をアンカーとして、そこから逆算することで、
+    先行曲を最後まで聞いて、4秒くらい無音があって、その後曲の
+    最初から聴ける。（略）でも曲が進むとアンカーによってガッチリ
+    合うという繋ぐ選択肢の完成だ。
+
+【何が「完成」なのか】
+
+    🎧 重ねて繋ぐ … 途切れない。ノンストップで走りたい時
+    🧘 無音をはさむ … 脳を整理して足を取り直したい時
+    🎬 頭出し接続 … **曲を曲として楽しみたい時**
+
+3つ目は「音楽プレイヤーとしての自然さ」を取り戻す選択肢です。
+ノリRunが**走る道具であると同時に音楽プレイヤーでもある**という
+位置づけに合います。
+*/
+const CONNECT_STYLE_BEAT = "beat";
+const CONNECT_STYLE_HEAD = "head";
+
+let connectStyle = CONNECT_STYLE_BEAT;
+
+/*
+頭出し接続で、先行曲が終わってから次の曲が鳴り出すまでの目安(秒)。
+
+⚠️ **この秒数はあくまで目安です。** 実際の長さは、後続曲の0拍目が
+   拍の格子にぴたり乗るように前後します(最大で1拍ぶん＝マイピッチ170
+   なら0.35秒)。竹弘の「4秒くらい」という言い方どおりの動きです。
+
+**4秒ちょうどより拍を優先する**のがこの機能の要です。逆にすると、
+走るリズムを守るというノリRunの目的そのものが崩れます。
+*/
+const CONNECT_HEAD_GAP_SEC = 4;
+
+/*
+頭出し接続で、曲の終わりの何秒前から準備を始めるか。
+
+後続曲のファイルを読み込んで、鳴らせる状態にしておくための時間です。
+無音をはさんでから鳴らすので、**読み込みだけ先に済ませて待機**します。
+*/
+const CONNECT_HEAD_LEAD_SEC = 20;
+
+/*
+頭出し接続で、曲の終わりの何秒手前で先行曲を止めるか。
+
+【⚠️ なぜ「ちょうど」ではいけないのか ―― ended との競合】
+
+曲が自然に最後まで再生されると `ended` が起きて、js/queue.js の
+「曲が終わりました。次の曲へ進みます」が動き出します。**予約してある
+頭出し接続と取り合いになり、次の曲へ二重に進んでしまいます。**
+
+止める予約は setTimeout で入れており、混んでいる時は数十ミリ秒
+遅れることがあります。ちょうどの時刻を狙うと、その遅れのぶんだけ
+曲が終わりきってしまう可能性が残ります。
+
+そこで**わずかに手前**で止めます。0.2秒は曲の末尾(たいていは余韻か
+フェードアウトの終わり)なので、耳では違いが分かりません。
+
+⚠️ この余裕を0にしないこと。「最後まできっちり」を狙うと、
+   **たまに次の曲へ飛ぶ**という再現しにくい不具合になります。
+*/
+const CONNECT_HEAD_STOP_MARGIN_SEC = 0.2;
+
+/*
 クロスフェードのカーブの深さ。
 
 【この数字が効くところ】
@@ -497,6 +575,21 @@ function maybeStartPreRoll(){
 
     if(!canStartConnect()){ return; }
 
+    /*
+    頭出し接続を選んでいる時は、まったく別の道を通ります(v190)。
+
+    ⚠️ **ここから下(13拍目=0拍目で繋ぐ道)には一切手を入れていません。**
+       接続はノリRunの心臓部なので、新しい繋ぎ方は「別の道を1本足す」
+       形にして、既存の4つの動きが変わらないようにしています。
+    */
+    if(connectStyle === CONNECT_STYLE_HEAD){
+
+        maybeStartHeadConnect();
+
+        return;
+
+    }
+
     const fromTrack = libraryMap[currentTrackId];
 
     const connectAtSec = getConnectAtSec(fromTrack);
@@ -620,6 +713,468 @@ function maybeStartPreRoll(){
         cancelConnect();
 
     });
+
+}
+
+/**
+ * 曲が入れ替わった直後の後始末をまとめて行います(v190で切り出し)。
+ *
+ * ⚠️ ここは自動では繋がりません。シークバーや曲名は
+ *    「loadedmetadata が起きた時」に更新される作りですが、そのイベントは
+ *    **後続曲を読み込んだ時点**(まだ裏のデッキだった頃)に起きていて、
+ *    bindDeckEvent が「主役じゃない」と弾いているためです(js/deck.js)。
+ *
+ * だから交代したこの瞬間に、こちらから呼び直します。
+ *
+ * @param {Object} nextTrack - 新しく主役になった曲
+ */
+function refreshAfterConnect(nextTrack){
+
+    resetSeekBarForCurrentDeck();
+    showNowPlaying(nextTrack);
+    updateMediaSessionMetadata(nextTrack);
+
+    // 再生回数を1増やします(曲一覧タップやplayTrackと同じ扱い)
+    incrementPlayCount(nextTrack.track_id);
+
+}
+
+
+// ==========================================================
+// 5-2. 頭出し接続(v190)
+// ==========================================================
+/*
+先行曲を最後まで聴いて、無音をはさみ、次の曲を頭から鳴らす繋ぎ方です。
+
+【13拍目=0拍目で繋ぐ道との違い】
+
+    これまで … 先行曲の13拍目で次へ渡す。後続曲は0拍目から鳴る
+                (＝後続曲の頭は飛ぶ / 先行曲の後半は聴けない)
+
+    頭出し   … 先行曲を最後まで鳴らす。無音。後続曲は**0秒から**鳴る
+                (＝どちらの曲も丸ごと聴ける)
+
+【それでも拍が合う理由 ―― アンカー】
+
+拍の格子は先行曲の13拍目(endTS)から、ずっと同じ間隔で続いています。
+後続曲の0拍目がその格子にぴたり乗るように、**無音の長さを前後させて**
+辻褄を合わせます。ずれるのは最大1拍ぶんなので「4秒くらい」に収まります。
+
+    先行曲 ━━━━━━━━━━┫(曲の最後)
+            …13拍目…      ←無音→
+    後続曲                      ━━━━━━━━━━
+                                頭      ▲0拍目 ここで格子に乗る
+    拍の格子 ┊  ┊  ┊  ┊  ┊  ┊  ┊  ┊  ┊  ┊  ┊  ┊  ┊  ┊
+
+【⚠️ 無音でも音は止めません(v191)】
+
+耳には無音ですが、**後続曲が音量0で鳴り続けています。** 他の繋ぎ方と
+同じ考え方です(SILENCE_BEATS_ON のコメント参照)。
+
+    竹弘の懸念:「『この繋ぎ方だけ、音が完全に途切れます』これは避けたい」
+
+v190では無音が明けてから後続曲を play() していました。しかしそれでは
+**v144以前の「曲が終わってから次を鳴らし直す」構造への逆戻り**で、
+画面を消したまま走ると数曲で無言になります。Androidが止めるのは
+「**音が途切れた後に** JSが play() を呼ぶ」ことだからです。
+
+→ 先行曲が鳴っているうちに play() を済ませ、音量0で待たせておいて、
+   **無音明けには位置を頭へ戻すだけ**にしました。位置と音量の変更には
+   あの制限がかからないので、両立します。
+
+竹弘の提案(L5レイヤーで無音を鳴らして再生継続に見せる)と狙いは同じ
+ですが、**後続曲自身にその役をさせる**のでレイヤーが増えません。
+*/
+
+/**
+ * 曲の終わりが近づいていたら、頭出し接続の準備を始めます。
+ */
+function maybeStartHeadConnect(){
+
+    const fromTrack = libraryMap[currentTrackId];
+
+    if(!fromTrack){ return; }
+
+    /*
+    曲の終わりまで、あと何秒(実秒)か。
+
+    ⚠️ 曲の長さは <audio> が実際に測った値を使います。DBの値
+       (track.duration)は登録時のもので、わずかにずれることがあるためです。
+       接続の基準になる数字なので、実測を優先します。
+    */
+    const durationSec = audioPlayer.duration;
+
+    if(!isFinite(durationSec) || durationSec <= 0){ return; }
+
+    const fromRate = getTrackRate(fromTrack);
+
+    const remainToEndSec = (durationSec - audioPlayer.currentTime) / fromRate;
+
+    // まだ曲の終わりが遠ければ、何もしません
+    if(remainToEndSec > CONNECT_HEAD_LEAD_SEC){ return; }
+
+    // 曲が終わってしまっていたら、繋がずに今までどおりの動きに任せます
+    if(remainToEndSec <= 0){ return; }
+
+    const nextTrackId = findNextTrackId(currentTrackId);
+
+    if(!nextTrackId){ return; }
+
+    const nextTrack = libraryMap[nextTrackId];
+
+    if(!canConnectTrack(nextTrack)){ return; }
+
+    if(isExcluded(nextTrack)){ return; }
+
+    // ここから先は非同期(ファイル読み込み)なので、先に旗を立てます
+    isPreRolling = true;
+
+    startHeadConnect(nextTrackId).catch(function(error){
+
+        console.error("頭出し接続の準備に失敗 :",error.name,error.message);
+
+        cancelConnect();
+
+    });
+
+}
+
+/**
+ * 後続曲を読み込んで待機させ、鳴らし始める時刻を予約します。
+ *
+ * @param {string} nextTrackId - 次に鳴らす曲
+ */
+async function startHeadConnect(nextTrackId){
+
+    const nextTrack = libraryMap[nextTrackId];
+
+    // --- 権限を確認し直します(js/player.js と同じパターン) ---
+    let permission = await nextTrack.file_handle.queryPermission({mode:"read"});
+
+    if(permission !== "granted"){
+        permission = await nextTrack.file_handle.requestPermission({mode:"read"});
+    }
+
+    if(permission !== "granted"){
+
+        console.error("頭出し接続できません(権限が無い) :",nextTrack.file_name);
+
+        cancelConnect();
+
+        return;
+
+    }
+
+    const file = await nextTrack.file_handle.getFile();
+
+    const toDeck = getIdleDeck();
+
+    setDeckSource(toDeck,file,nextTrackId);
+
+    await new Promise(function(resolve){
+
+        toDeck.addEventListener("loadedmetadata",resolve,{once:true});
+
+    });
+
+    // 待っている間に竹弘の操作が入ったかもしれません
+    if(!isPreRolling){ return; }
+
+    /*
+    ---- ここから時刻の逆算 ----
+
+    ⚠️ **読み込みを待った「今」を基準に計算します。** 待つ前の値を使うと、
+       読み込みにかかった時間ぶんだけ全部がずれます(v182で直したのと
+       まったく同じ落とし穴です)。
+    */
+    const fromTrack = libraryMap[currentTrackId];
+
+    if(!fromTrack){ cancelConnect(); return; }
+
+    const durationSec = audioPlayer.duration;
+    const fromRate    = getTrackRate(fromTrack);
+    const toRate      = getTrackRate(nextTrack);
+
+    if(!isFinite(durationSec) || durationSec <= 0){ cancelConnect(); return; }
+
+    // 先行曲が終わるまで、あと何秒か
+    const remainToEndSec = (durationSec - audioPlayer.currentTime) / fromRate;
+
+    if(remainToEndSec <= 0){
+
+        console.warn("頭出し接続が間に合いませんでした :",nextTrack.file_name);
+
+        cancelConnect();
+
+        return;
+
+    }
+
+    /*
+    拍の格子の基準点(アンカー)まで、あと何秒か。
+
+    先行曲の13拍目(endTS)です。**もう通り過ぎていれば負の数**になり
+    ますが、それで構いません。格子は前にも後ろにも無限に続いていて、
+    下の計算は「基準点から何拍ぶん離れているか」しか見ないためです。
+    */
+    const anchorSec = getConnectAtSec(fromTrack);
+
+    const remainToAnchorSec = (anchorSec - audioPlayer.currentTime) / fromRate;
+
+    // 拍の間隔(実秒)。マイピッチそのもの
+    const beatSec = getBeatSec();
+
+    if(!isFinite(beatSec) || beatSec <= 0){ cancelConnect(); return; }
+
+    /*
+    後続曲を「頭から」鳴らした時、0拍目が来るまでの長さ。
+
+    曲の中の距離(beat0AtSec)を再生速度で割って、実際の秒に直します。
+    */
+    const beat0AtSec = getBeat0AtSec(nextTrack);
+
+    const beat0DelaySec = beat0AtSec / toRate;
+
+    /*
+    ---- 0拍目を、格子のどの点に乗せるかを決めます ----
+
+    まず「こうなってほしい」時刻を出し、それに**いちばん近い格子の点**を
+    選びます。Math.round なので、前後どちらへでも最大半拍しか動きません。
+    */
+    const wishBeat0Sec =
+        remainToEndSec + CONNECT_HEAD_GAP_SEC + beat0DelaySec;
+
+    let beatIndex = Math.round((wishBeat0Sec - remainToAnchorSec) / beatSec);
+
+    let beat0Sec = remainToAnchorSec + beatIndex * beatSec;
+
+    let startDelaySec = beat0Sec - beat0DelaySec;
+
+    /*
+    ⚠️ 後続曲が先行曲より先に鳴り出さないようにします。
+
+    格子に合わせた結果、開始が手前へ寄りすぎることがあります。その時は
+    **1拍ずつ後ろへずらして**、先行曲が終わった後に来るまで送ります。
+    拍の単位でずらすので、格子からは外れません。
+
+    上限を付けているのは、計算がおかしくなった時に無限に回らないための
+    安全装置です(通常は1〜2回で収まります)。
+    */
+    let guard = 0;
+
+    while(startDelaySec < remainToEndSec && guard < 64){
+
+        beatIndex++;
+
+        beat0Sec = remainToAnchorSec + beatIndex * beatSec;
+
+        startDelaySec = beat0Sec - beat0DelaySec;
+
+        guard++;
+
+    }
+
+    /*
+    ================================================================
+    ⚠️⚠️ 後続曲は「今すぐ」音量0で鳴らし始めます(v191)
+    ================================================================
+
+    【なぜ無音明けまで待たないのか ―― 音を途切れさせないため】
+
+    v190では無音が明けてから play() を呼んでいました。しかしそれは
+    **v144以前の「曲が終わってから次を鳴らし直す」構造への逆戻り**です。
+
+    Androidが止めるのは「**音が途切れた後に** JSが play() を呼ぶ」こと
+    でした(2026-08-23の調査)。画面を消したまま走ると、数曲で無言に
+    なります。既存の助走(プリロール)が成立しているのも、**音が途切れる
+    前に呼んでいる**からです。
+
+    → 先行曲が鳴っているうちに play() を済ませ、**音量0のまま待たせます。**
+
+        ① いま(先行曲が鳴っている)  … play() する。音量0
+        ② 先行曲が終わる            … 後続曲が音量0で鳴っている
+                                       ＝ OSから見て再生は途切れていない
+        ③ 無音明け                  … currentTime を0に戻して音量1
+
+    **currentTime の変更と音量の変更には、あの制限がかかりません。**
+    だから「曲の頭から聴かせる」と「音を途切れさせない」が両立します。
+
+    竹弘の提案(L5レイヤーで無音を鳴らして再生継続に見せる)と狙いは
+    同じですが、**後続曲自身にその役をさせる**ので、新しいレイヤーも
+    タイマーも増えません。
+
+    ⚠️ 待っている間、後続曲は音量0のまま曲を進みます(先行曲の残り＋無音の
+       ぶん)。③で頭へ戻すので、耳に届くのは必ず0秒からです。60秒未満の
+       曲は対象外なので、待っている間に曲が終わることはありません。
+    */
+    toDeck.currentTime = 0;
+
+    setDeckVolume(toDeck,0);
+
+    applyPitchToDeck(toDeck,noriRunMyPitch);
+
+    await toDeck.play();
+
+    // 鳴り始めるのを待つ間にも、竹弘の操作が入ったかもしれません
+    if(!isPreRolling){
+
+        toDeck.pause();
+
+        return;
+
+    }
+
+    /*
+    ---- 予約を入れます ----
+
+    ① 先行曲を止める … 曲の終わり
+    ② 後続曲を鳴らす … 無音をはさんだ後
+
+    connectState に控えるのは、竹弘が途中で別の曲を選んだ時に
+    cancelConnect() から取り消せるようにするためです。
+    */
+    connectState = {
+        nextTrackId   : nextTrackId,
+        fromDeck      : audioPlayer,
+        toDeck        : toDeck,
+        connectAtSec  : durationSec,
+        beat0AtSec    : 0,
+        timerId       : null,
+        fadeOutTimerId: null,
+        headStyle     : true
+    };
+
+    /*
+    先行曲を止める予約。**曲が終わりきる少し手前**を狙います
+    (理由は CONNECT_HEAD_STOP_MARGIN_SEC のコメント)。
+    */
+    const stopDelaySec = Math.max(
+        0,
+        remainToEndSec - CONNECT_HEAD_STOP_MARGIN_SEC
+    );
+
+    connectState.fadeOutTimerId = setTimeout(function(){
+
+        stopHeadFromDeck();
+
+    },stopDelaySec * 1000);
+
+    connectState.timerId = setTimeout(function(){
+
+        doHeadConnect();
+
+    },startDelaySec * 1000);
+
+    const silenceSec = startDelaySec - remainToEndSec;
+
+    console.log(
+        "頭出し接続を予約しました :",nextTrack.file_name,
+        "/ 曲の終わりまで " + remainToEndSec.toFixed(2) + "秒",
+        "/ 無音 " + silenceSec.toFixed(2) + "秒",
+        "/ 0拍目まで " + beat0Sec.toFixed(2) + "秒",
+        "(格子の " + beatIndex + " 拍目に合わせました)"
+    );
+
+}
+
+/**
+ * 先行曲を、曲の終わりで止めます(v190)。
+ *
+ * ⚠️ **ended を待たずに、こちらから止める**のが要です。曲が自然に
+ *    終わると ended が起きて、js/queue.js の「次の曲へ」が動き出し、
+ *    予約した頭出し接続と取り合いになります。ほんのわずか手前で
+ *    止めることで、**あちらのファイルに一切手を入れずに**済ませています。
+ */
+function stopHeadFromDeck(){
+
+    if(!connectState || !connectState.headStyle){ return; }
+
+    const fromDeck = connectState.fromDeck;
+
+    connectState.fadeOutTimerId = null;
+
+    if(!fromDeck || fromDeck.paused){ return; }
+
+    fromDeck.pause();
+
+    console.log("先行曲を最後まで鳴らし終えました(ここから無音)");
+
+}
+
+/**
+ * 無音が明けたら、後続曲を頭から鳴らします(v190)。
+ */
+function doHeadConnect(){
+
+    if(!connectState || !connectState.headStyle){ return; }
+
+    /*
+    ⚠️ 状態は「いちばん先に」空にします。理由は doConnect() の冒頭に
+       書いてあるものと同じで、この先で呼ぶ showNowPlaying() が
+       巡り巡ってここへ戻ってくる道があるためです。
+    */
+    const state = connectState;
+
+    clearConnectTimer();
+
+    connectState = null;
+    isPreRolling = false;
+
+    const fromDeck    = state.fromDeck;
+    const toDeck      = state.toDeck;
+    const nextTrackId = state.nextTrackId;
+
+    const nextTrack = libraryMap[nextTrackId];
+
+    if(!nextTrack){ cancelConnect(); return; }
+
+    // 先行曲がまだ鳴っていたら(予約が遅れた場合)、ここで確実に止めます
+    if(!fromDeck.paused){ fromDeck.pause(); }
+
+    /*
+    ---- 曲の頭へ戻します(v191) ----
+
+    後続曲は先行曲が鳴っているうちから、音量0で鳴り続けていました
+    (そうしないと無音の間に音が途切れ、画面を消したまま走った時に
+    止まってしまうため)。**耳に届く前に頭へ戻すことで、竹弘の
+    「曲の最初から聴ける」を実現します。**
+
+    ⚠️ ここで play() を呼ばないのが要です。**すでに鳴っている**ので
+       呼ぶ必要がなく、呼べば逆にAndroidの制限に触れます。位置を
+       動かすだけなら、その制限はかかりません。
+    */
+    toDeck.currentTime = 0;
+
+    swapActiveDeck();
+
+    currentTrackId = nextTrackId;
+
+    // 音量を上げます。この繋ぎ方はクロスフェードしません
+    setDeckVolume(toDeck,1);
+
+    /*
+    何かの理由で止められていた時の保険です(ブラウザが裏での再生を
+    止めることがあります)。ふだんはここを通りません。
+    */
+    if(toDeck.paused){
+
+        console.warn("後続曲が止まっていたため、鳴らし直します");
+
+        toDeck.play().catch(function(error){
+
+            console.error("頭出し接続の再生に失敗 :",error.name,error.message);
+
+        });
+
+    }
+
+    /*
+    画面の作り直し。13拍目=0拍目で繋ぐ道と同じ3つを呼びます
+    (シークバー・曲名・Media Session)。自動では繋がりません。
+    */
+    refreshAfterConnect(nextTrack);
+
+    console.log("頭出し接続しました :",nextTrack.file_name);
 
 }
 
@@ -1234,13 +1789,12 @@ function doConnect(){
 
     シークバーは竹弘が選んだA案(接続点で次の曲のバーに切り替える)。
     「接続点は曲が切り替わる所で、とても分かりやすい」(2026-09-02)。
-    */
-    resetSeekBarForCurrentDeck();
-    showNowPlaying(nextTrack);
-    updateMediaSessionMetadata(nextTrack);
 
-    // 再生回数を1増やします(曲一覧タップやplayTrackと同じ扱い)
-    incrementPlayCount(nextTrackId);
+    ⚠️ v190で refreshAfterConnect() に切り出しました。頭出し接続でも
+       まったく同じ後始末が要るためで、**2か所に書くと片方だけ直す
+       事故が起きます**(findWrapAroundTrackId を切り出した時と同じ理由)。
+    */
+    refreshAfterConnect(nextTrack);
 
     /*
     ---- 音の入れ替え ----
@@ -1650,7 +2204,17 @@ function rescheduleConnect(){
  * @param {number} beats   - フェードの長さ(CROSSFADE_BEATS_LONG / SHORT)
  * @param {number} silence - 無音の長さ(SILENCE_BEATS_ON / OFF)
  */
-async function setConnectStyle(beats,silence){
+async function setConnectStyle(beats,silence,style){
+
+    /*
+    繋ぎ方の種類を先に決めます(v190)。
+
+    ⚠️ 引数を省いて呼ばれたら、これまでどおり「13拍目=0拍目で繋ぐ」に
+       します。**既存の呼び出しを1つも書き換えずに済ませる**ためです。
+    */
+    connectStyle = (style === CONNECT_STYLE_HEAD)
+        ? CONNECT_STYLE_HEAD
+        : CONNECT_STYLE_BEAT;
 
     /*
     知らない値が入ってきた時は、安全な方へ倒します。
@@ -1676,15 +2240,27 @@ async function setConnectStyle(beats,silence){
 
     console.log(
         "曲の繋ぎ方を変えました :",
-        "フェード " + crossfadeBeats + "拍 /",
-        (silenceBeats === 0 ? "無音なし" : "無音 " + silenceBeats + "拍")
+        connectStyle === CONNECT_STYLE_HEAD
+            ? "頭出し接続(曲を最後まで聴いて、無音、次の曲を頭から)"
+            : "フェード " + crossfadeBeats + "拍 / " +
+              (silenceBeats === 0 ? "無音なし" : "無音 " + silenceBeats + "拍")
     );
+
+    /*
+    ⚠️ 繋ぎ方を変えたら、進行中の予約は取り消します(v190)。
+
+    やり方そのものが変わるので、前のやり方で入れた予約が残っていると
+    **半分だけ古い繋ぎ方**という妙な状態になります。走りながら設定を
+    変えた時に、次の1回だけおかしくなるのを防ぎます。
+    */
+    cancelConnect();
 
     try{
 
         // settings ストアはキーを自分で指定する形なので、3つ目の引数に渡します
         await idbPut(STORE_SETTINGS,crossfadeBeats,"crossfade_beats");
         await idbPut(STORE_SETTINGS,silenceBeats,"connect_silence_beats");
+        await idbPut(STORE_SETTINGS,connectStyle,"connect_style");
 
     }
     catch(error){
@@ -1701,6 +2277,24 @@ async function setConnectStyle(beats,silence){
  * js/main.js の起動処理から呼ばれます。
  */
 async function loadCrossfadeSetting(){
+
+    try{
+
+        const savedStyle = await idbGet(STORE_SETTINGS,"connect_style");
+
+        // 今のコードが知っている種類の時だけ受け入れます(v190)
+        if(savedStyle === CONNECT_STYLE_HEAD || savedStyle === CONNECT_STYLE_BEAT){
+
+            connectStyle = savedStyle;
+
+        }
+
+    }
+    catch(error){
+
+        console.error("繋ぎ方の種類の読み込みに失敗 :",error.name,error.message);
+
+    }
 
     try{
 
