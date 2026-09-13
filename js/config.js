@@ -159,6 +159,12 @@ const npJacketEl = document.getElementById("np-jacket");
 const pitchValueEl = document.getElementById("pitch-value");
 const basePitchValueEl = document.getElementById("base-pitch-value");
 
+/*
+「再生ピッチ」の後ろに出す、速さの絵文字の置き場所です(v193)。
+中身は js/pitch.js の applyTempo() が、今のテンポに応じて入れ替えます。
+*/
+const pitchPaceEmojiEl = document.getElementById("pitch-pace-emoji");
+
 
 // ==========================================================
 // 3. 共有状態(複数のファイルが読み書きする変数)
@@ -231,5 +237,90 @@ function refreshAppHeight(){
     void el.offsetHeight;
 
     el.style.height = "";
+
+}
+
+
+// ==========================================================
+// テンポの速さを表す絵文字(v193)
+// ==========================================================
+/*
+【何のためのものか】
+
+初期設定とマイピッチ設定の定規には、昔から「🚶‍♂️ ウォーキング」
+「🏃‍♂️ マラソン」のように、**今の数字がどれくらいの速さなのかを
+一目で分かる絵文字とラベル**が出ていました。
+
+v193で、竹弘の指示により **メインメニューの「再生ピッチ」にも
+同じ絵文字を出す**ようにしました。竹弘の言葉(2026-09-13):
+
+    絵文字表示設定は、マイピッチ設定と同じでBPMによって変えてね。
+
+⚠️ **つまり固定の🏃‍♂️ではありません。** 走っている最中に定規で
+   テンポを上げ下げすると、絵文字も一緒に変わります。
+
+【なぜ config.js に置いたか】
+
+境目の数字(120 / 135 / 200)を**1か所にまとめる**ためです。
+これまでは js/setup.js の updateLabel() の中に直接書かれていて、
+同じ数字が c012.html(初期設定)にも書かれていました。3か所目を
+作ると、片方だけ直す事故が必ず起きます。
+
+config.js は**いちばん先に読み込まれるファイル**なので、
+どの画面のファイルからも安全に呼べます(refreshAppHeight と同じ理由)。
+
+※ c012.html は c014 とは別のページで js/ を読み込まないため、
+  あちらは今までどおり自前で持っています(触っていません)。
+*/
+
+/*
+境目と、そこまでの呼び名の一覧です。
+
+上から順に「この数字以下ならこれ」と見ていき、どれにも当てはま
+らなかった時が最後の「全力ダッシュ！」になります。
+
+⚠️ 絵文字とラベルを別々に持っているのは、**使う場所で必要な物が
+   違う**ためです。定規は「🏃‍♂️ マラソン」と両方出しますが、
+   再生ピッチは狭いので絵文字だけを出します。
+*/
+const PACE_STEPS = [
+    { maxBpm: 120, emoji: "🚶‍♂️", label: "ウォーキング" },
+    { maxBpm: 135, emoji: "🥁",   label: "行進" },
+    { maxBpm: 200, emoji: "🏃‍♂️", label: "マラソン" }
+];
+
+// どの境目にも当てはまらなかった時(=いちばん速い)の呼び名
+const PACE_FASTEST = { emoji: "🏎️", label: "全力ダッシュ！" };
+
+/**
+ * そのテンポが、どれくらいの速さなのかを返します。
+ *
+ * @param  {number} bpm - 1分あたりの拍数
+ * @return {{emoji:string,label:string}} 絵文字と呼び名
+ */
+function getPaceStep(bpm){
+
+    /*
+    find は「条件に合う最初の1つを返す」書き方です。
+    見つからなかった時は undefined(何も無い)が返るので、
+    その時は最後の「全力ダッシュ！」を使います。
+    */
+    const step = PACE_STEPS.find(function(item){
+        return bpm <= item.maxBpm;
+    });
+
+    return step || PACE_FASTEST;
+
+}
+
+/**
+ * そのテンポを表す絵文字だけを返します(再生ピッチ用)。
+ *
+ * @param  {number} bpm - 1分あたりの拍数
+ * @return {string} 絵文字
+ */
+function getPaceEmoji(bpm){
+
+    return getPaceStep(bpm).emoji;
 
 }

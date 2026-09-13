@@ -636,13 +636,54 @@ muteBtn.addEventListener("click",function(){
     音が鳴り続けると、竹弘が実機で確認する時に
     「ボタンが効いていない」と誤解してしまうためです。
     */
-    audioPlayer.muted = !audioPlayer.muted;
+    const nextMuted = !audioPlayer.muted;
 
-    if(audioPlayer.muted){
+    /*
+    ---- 2枚のデッキ両方に当てます(v193) ----
+
+    今までは `audioPlayer.muted` だけを切り替えていました。押した瞬間は
+    正しく消えますが、🕺ノリノリRun再生では曲が繋がるたびにデッキが
+    交代するため、**次の曲から音が戻ってしまう**状態でした。
+    詳しい理由は js/deck.js の setBothDecksMuted() のコメントにあります。
+    */
+    setBothDecksMuted(nextMuted);
+
+    if(nextMuted){
         muteBtn.innerText = MUTE_ICON_SOUND_OFF;
     }
     else{
         muteBtn.innerText = MUTE_ICON_SOUND_ON;
+    }
+
+    /*
+    ---- ノリノリアシストも一緒に黙らせます(v193) ----
+
+    竹弘の要望(2026-09-13):
+        「スピーカーoffにしたらメトロノームも音量offにして欲しい」
+
+    鳴ってよいかの判断そのものは js/metronome.js の canRingMetronome() に
+    足してあります(消音中なら鳴らさない)。
+
+    ⚠️ **なぜ、ここで予約の取り消しが要るのか**
+
+    その判断は音を**予約する時**に行われ、予約は「2秒先まで」まとめて
+    入れてあります。つまり判断を足しただけだと、🔇を押しても
+    **すでに予約済みの2秒ぶんが鳴り続けます。**
+
+    竹弘の実機では「ボタンを押したのに数回カチカチ鳴る」という形で
+    出てしまうので、ここで**まだ鳴っていない予約を取り消します。**
+
+    ⚠️ 消音をやめた時にも呼んでいます。拍を数え直させて、
+       **今の曲の正しい位置から**刻み直してもらうためです。
+
+    ※ typeof で存在を確かめているのは、このファイル(upper-area.js)が
+      js/metronome.js **より先に**読み込まれるためです。押すのは
+      読み込み後なので通常は必ずありますが、念のため守っています。
+    */
+    if(typeof clearScheduledClicks === "function"){
+
+        clearScheduledClicks();
+
     }
 
 });

@@ -91,7 +91,7 @@ const METRONOME_LOOKAHEAD_SEC = 2.0;
 const METRONOME_TIMER_MS = 500;
 
 /*
-のりのりアシストの音量です(v181で音色ごとに分けました)。
+ノリノリアシストの音量です(v181で音色ごとに分けました)。
 
 【竹弘の要望(2026-09-05)】
 
@@ -99,11 +99,11 @@ const METRONOME_TIMER_MS = 500;
     合わせてのメトロノームの「ピッ」なんだけど、逆に同じ割合で
     ボリュームをあげて欲しい。
 
-【ノリ注入とのりのりアシストは、音の環境がまるで違う】
+【ノリ注入とノリノリアシストは、音の環境がまるで違う】
 
     ノリ注入(js/tap.js)  … 曲を 0.5 に**落として**、拍を 0.6 で鳴らす
                             → 曲より拍の方が大きい(1 : 1.2)
-    のりのりアシスト     … 曲は 1.0 のまま(走りながら音楽を楽しむ
+    ノリノリアシスト     … 曲は 1.0 のまま(走りながら音楽を楽しむ
                             ためのものなので、落とせない)
 
 つまり同じ「聞こえ方」にするには、**曲を落とせないぶん、拍の方を
@@ -343,7 +343,7 @@ let metronomeLastCtxSec = null;
    その起点になるのがこの値です。
 
     竹弘の要望(2026-09-06):
-    「曲と曲の間だけ無音となるのは、『のりのりアシスト』機能を
+    「曲と曲の間だけ無音となるのは、『ノリノリアシスト』機能を
       OFFにしている時だけ」
 */
 let metronomeLastScheduledCtx = null;
@@ -486,6 +486,23 @@ function canRingMetronome(){
 
     // 音を出す回路そのものが無ければ鳴らせません
     if(!deckAudioCtx){ return false; }
+
+    /*
+    🔇 消音中は鳴らしません(v193)。
+
+    竹弘の要望(2026-09-13):
+        「スピーカーoffにしたらメトロノームも音量offにして欲しい」
+
+    ⚠️ **アシストは `<audio>` を通っていません。** Web Audioで直接
+       音を作っているので、`audioPlayer.muted` の影響を受けません。
+       だから、こうして自分で見に行く必要があります。
+
+    ⚠️ 🔈ボタン側(js/upper-area.js)で、**押した時に予約済みの音を
+       取り消す**処理も入れてあります。ここの判断は「これから予約する
+       音」にしか効かず、すでに2秒先まで入っている予約は止められない
+       ためです。片方だけでは「押したのに数回鳴る」状態になります。
+    */
+    if(audioPlayer.muted){ return false; }
 
     /*
     「カチッ」の時だけ、音源(click.wav)の読み込み待ちがあります。
@@ -716,7 +733,7 @@ function scheduleMetronomeBeats(){
 
         if(Math.abs(nowSongSec - expectedSec) > METRONOME_SEEK_GAP_SEC){
 
-            console.log("のりのりアシスト : 再生位置が飛んだので拍を取り直します");
+            console.log("ノリノリアシスト : 再生位置が飛んだので拍を取り直します");
 
             clearScheduledClicks();
 
@@ -1227,7 +1244,7 @@ async function setMetronomeSound(sound){
 
     metronomeSound = sound;
 
-    console.log("のりのりアシストの音色 :",metronomeSound);
+    console.log("ノリノリアシストの音色 :",metronomeSound);
 
     /*
     予約済みの拍を取り消します。

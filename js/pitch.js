@@ -407,6 +407,25 @@ function applyTempo(rate,shouldSave,keepMyPitch){
     pitchValueEl.textContent = formatPitch(currentBpm);
     basePitchValueEl.textContent = formatPitch(base);
 
+    /*
+    「再生ピッチ」の後ろの絵文字を、今のテンポに合わせて入れ替えます(v193)。
+
+    竹弘の指示(2026-09-13):「絵文字表示設定は、マイピッチ設定と同じで
+    BPMによって変えてね」。走りながら定規でテンポを上げ下げすると、
+    🚶‍♂️ → 🥁 → 🏃‍♂️ → 🏎️ と一緒に変わります。
+
+    ⚠️ 元ピッチ(base)ではなく **今鳴らしているテンポ(currentBpm)** で
+       選びます。画面に出ている数字と絵文字が食い違わないようにするためです。
+
+    ⚠️ 判定は js/config.js の getPaceEmoji() に任せています。境目の数字を
+       ここに書き写すと、マイピッチ設定側を直した時に食い違うためです。
+    */
+    if(pitchPaceEmojiEl){
+
+        pitchPaceEmojiEl.textContent = getPaceEmoji(currentBpm);
+
+    }
+
     drawRuler(currentBpm);
 
     /*

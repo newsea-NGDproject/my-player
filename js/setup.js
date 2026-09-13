@@ -204,10 +204,20 @@ function render() {
 function updateLabel() {
     const b = Math.round(state.bpm);
     numDisp.innerText = b;
-    if (b <= 120) labelDisp.innerText = "🚶‍♂️ ウォーキング";
-    else if (b <= 135) labelDisp.innerText = "🥁 行進";
-    else if (b <= 200) labelDisp.innerText = "🏃‍♂️ マラソン";
-    else labelDisp.innerText = "🏎️ 全力ダッシュ！";
+
+    /*
+    境目の数字(120 / 135 / 200)は js/config.js の PACE_STEPS に
+    まとめました(v193)。
+
+    【なぜ移したか】
+    v193で「再生ピッチ」にも同じ絵文字を出すことになり、この判定が
+    必要な場所が2か所になったためです。同じ数字を2か所に書くと、
+    片方だけ直す事故が必ず起きます。
+    ⚠️ 見た目も動きも、今までとまったく同じです。
+    */
+    const pace = getPaceStep(b);
+
+    labelDisp.innerText = pace.emoji + " " + pace.label;
 }
 
 // --- 3. 操作制御 ---
