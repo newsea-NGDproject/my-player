@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v192)ノリRun
+        (v193)ノリRun
         メインメニュー
 
     </title>
@@ -3298,6 +3298,53 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         }
 
         /*
+        ==========================================================
+        速度の数字の後ろに付ける「BPM」の単位(v193)
+        ==========================================================
+
+        竹弘の要望(2026-09-13):
+            「BPM」の単位表示。速度数値の後ろに速度数値の半分の
+            文字サイズで。
+
+        【なぜ ::after(CSSで後ろに付ける)なのか】
+
+        これらの数字は、JavaScriptが textContent や innerText で
+        **中身をまるごと書き換えています**。だから「BPM」をHTMLの
+        中に書き足すと、テンポが変わった瞬間に消えてしまいます。
+
+        ::after で付けた文字は**中身ではなく飾り**なので、JavaScriptが
+        何度書き換えても残ります。つまり **JS側を1行も触らずに済む**。
+
+        【font-size:0.5em の em とは】
+
+        em は「その場所の文字サイズの何倍か」という単位です。0.5em なら
+        **いつでもちょうど半分**になります。3.5rem の大きな数字でも、
+        小さな数字でも、竹弘の言う「半分の文字サイズ」が自動で成立します。
+        (rem のように決め打ちの数字を書くと、場所ごとに書き分けが要る)
+
+        ⚠️ 対象を増やす時は、ここにセレクタを足すこと。
+           数字の要素そのものに書くのがコツです(親に書くと、数字以外の
+           文字の後ろにも「BPM」が付いてしまいます)。
+        */
+        #pitch-number::after,
+        #pitch-value::after,
+        #base-pitch-value::after{
+            content:"BPM";
+            font-size:0.5em;
+            font-weight:600;
+            /*
+            数字にぴったりくっつくと読みにくいので、わずかに離します。
+            0.15em なので、こちらも文字サイズに合わせて伸び縮みします。
+            */
+            margin-left:0.15em;
+            /*
+            数字は tabular-nums(等幅の数字)にしていますが、単位まで
+            等幅にする必要はないので、ここで元に戻します。
+            */
+            font-variant-numeric:normal;
+        }
+
+        /*
         設定できる範囲の案内。
 
         範囲外の数字を入れても自動で内側へ丸められますが、
@@ -4244,7 +4291,14 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         <div class="ua-slot ua-pitch-row">
 
             <div class="ua-pitch-now">
-                <span class="ua-pitch-label">再生ピッチ：</span>
+                <!--
+                    「再生ピッチ」の後ろの絵文字は、v193で追加しました。
+                    竹弘の指示「絵文字表示設定は、マイピッチ設定と同じで
+                    BPMによって変えてね」。つまり **固定ではなく、今の
+                    テンポに応じて 🚶‍♂️🥁🏃‍♂️🏎️ が入れ替わります**。
+                    中身は js/pitch.js の applyTempo() が入れています。
+                -->
+                <span class="ua-pitch-label">再生ピッチ<span id="pitch-pace-emoji"></span>：</span>
                 <span class="ua-pitch-value" id="pitch-value">---</span>
             </div>
 
@@ -5022,13 +5076,13 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
 </div>
 
 <!--
-    設定 ⚙️ →「🏃 のりのりアシスト」で開く画面(v177 / v178で改名 / v179で🏃へ)。
+    設定 ⚙️ →「🏃 ノリノリアシスト」で開く画面(v177 / v178で改名 / v179で🏃へ)。
 
     🕺ノリノリRun再生の間、マイピッチに合わせて音を鳴らします。
     見出し・本文・閉じるボタン・選択肢のクラスは、上の
     「🎚️ 曲の繋ぎ方」とそのまま共有しています(同じ見た目・同じ動き)。
 
-    ⚠️ 画面上の名前は「のりのりアシスト」ですが、ファイル名と
+    ⚠️ 画面上の名前は「ノリノリアシスト」ですが、ファイル名と
        変数名は metronome のままにしています(竹弘の「一旦」という
        言葉どおり、呼び名が変わっても中身を直さずに済むように)。
 
@@ -5038,7 +5092,7 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
 <div id="metronome-panel" style="display:none;">
 
     <div class="license-header">
-        <span class="license-title">🏃 のりのりアシスト</span>
+        <span class="license-title">🏃 ノリノリアシスト</span>
         <button type="button" id="metronome-close-btn" class="license-close-btn">✕</button>
     </div>
 

@@ -9,7 +9,7 @@
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#007aff">
 
-    <title>(v76)ノリRun - 初期設定</title>
+    <title>(v193)ノリRun - 初期設定</title>
     <style>
         :root {
             --accent-red: #ff3b30;
@@ -59,6 +59,27 @@
         /* --- ラベル表示 --- */
         #status-display { text-align: center; margin-bottom: 15px; }
         #pitch-number { font-size: 3.5rem; font-weight: 900; color: var(--main-blue); line-height: 1; font-variant-numeric: tabular-nums; margin-top: 8px; }
+
+        /*
+        速度の数字の後ろに付ける「BPM」の単位(v193)。
+
+        竹弘の要望:「速度数値の後ろに速度数値の半分の文字サイズで」。
+
+        ::after(CSSで後ろに付ける)を使っているのは、この数字を
+        JavaScriptが innerText でまるごと書き換えているためです。
+        HTMLに「BPM」と書き足すと、定規を動かした瞬間に消えてしまいます。
+        ::after の文字は「中身」ではなく「飾り」なので消えません。
+
+        em は「その場所の文字サイズの何倍か」という単位なので、
+        0.5em と書けば**いつでもちょうど半分**になります。
+        */
+        #pitch-number::after {
+            content: "BPM";
+            font-size: 0.5em;
+            font-weight: 600;
+            margin-left: 0.15em;
+            font-variant-numeric: normal;
+        }
         #pitch-label { font-size: 1.6rem; font-weight: bold; margin-top: 8px; }
 
         /* --- 設定ボタン --- */
