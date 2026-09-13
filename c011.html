@@ -9,7 +9,23 @@
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#007aff">
 
-<title>NoriRun c011-v01.6-bs01 起動OP</title>
+<!--
+    ⚠️ このタイトルは「アプリ名の予備」でもあります(v193で判明)。
+
+    index.html は読み込んだ瞬間に、このページ(c011.html)へ飛びます。
+    つまり竹弘が「ホーム画面に追加」を押す時、**ブラウザが見ている
+    ページはここ**です。アイコンの登録がうまくいかなかった時、
+    Androidはアプリ名をここの <title> から取ります。
+
+    v192まで「NoriRun c011-v01.3-bs01 起動OP」だったため、
+    ホーム画面に **NoriRun** と出ていました(竹弘の実機報告)。
+    ⚠️ **先頭は必ず「ノリRun」にすること。** 名前は長いと途中で
+       切られるので、先頭が違うと切られた時に別名になります。
+
+    ※ 旧「cNNN-vX.Y-bsNN」形式はCLAUDE.mdで廃止済みなので、
+      あわせて今の形に直しました。
+-->
+<title>ノリRun (v194) 起動OP</title>
 
 <style>
 /* 全体設定 */
@@ -73,12 +89,13 @@ body{
 */
 .main-title{
     display:flex;
-    justify-content:center;   /* 👈 全体を画面の真ん中に集めます */
+    justify-content:center;
     align-items:flex-start;
 
-    gap: 1.2em;                /* 👈 3つの文字の間隔をちょうど1文字分に引き締めます */
-    font-size: 1.6rem;         /* 👈 文字サイズ*/
-    font-weight:900;           /* 👈 文字の太さも（900）*/
+    gap:1.2em;
+
+    font-size:1.6rem;
+    font-weight:300;
     letter-spacing:0.06em;
 
     white-space:nowrap;
@@ -95,9 +112,10 @@ body{
 .title-block{
     display:flex;
     flex-direction:column;
-    align-items: center;       /* 👈 文字と絵文字を縦に真っ直ぐ揃えます */
-    width: 5.5rem;             /* 👈 一番長い「プレイヤー」の幅に全員を固定します。これにより段差が消え、左右対称になります */
-    gap: 60px;                 /* 👈 文字と絵文字の縦の隙間を縮めます */}
+    align-items:center;
+
+    gap:60px;
+}
 
 /*
     文字部分です。
@@ -111,7 +129,7 @@ body{
     letter-spacing の影響を受けないようにしています。
 */
 .emoji{
-    font-size:2rem;       /* 👈 絵文字のサイズ */
+    font-size:2rem;
     letter-spacing:0;
 
     /* Androidでもカラー絵文字を優先して表示するための指定 */
@@ -142,7 +160,6 @@ body{
     ノリとRunの間隔です。
 */
 .logo-nori{
-    font-weight:700;
     margin-right:0.08em;
 }
 
@@ -199,20 +216,23 @@ body{
 
         JavaScriptで順番に show クラスを付けて表示します。
     -->
-
     <div class="main-title">
-        <div class="title-block fade-item" id="step1">
+
+        <span id="step1" class="fade-item title-block">
             <span class="title-word">ノッて</span>
             <span class="emoji">🕺</span>
-        </div>
-        <div class="title-block fade-item" id="step2">
+        </span>
+
+        <span id="step2" class="fade-item title-block">
             <span class="title-word">走る</span>
             <span class="emoji">🏃‍♂️</span>
-        </div>
-        <div class="title-block fade-item" id="step3">
+        </span>
+
+        <span id="step3" class="fade-item title-block">
             <span class="title-word">プレイヤー</span>
             <span class="emoji">📱</span>
-        </div>
+        </span>
+
     </div>
 
     <!--

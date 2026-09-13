@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v193)ノリRun
+        (v194)ノリRun
         メインメニュー
 
     </title>
@@ -1407,7 +1407,28 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             align-self:flex-end;
             display:flex;
             align-items:baseline;
-            justify-content:center;
+
+            /*
+            ⚠️ v193で center → flex-start に変えました(竹弘の指示)。
+
+                「『再生ピッチ』の文字の先頭を定規の頭の部分の
+                  左合わせにしたい」
+
+            上のv94のコメントにある「左半分のまん中に合わせる」は、
+            **この指定で置き換わりました。** v193でBPMの単位と速さの
+            絵文字が増えて文字列が長くなり、中央揃えのままだと右の
+            マイピッチボタンを押し出してしまったためです。
+
+            定規(.ua-ruler)とこの行(.ua-pitch-row)は、どちらも
+            #upper-area の直接の子です。#upper-area の padding が
+            左右に効いているので、**flex-start にすれば自動的に
+            定規の左端とぴったり揃います**(数値で位置合わせをする
+            必要はありません)。
+
+            ★おまけに、左側に空きができたぶん、右のマイピッチボタンが
+              そこへ伸びられるようになります(下の .ua-pitch-base 参照)。
+            */
+            justify-content:flex-start;
 
             /*
             v109から、ここをタップすると数値の直接入力パネルが開きます。
@@ -1421,6 +1442,23 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         .ua-pitch-label{
             font-size:0.75rem;
             color:var(--text-sub);
+        }
+
+        /*
+        「再生ピッチ」の後ろの、速さの絵文字(v193)。
+
+        竹弘の指示:「再生ピッチの絵文字のサイズについて1.5倍にしたい」。
+
+        em は「その場所の文字サイズの何倍か」なので、1.5em と書けば
+        **まわりの文字(.ua-pitch-label)のちょうど1.5倍**になります。
+        ラベルの文字サイズを将来変えても、比率が保たれます。
+
+        vertical-align は、大きくした絵文字が文字の足元の線から
+        浮き上がって見えるのを抑える微調整です。
+        */
+        #pitch-pace-emoji{
+            font-size:1.5em;
+            vertical-align:-0.1em;
         }
 
         /*
@@ -1460,6 +1498,26 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             align-self:stretch;
             display:flex;
             align-items:center;
+
+            /*
+            ⚠️ v193で追加(竹弘の実機報告「ノリノリRun再生でボタンが
+               見切れてしまった」への対策)。
+
+            【なぜ見切れたのか】
+            🕺ノリノリRun再生では見出しが「元ピッチ：」より長い
+            「マイピッチ：」に変わります。そこへv193で「BPM」が
+            加わり、ボタンが右半分に収まりきらなくなりました。
+
+            【なぜ flex-end で直るのか】
+            何も指定しないと、flexboxは中身を**左端から**並べます。
+            ボタンが器より広いと、はみ出す先は**右**=画面の外です。
+
+            flex-end にすると右端を基準に並べるので、はみ出す先が
+            **左**に変わります。左は .ua-pitch-now を flex-start に
+            した時に空いたところなので、**そこへ伸びて収まります。**
+            ボタンの右端は定規の右端とぴったり揃います。
+            */
+            justify-content:flex-end;
         }
 
         /*
@@ -1490,7 +1548,16 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             flex-shrink:0;
             max-height:100%;
             box-sizing:border-box;
-            padding:1px 16px;
+            /*
+            ⚠️ v193で左右の余白を 16px → 9px に詰めました。
+
+            竹弘の指示:「ボタン内の文字を左にギリギリまでずらして、
+            収まるか試して欲しい」。左右で 14px ぶん幅が縮みます。
+
+            上下の1pxはそのままです(ボタンの高さは
+            max-height:100% で決まっているため、触る必要がありません)。
+            */
+            padding:1px 9px;
             font-size:0.9rem;
             line-height:1.15;
             color:var(--text-main);
