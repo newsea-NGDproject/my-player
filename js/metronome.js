@@ -908,6 +908,10 @@ function scheduleMetronomeClick(atCtxSec){
 
     if(!source){ return; }
 
+    // 【開発用調査ログ】「タタン」の実測用(v199)。直ったら削除(CLAUDE.md参照)
+    // ⚠️ 下の push より前に呼ぶこと(後だと、自分自身と比べて必ず引っかかる)
+    logMetronomeDoubleHit(atCtxSec);
+
     /*
     取り消せるように控えておきます。
 
@@ -1055,6 +1059,86 @@ function createMetronomeBeep(atCtxSec){
     osc.stop(atCtxSec + TAP_CLICK_SEC * 2);
 
     return osc;
+
+}
+
+/**
+ * 【開発用調査ログ】「タタン」(2打)を見つけて記録します(v199)。
+ *
+ * ⚠️ 原因を直し、竹弘の実機で再発しないと確認できたら、
+ *    **この関数と、scheduleMetronomeClick() の中の呼び出し1行**を
+ *    削除すること(CLAUDE.md の「本番リリース前に削除するもの」に登録済み)。
+ *
+ * 【何を確かめたいのか】
+ *
+ * 竹弘の報告(2026-09-13):「ノリノリアシストが、たまにタタンと2打鳴る」。
+ * のりの見立ては次のとおりですが、**まだ推定で、実測していません。**
+ *
+ *     曲が繋がる瞬間(デッキ交代で再生位置が飛ぶ)
+ *       ・直前に鳴り始めた拍 → clearScheduledClicks() が鳴らしきらせる  ♪
+ *       ・新しい曲の拍の格子で予約し直す
+ *       ・新旧の格子は 1〜25ms ずれている(接続ログの「拍のズレ」)
+ *       ・そのズレのぶん遅れて、同じ拍がもう一度鳴る                  ♪
+ *       → 数十ms差の2打 = 「タタン」
+ *
+ * 確率も合っています: 25ms ÷ 353ms(マイピッチ170の1拍) ≒ 7% ≒ 14回に1回。
+ * 竹弘の体感「20回に1回」とほぼ一致します。
+ *
+ * ⚠️ CLAUDE.md の約束「接続まわりを直す前に、ログで実測する」に従い、
+ *    直す前にまず証拠を取ります。
+ *
+ * 【どう見つけるか】
+ *
+ * 拍と拍の間は、ふつう1拍ぶん(マイピッチ170なら353ms)空いています。
+ * これから予約する音と、控え(metronomeScheduled)にある音との間が
+ * **半拍より近ければ**、耳には2打に聞こえます。その時だけ🐛パネルに
+ * 1行出します。**ふつうに鳴っている間は何も出ません。**
+ *
+ * 控えには「鳴っている最中の音」も残っています(鳴り終わった時に
+ * onended で外れる作りのため)。だから、鳴らしきらせた音との2打も
+ * ちゃんと捕まえられます。
+ *
+ * 【ログの読み方】
+ *
+ *     ★ノリノリアシスト 2打を検出 : 間隔 20ms (1拍 353ms)
+ *       / 先に予約した方 : 鳴り始め済み(取り消し対象外)
+ *
+ *     鳴り始め済み … のりの見立てどおり(v180の「鳴らしきらせる」配慮が裏目)
+ *     予約中       … 見立てとは別の原因(同じ拍を二重に予約している)
+ *
+ * すぐ近くに「★接続の瞬間」(js/connect.js)の行があるかも見てください。
+ * あれば接続が引き金、無ければシークや頭出し接続の無音明けなど別の場面です。
+ *
+ * @param {number} atCtxSec - これから予約する音の時刻(AudioContextの時計)
+ */
+function logMetronomeDoubleHit(atCtxSec){
+
+    // 1拍の長さ(実秒)。js/connect.js の getBeatSec() を借ります
+    const beatSec = getBeatSec();
+
+    if(!isFinite(beatSec) || beatSec <= 0){ return; }
+
+    const now = deckAudioCtx.currentTime;
+
+    metronomeScheduled.forEach(function(entry){
+
+        // Math.abs は「差の大きさ」だけを取り出す命令(前後どちらでも正の数になる)
+        const gapSec = Math.abs(atCtxSec - entry.atCtxSec);
+
+        // 半拍以上離れていれば、ふつうの「次の拍」なので黙ります
+        if(gapSec >= beatSec / 2){ return; }
+
+        const state = (entry.atCtxSec <= now)
+            ? "鳴り始め済み(取り消し対象外)"
+            : "予約中";
+
+        console.log(
+            "★ノリノリアシスト 2打を検出 : 間隔 " + Math.round(gapSec * 1000) + "ms" +
+            " (1拍 " + Math.round(beatSec * 1000) + "ms)" +
+            " / 先に予約した方 : " + state
+        );
+
+    });
 
 }
 

@@ -36,6 +36,7 @@
      (Chrome 68+ の専用イベント。これが記録されていれば「ブラウザが
       意図的に止めた」ことの動かぬ証拠になる)
    ・audio要素の play/pause/ended/stalled/waiting/suspend/abort/error
+     (v199から、デッキA・Bの**両方**を記録。下のコメント参照)
 
  を記録する。あわせて js/player.js と js/queue.js にも、この
  logDebugEvent() を呼ぶ行を数か所だけ足してある(権限確認・
@@ -177,11 +178,82 @@ document.addEventListener("resume",function(){
 audio要素の細かい状態変化です。再生が途切れる過程を追うために、
 成功時の play/pause/ended だけでなく、データ待ちや中断を示す
 stalled/waiting/suspend/abort/error もまとめて記録します。
-*/
-["play","pause","ended","stalled","waiting","suspend","abort","error"].forEach(function(eventName){
 
-    audioPlayer.addEventListener(eventName,function(){
-        logDebugEvent("audio '" + eventName + "' (currentTrackId=" + currentTrackId + ")");
+==========================================================
+ ⚠️⚠️ v199で、デッキA・Bの**両方**を記録するように直しました
+==========================================================
+
+【v198までの穴(2026-09-13にのりが気づいた)】
+
+v167で <audio> が2枚(デッキA・B)になった後も、ここは
+
+    audioPlayer.addEventListener(...)
+
+のままでした。audioPlayer は「いま主役のデッキ」を指す変数ですが、
+addEventListener は**呼んだ瞬間に指していた1枚**にしか耳を付けません。
+このファイルは起動時に1回だけ読まれるので、耳はデッキAに固定でした。
+
+    play/pause/ended/abort/waiting … デッキAの分しか記録されていなかった
+    心拍(10秒おき)                  … 主役を正しく追っていた
+
+竹弘の報告「デッキ交代の時に先行曲が途切れる(20回に1回くらい)」の
+ログに異常が見当たらなかったのは、**証拠の半分(デッキBの出来事)が
+そもそも記録されていなかった**可能性があります。
+
+【⚠️ bindDeckEvent(js/deck.js)を使わなかった理由】
+
+bindDeckEvent は2枚に耳を付けてくれますが、**「主役ではないデッキからの
+知らせは聞き流す」という関所**が付いています。再生の処理にはその関所が
+正しいのですが(裏で終わった曲の ended で次へ飛ばないため)、
+
+    今回いちばん見たいのは、交代した後の先行曲
+    = **もう主役ではなくなった方** に何が起きたか
+
+です。関所を通すと、まさにその知らせが捨てられてしまいます。
+→ ここでは関所を通さず、2枚それぞれに直接耳を付けます。
+   記録するだけで再生には何も影響しないので、聞き流す必要がありません。
+
+【ログの形】
+
+どちらのデッキか、その瞬間に主役だったか裏だったかも一緒に書きます。
+
+    audio 'pause' デッキB(裏) (currentTrackId=…)
+*/
+
+/**
+ * デッキの名前("A" / "B")を返します(v199)。
+ *
+ * ログを読む時に、どちらのデッキの出来事かを見分けるためです。
+ *
+ * @param  {HTMLAudioElement} deck - deckAudioA か deckAudioB
+ * @return {string} "A" または "B"
+ */
+function getDebugDeckName(deck){
+
+    return (deck === deckAudioA) ? "A" : "B";
+
+}
+
+[deckAudioA,deckAudioB].forEach(function(deck){
+
+    ["play","pause","ended","stalled","waiting","suspend","abort","error"].forEach(function(eventName){
+
+        deck.addEventListener(eventName,function(){
+
+            /*
+            主役か裏かは、**知らせが来た瞬間に**判定します。
+            耳を付けた時点で決めてしまうと、交代した後に食い違います
+            (v198までの穴とまったく同じ間違いになるため)。
+            */
+            const role = (deck === audioPlayer) ? "主役" : "裏";
+
+            logDebugEvent(
+                "audio '" + eventName + "' デッキ" + getDebugDeckName(deck) +
+                "(" + role + ") (currentTrackId=" + currentTrackId + ")"
+            );
+
+        });
+
     });
 
 });
@@ -217,14 +289,34 @@ play/pause/endedなどの「変化した瞬間」のイベントだけでは、
 */
 setInterval(function(){
 
+    /*
+    v199で、**裏のデッキの様子**も同じ行の後ろに足しました。
+
+    曲を繋いでいる最中は、2曲が同時に鳴っています。主役だけを見ていると
+    「交代した後の先行曲(=裏)が、最後まで鳴りきらずに止まって
+    いないか」が分かりません。
+
+        paused=true になっている    … 裏で止まっている
+        currentTime が進んでいない  … 止まっている(または読み込み待ち)
+
+    getIdleDeck() は js/deck.js にある「主役ではない方を返す」関数です。
+    ⚠️ メインメニューでは交代が起きないので、裏はずっと
+       「paused=true / currentTime=0.00」のままです(これは正常)。
+    */
+    const idleDeck = getIdleDeck();
+
     logDebugEvent(
-        "心拍: currentTime=" + audioPlayer.currentTime.toFixed(2) +
+        "心拍: デッキ" + getDebugDeckName(audioPlayer) +
+        " currentTime=" + audioPlayer.currentTime.toFixed(2) +
         " paused=" + audioPlayer.paused +
         " muted=" + audioPlayer.muted +
         " volume=" + audioPlayer.volume +
         " readyState=" + audioPlayer.readyState +
         " networkState=" + audioPlayer.networkState +
-        " visibility=" + document.visibilityState
+        " visibility=" + document.visibilityState +
+        " / 裏デッキ" + getDebugDeckName(idleDeck) +
+        " currentTime=" + idleDeck.currentTime.toFixed(2) +
+        " paused=" + idleDeck.paused
     );
 
 },10000);

@@ -238,6 +238,32 @@ function buildShuffleOrder(){
 // ==========================================================
 // 4. 次に鳴らす曲を探す
 // ==========================================================
+/*
+「一覧の最後まで来たので先頭に戻ります」を、**同じ曲について1回だけ**
+出すための控えです(v199)。
+
+【なぜ要るのか】
+下の findNextTrackId() は、曲が終わった時だけ呼ばれるわけではありません。
+🕺ノリノリRun再生では**接続点の15秒前から、1秒に約4回**呼ばれます
+(js/connect.js が「次の曲は誰か」を聞き直し続けるため)。
+今の曲が一覧の最後だと、そのたびに同じ一文が出て、🐛パネルが
+数十行埋まっていました(2026-09-13 竹弘のログ③)。
+
+動きそのものは正常です。ただ、🐛パネルは1行増えるたびに画面を
+描き直すので、**ミドルクラス機で重さを測る時の雑音**になります。
+
+【どう控えるか】
+先頭に戻った時の「元の曲」を覚えておき、同じ曲ならもう出しません。
+ふつうに次の曲が見つかった時は空に戻すので、一覧を2周目に回って
+また最後の曲に来た時は、ちゃんともう一度出ます。
+
+⚠️ 「曲が実際に変わった瞬間に出す」形にしなかったのは、その瞬間を
+   知っているのが js/connect.js(曲接続=ノリRunの心臓部)だからです。
+   ログのためだけに心臓部へ手を入れるのは割に合わないので、
+   このファイルの中だけで片付けました。
+*/
+let wrapLoggedFromTrackId = null;
+
 /**
  * 指定した曲の「次」に鳴らすべき曲を返します。
  *
@@ -321,6 +347,13 @@ function findNextTrackId(fromTrackId){
         const trackId = orderList[i];
 
         if(!isExcluded(libraryMap[trackId])){
+
+            /*
+            ふつうに次の曲が見つかったので、「先頭に戻った」控えを
+            空に戻します(v199)。理由は wrapLoggedFromTrackId のコメント。
+            */
+            wrapLoggedFromTrackId = null;
+
             return trackId;
         }
 
@@ -340,7 +373,18 @@ function findNextTrackId(fromTrackId){
 
             if(!isExcluded(libraryMap[trackId])){
 
-                console.log("一覧の最後まで来たので先頭に戻ります");
+                /*
+                同じ曲について2回目以降は黙ります(v199)。
+                v198までは、接続点の15秒前から1秒に約4回この一文が
+                出ていました。理由は wrapLoggedFromTrackId のコメント。
+                */
+                if(wrapLoggedFromTrackId !== fromTrackId){
+
+                    console.log("一覧の最後まで来たので先頭に戻ります");
+
+                    wrapLoggedFromTrackId = fromTrackId;
+
+                }
 
                 return trackId;
 
