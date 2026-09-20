@@ -234,6 +234,56 @@ function getDebugDeckName(deck){
 
 }
 
+/**
+ * そのデッキが今、音程維持(WSOLA)を回しているかを返します(v200)。
+ *
+ * ------------------------------------------------------------
+ * 【何を見るためのものか】
+ *
+ * 音程維持(preservesPitch)は、再生速度を変えても声の高さを
+ * 変えないための仕組みです。とても重い計算(WSOLA)なので、
+ * **聞こえていない音のためには切る**ようにしてあります。
+ *
+ *     入 … 計算を回している(耳に届く音。正しい)
+ *     切 … 計算を止めている(音量0で聞こえない音。軽い)
+ *
+ * v200で「接続が終わって音量0になった先行曲」も切るようにしました。
+ * ここが狙いどおり動いているかを、心拍ログで見られるようにします。
+ *
+ * ------------------------------------------------------------
+ * 【読み方 ―― 竹弘へ】
+ *
+ * 🕺ノリノリRunで曲が繋がった後、**裏デッキが「音程維持=切」に
+ * なっていれば成功**です。接続の直後は先行曲もまだ聞こえているので
+ * 「入」のままで、フェードが終わった数秒後に「切」へ変わります。
+ *
+ *     繋いだ直後      裏デッキB … 音程維持=入   ← まだ聞こえている
+ *     8秒くらい後     裏デッキB … 音程維持=切   ← ★これが出れば成功
+ *
+ * ⚠️ 主役のデッキは**いつでも「入」**でなければいけません。
+ *    主役が「切」になっていたら、その曲は声が甲高く(または低く)
+ *    鳴っているはずです。その時はログを見せてください。
+ *
+ * ⚠️ メインメニューでは曲を繋がないので、裏デッキはずっと
+ *    「入」のままです(何も載っていないデッキなので、これで正常)。
+ *
+ * @param  {HTMLAudioElement} deck - 調べたいデッキ
+ * @return {string} "入" または "切"
+ */
+function getDebugPitchState(deck){
+
+    /*
+    preservesPitch は、古いブラウザでは webkitPreservesPitch という
+    別の名前で用意されていました。どちらかが false なら「切」と
+    見なします(js/deck.js は両方に同じ値を入れています)。
+    */
+    const preserve = (deck.preservesPitch !== false)
+                  && (deck.webkitPreservesPitch !== false);
+
+    return preserve ? "入" : "切";
+
+}
+
 [deckAudioA,deckAudioB].forEach(function(deck){
 
     ["play","pause","ended","stalled","waiting","suspend","abort","error"].forEach(function(eventName){
@@ -313,10 +363,12 @@ setInterval(function(){
         " volume=" + audioPlayer.volume +
         " readyState=" + audioPlayer.readyState +
         " networkState=" + audioPlayer.networkState +
+        " 音程維持=" + getDebugPitchState(audioPlayer) +
         " visibility=" + document.visibilityState +
         " / 裏デッキ" + getDebugDeckName(idleDeck) +
         " currentTime=" + idleDeck.currentTime.toFixed(2) +
-        " paused=" + idleDeck.paused
+        " paused=" + idleDeck.paused +
+        " 音程維持=" + getDebugPitchState(idleDeck)
     );
 
 },10000);
