@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v203)ノリRun
+        (v204)ノリRun
         メインメニュー
 
     </title>
@@ -3156,6 +3156,124 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             flex-direction:column;
         }
 
+        /* ======================================================
+           ジャケットの特大表示(v204)
+        ====================================================== */
+        /*
+        ⚠️ **上のセレクタにあえて並べていません。**
+
+        上の3つは背景を var(--bg-color) で塗りつぶして画面を完全に
+        隠しますが、こちらは竹弘の指定で**薄く透けて、下の画面が
+        見えたまま**にするためです。
+
+            竹弘(2026-09-20):「薄く今のメインメニューだったり、
+            薄くノリノリRun再生メニューが透けて見えるという感じ」
+
+        ⚠️ ただし**「画面を覆う指定」は自分で書く必要があります。**
+           position:fixed / inset / z-index を書き忘れると、
+           display:flex にしてもページ下部に置かれて開いても何も
+           見えません(v177で実際に起きた事故)。
+        */
+        #jacket-panel{
+            position:fixed;
+            top:0;
+            right:0;
+            bottom:0;
+            left:0;
+            z-index:2000;
+
+            /* 薄い幕。下の画面が透けて見えます */
+            background:rgba(0,0,0,0.55);
+
+            display:flex;
+            flex-direction:column;
+            align-items:center;
+        }
+
+        /*
+        竹弘の指定「表示エリアは上半分のエリア内」を実現する箱です。
+
+        height:50% で上半分ぶんの高さを取り、margin-bottom:auto で
+        上へ寄せます。その中で縦横とも中央に揃えるので、
+        **上半分のちょうど真ん中**にジャケットが出ます。
+        */
+        #jacket-panel-inner{
+            height:50%;
+            margin-bottom:auto;
+
+            display:flex;
+            flex-direction:column;
+            align-items:center;
+            justify-content:center;
+            gap:12px;
+
+            padding:0 12px;
+            box-sizing:border-box;
+
+            /* 中の文字がはみ出さないように */
+            max-width:100%;
+        }
+
+        /*
+        ジャケットの枠。
+
+        ⚠️ **縁取りの色は var(--theme-color) です。** メインメニュー
+           では海の青、🕺ノリノリRunでは暁色に自動で入れ替わります
+           (竹弘の指定「海色と暁色の縁取りは踏襲して欲しい」)。
+
+        ⚠️ **そのため、このパネルは #app の中に置いてあります。**
+           暁色は #app.norirun-mode で上書きされる仕組みなので、
+           #app の外に出すと**ノリノリRunでも青いまま**になります。
+
+        幅と高さは js/jacket.js がその場で計算して入れます
+        (今のジャケットの4倍。詳しくはあちらのコメント)。
+        */
+        #jacket-big{
+            border:3px solid var(--theme-color);
+            border-radius:10px;
+            overflow:hidden;
+
+            box-shadow:0 10px 30px rgba(0,0,0,0.55);
+
+            /* 中身より縮まないように */
+            flex-shrink:0;
+        }
+
+        .jacket-big-img{
+            width:100%;
+            height:100%;
+            object-fit:cover;
+            display:block;
+        }
+
+        /*
+        曲名とアーティスト。
+
+        幕の上に出るので、色は白で固定します(テーマの文字色を使うと
+        暗い幕の上で読めなくなる場合があるため)。
+        長い名前は「…」で省略します。
+        */
+        #jacket-big-title,
+        #jacket-big-artist{
+            max-width:100%;
+            text-align:center;
+
+            overflow:hidden;
+            text-overflow:ellipsis;
+            white-space:nowrap;
+        }
+
+        #jacket-big-title{
+            color:#fff;
+            font-size:1.05rem;
+            font-weight:700;
+        }
+
+        #jacket-big-artist{
+            color:rgba(255,255,255,0.78);
+            font-size:0.9rem;
+        }
+
         /*
         曲の繋ぎ方の選択肢(v172)。
 
@@ -5015,6 +5133,31 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
 
     </div>
 
+    <!-- ===== ジャケットの特大表示(v204) ===== -->
+    <!--
+        再生中のジャケットをタップすると、ここが開いて大きく映ります。
+        竹弘の要望(2026-09-13、棚③の11番)。
+
+        ⚠️ **この位置(#app の中)から動かさないこと。**
+           縁取りに使う --theme-color の暁色は #app.norirun-mode で
+           上書きされる仕組みなので、#app の外に出すと
+           **🕺ノリノリRunでも青いまま**になります。
+
+        ⚠️ 中身(画像・曲名・アーティスト)は js/jacket.js が
+           開くたびに入れ直します。ここは空の器です。
+
+        ※ 次のブラッシュアップで、アーティスト名の下に
+          「オリジナルジャケット」「📷 差し替え」の2つのボタンを
+          足す予定です(竹弘の指定、2026-09-20)。
+    -->
+    <div id="jacket-panel" style="display:none;">
+        <div id="jacket-panel-inner">
+            <div id="jacket-big"></div>
+            <div id="jacket-big-title"></div>
+            <div id="jacket-big-artist"></div>
+        </div>
+    </div>
+
 </div>
 
 <!--
@@ -5576,6 +5719,13 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
 <script src="js/norirun.js"></script>
 <script src="js/lamp.js"></script>
 <script src="js/metadata.js"></script>
+<!--
+    ジャケットの特大表示(v204)。
+
+    js/list-view.js の createJacketImage() と buildTitleText() を
+    借りるので、あちらより後に読み込みます。
+-->
+<script src="js/jacket.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>
