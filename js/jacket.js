@@ -75,24 +75,65 @@ v204では竹弘の指定どおり4倍にしていましたが、実機で見た
 const JACKET_BIG_SCALE = 3;
 
 /*
-上半分の高さに対する、いちばん大きくできる割合です。
+⚠️⚠️ **ジャケットの下に必ず空けておく高さ(px)です(v213)。**
 
-竹弘の指定は「表示エリアは上半分のエリア内」。4倍がそのまま
-上半分に収まらない端末(画面の低い機種など)では、はみ出さない
-ようにここで頭を押さえます。
+竹弘の指定(2026-09-21):
 
-v204では0.72(72%)でした。**残りを曲名とアーティストの2行に使う**
-ぶんだけを見込んだ値です。
+    「上半分のエリア内で、ボタンの下に1行、警告メッセージを表示
+      できるスペースを確保したいので、ジャケットの表示、曲名、
+      アーティスト名、ボタンの間隔(=幅)をうまく固定で全て表示
+      できるように調整お願いできますか」
 
-⚠️ **v207で0.62に下げました。** アーティスト名の下に**ボタンの行が
-   1つ増えた**ので、2行ぶんの余白では足りなくなったためです。
-   足りないと、画面の低い端末でボタンが上半分からはみ出します。
+【v212までのやり方と、何が違うのか】
 
-⚠️ ふだんはこの上限に当たりません。3倍にした実際の大きさは上半分の
-   6割くらいなので、**これは「画面が低い端末で崩れないための
-   安全網」**です。普通の端末では竹弘の指定どおり、きっちり3倍で出ます。
+v212までは「上半分の62%まで」という**割合**で頭を押さえていました。
+割合だと、**下に何行あるかと関係なく**決まってしまうので、行が
+増えるたびに勘で数字を下げることになります(実際v207で0.72→0.62に
+下げました)。
+
+v213からは**下に置くものの高さを足し算して、その残りをジャケットに
+配ります。** 何を置いているかが数字の根拠になるので、行を足した時に
+どれだけ増やせばよいかが迷いません。
+
+    曲名        余白10 + 文字20 = 30
+    アーティスト 余白 2 + 文字17 = 19
+    ボタンの行  余白12 + 高さ52 = 64
+    注意書き    余白 8 + 文字16 = 24
+                                ----
+                                 137
+
+⚠️⚠️ **最初この見積もりで 145 にしたが、実測は 151px だった。**
+   文字の行の高さは、書体や端末で数pxずつ変わるため、足し算だけ
+   では合わない。`sandbox/measure-jacket-layout.html` で本物のCSSを
+   使って測り、**155** に改めた(実測151 + 余裕4)。
+
+   145 のままだと、画面の低い端末で**余白が0px**になり、1pxの
+   ズレでボタンが動いていた(実測で確認)。
+
+⚠️ **行を増やしたら、必ずあのページで測り直すこと。** 足し算で
+   決めない(このプロジェクトの「実測が決め手」と同じ考え方)。
+
+⚠️ **注意書きの行は、出ていない時も場所を空けたままにします。**
+   竹弘の指定「表示位置を固定としたい」。出た時だけ場所を作ると、
+   **ジャケットも曲名もボタンも全部が押し上げられて動きます。**
 */
-const JACKET_BIG_MAX_UPPER_RATIO = 0.62;
+const JACKET_BIG_RESERVED_PX = 155;
+
+/*
+それでも小さくしすぎない下限です。画面の低い端末で、ジャケットが
+豆粒になって何が写っているか分からなくなるのを防ぎます。
+*/
+const JACKET_BIG_MIN_SIZE_PX = 120;
+
+/*
+ボタンとボタンの間隔(px)です。
+
+⚠️ **CSSではなくここで決めます(v213)。** ボタンの幅を
+   「(ジャケット幅 − 間隔×2) ÷ 3」で計算するので、**間隔の数字を
+   CSSとJSの2か所に書くと、片方を直した時にボタンがはみ出します。**
+   ここで決めた値を、CSS変数として渡します。
+*/
+const JACKET_BUTTON_GAP_PX = 8;
 
 /*
 画面の幅に対する上限です。
@@ -138,7 +179,12 @@ const jacketBtnCameraCancelEl  = document.getElementById("jacket-btn-camera-canc
 
 // 見えないファイル選択(v208で2つに分けた)
 const jacketMyFileInputEl = document.getElementById("jacket-myfile-input");
-const jacketCameraInputEl = document.getElementById("jacket-camera-input");
+/*
+⚠️ v213で「標準のカメラアプリ用の入力」を廃止しました。
+   📷 はアプリ内カメラ(生映像)になり、使えない時も標準アプリへは
+   切り替えません(竹弘の指定)。カメラが使えない端末では
+   📁 マイファイルから、カメラアプリで撮った写真を選べます。
+*/
 
 /*
 ⚠️⚠️ **今どの曲を開いているかを、ここで覚えておきます(v207)。**
@@ -286,11 +332,19 @@ function openJacketView(){
 
         const upperRect = jacketUpperAreaEl.getBoundingClientRect();
 
-        size = Math.min(size,upperRect.height * JACKET_BIG_MAX_UPPER_RATIO);
+        /*
+        ⚠️ **下に置くもの(曲名・アーティスト・ボタン・注意書き)の
+           ぶんを先に取り分け、残りをジャケットに配ります(v213)。**
+           詳しくは JACKET_BIG_RESERVED_PX の解説。
+        */
+        size = Math.min(size,upperRect.height - JACKET_BIG_RESERVED_PX);
 
     }
 
     size = Math.min(size,window.innerWidth * JACKET_BIG_MAX_WIDTH_RATIO);
+
+    // 小さくなりすぎない下限(何が写っているか分からなくなるため)
+    size = Math.max(size,JACKET_BIG_MIN_SIZE_PX);
 
     jacketBigEl.style.width  = size + "px";
     jacketBigEl.style.height = size + "px";
@@ -327,11 +381,50 @@ function openJacketView(){
     }
 
     /*
-    注意書きもジャケット幅に収めます。はみ出すと、パネル全体が
-    そのぶん広がってボタンまで巻き添えになります。
+    ⚠️⚠️ **ボタン1つの幅を「3つ並ぶ時の大きさ」で固定します(v213)。**
+
+    竹弘の指定(2026-09-21):
+
+        「ボタンが3個から2個の画面に遷移した時、ボタンが大きくなって、
+          次の画面に遷移した際にボタンのサイズの統一感がなく
+          あまり見栄えがよくありません。ジャケット幅で最大ボタン数の
+          3ボタンをボタンの最大サイズとして、2ボタンのサイズを
+          3ボタンのサイズに合わせてもらえますか」
+
+    【v212までなぜ大きくなっていたか】
+
+    ボタンは flex:1 1 0 で「余りを等分」していました。3つなら1/3ずつ、
+    **2つなら1/2ずつ**になるので、行が切り替わるたびに大きさが
+    変わっていました。
+
+    → **幅を px で決めて、数を変えても大きさが変わらない**ようにします。
+
+        ボタン1つの幅 = (ジャケット幅 − 間隔×2) ÷ 3
+
+    そして行は中央寄せにするので、2つの時は**画面の芯をはさんで
+    左右対称**に並びます(竹弘:「いづれ、設定にて、左利きの人用に
+    画面の左右反転も考えたいので、なるべく画面中央を芯に左右に
+    均等に配置したい思いあり」)。
+
+    ⚠️ 計算した値はCSS変数として渡します。**同じ数字をCSSにも
+       書くと、片方だけ直した時にはみ出します。**
     */
-    if(jacketWarningEl){
-        jacketWarningEl.style.width = size + "px";
+    const buttonSize = Math.floor(
+        (size - JACKET_BUTTON_GAP_PX * 2) / 3
+    );
+
+    if(jacketPanelEl){
+
+        jacketPanelEl.style.setProperty(
+            "--jacket-btn-size",
+            buttonSize + "px"
+        );
+
+        jacketPanelEl.style.setProperty(
+            "--jacket-btn-gap",
+            JACKET_BUTTON_GAP_PX + "px"
+        );
+
     }
 
     /*
@@ -521,7 +614,12 @@ function refreshJacketButtons(track){
     // ---- 上書きの最終確認 ----
     if(jacketUiState === "overwrite"){
 
-        showJacketWarning("今の自作ジャケットは消えます。上書きしますか?");
+        /*
+        ⚠️ **1行に収まる長さにしてあります(v213、竹弘が短くした文)。**
+           2行になると行の高さが変わり、上の全部が動きます。
+           文を足す時は、ここが1行のままか必ず確かめること。
+        */
+        showJacketWarning("自作ジャケットを削除し、上書き差替えしますか?");
 
         return;
 
@@ -578,22 +676,35 @@ function setRowVisible(rowEl,visible){
 
 }
 
-/** 赤い注意書きを出します。 */
+/**
+ * 赤い注意書きを出します。
+ *
+ * ⚠️⚠️ **出す / 隠すで場所は動きません(v213)。**
+ *    文字を入れるか空にするかだけを切り替え、**行そのものは
+ *    いつも1行ぶん確保したまま**にしてあります(高さはCSSで固定)。
+ *
+ *    竹弘の指摘(2026-09-21):
+ *        「メッセージが2行に渡り表示される為、ジャケ写の位置と曲名、
+ *          アーティスト名、ボタンの位置、全てがズレ動くのが見栄えが
+ *          よくありません。表示位置を固定としたいです」
+ *
+ *    display を切り替えると、出た瞬間にその行のぶんだけ上の全部が
+ *    押し上げられます。**場所は最初から空けておくのが正解**でした。
+ */
 function showJacketWarning(text){
 
     if(!jacketWarningEl){ return; }
 
-    jacketWarningEl.textContent   = text;
-    jacketWarningEl.style.display = "block";
+    jacketWarningEl.textContent = text;
 
 }
 
-/** 赤い注意書きを消します。 */
+/** 赤い注意書きの文字だけを消します(場所はそのまま残ります)。 */
 function hideJacketWarning(){
 
     if(!jacketWarningEl){ return; }
 
-    jacketWarningEl.style.display = "none";
+    jacketWarningEl.textContent = "";
 
 }
 
@@ -873,8 +984,10 @@ async function openLiveCamera(){
     */
     if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
 
-        console.log("アプリ内カメラが使えないので、標準のカメラアプリに切り替えます");
-        fallbackToCameraApp();
+        console.log("この環境ではアプリ内カメラを使えません");
+
+        abortLiveCamera("この端末ではカメラを使えません");
+
         return;
 
     }
@@ -920,22 +1033,52 @@ async function openLiveCamera(){
     }
     catch(error){
 
-        console.log(
-            "アプリ内カメラを開けませんでした :",
-            error.name,
-            "→ 標準のカメラアプリに切り替えます"
-        );
+        console.log("アプリ内カメラを開けませんでした :",error.name);
 
-        fallbackToCameraApp();
+        /*
+        ⚠️ **断られた理由で言葉を変えます。**
+
+            NotAllowedError … 竹弘が「許可しない」を選んだ
+                              (または以前に拒否したまま覚えられている)
+            それ以外        … カメラが無い / 他のアプリが使っている等
+
+        「許可されていません」と出しておけば、Chromeの設定で
+        許可を出し直せばよい、と気づけます。
+        */
+        const denied = (error && error.name === "NotAllowedError");
+
+        abortLiveCamera(
+            denied
+                ? "カメラの使用が許可されていません"
+                : "カメラを使えませんでした"
+        );
 
     }
 
 }
 
 /**
- * アプリ内カメラが使えない時に、スマホ標準のカメラアプリへ逃がします。
+ * アプリ内カメラが使えない時に、元の画面へ戻します(v213で変更)。
+ *
+ * ⚠️ **v212はスマホ標準のカメラアプリに切り替えていました。**
+ *    竹弘の指定(2026-09-21):
+ *
+ *        「カメラの許可を拒否したら標準のカメラアプリに切り替わるの
+ *          ではなく、次の画面に進まない。元の画面に戻るにしたい」
+ *
+ *    勝手に別のアプリが立ち上がると「何が起きたのか分からない」と
+ *    なるためです。拒否したなら、何も起きずに戻るのが素直です。
+ *
+ * ⚠️ **ただし「押しても無反応」にはしません。** 注意書きの行
+ *    (いつも場所を空けてある)に理由を出します。無言で戻ると、
+ *    壊れたのか拒否されたのか分かりません。
+ *
+ * ⚠️ カメラが使えなくても**📁 マイファイルは使えます。** 標準の
+ *    カメラアプリで撮った写真を、そこから選べば同じことができます。
+ *
+ * @param {String} reasonText … 注意書きに出す理由(空なら出さない)
  */
-function fallbackToCameraApp(){
+function abortLiveCamera(reasonText){
 
     stopLiveCamera();
 
@@ -946,7 +1089,12 @@ function fallbackToCameraApp(){
     renderJacketBig(track);
     refreshJacketButtons(track);
 
-    if(jacketCameraInputEl){ jacketCameraInputEl.click(); }
+    /*
+    ⚠️ **refreshJacketButtons の後に出します。** あの関数は
+       ふつうの状態に戻る時に注意書きを消すので、先に出すと
+       すぐ消されてしまいます。
+    */
+    if(reasonText){ showJacketWarning(reasonText); }
 
 }
 
@@ -1599,6 +1747,7 @@ if(jacketMyFileInputEl){
     jacketMyFileInputEl.addEventListener("change",handleJacketFileChosen);
 }
 
-if(jacketCameraInputEl){
-    jacketCameraInputEl.addEventListener("change",handleJacketFileChosen);
-}
+/*
+⚠️ v213で、カメラ用のファイル入力への受け口は無くなりました
+   (📷 はアプリ内カメラで完結するため)。
+*/
