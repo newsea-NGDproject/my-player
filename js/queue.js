@@ -910,8 +910,16 @@ playModeBtn.addEventListener("click",function(){
     「次の曲を鳴らし始める瞬間」にしか効きません。今まさに鳴っている
     曲の途中でモードを切り替えた場合(例: 連続再生中に1曲リピートへ
     切り替える)にも即座に反映されるよう、ここでも設定します。
+
+    ⚠️ **判断は shouldLoopByConnect()(js/connect.js)に任せます(v219)。**
+       🕺ノリノリRun再生の1曲リピートは loop属性 ではなく**接続で繋いで**
+       ループさせるためです(棚③⑫)。**同じ条件をここに書き写すと、
+       片方だけ直した時に loop属性 と接続が二重に効いて、助走中に
+       曲が頭へ戻るという壊れ方をします。**
     */
-    audioPlayer.loop = (currentPlayMode === PLAY_MODE_ONE);
+    audioPlayer.loop =
+        (currentPlayMode === PLAY_MODE_ONE)
+        && !shouldLoopByConnect(libraryMap[currentTrackId]);
 
     updatePlayModeButton();
 

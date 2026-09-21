@@ -299,8 +299,18 @@ async function playTrack(trackId){
         リピート中に別の曲へ切り替えた時も正しくループさせつつ、
         他のモード(連続再生等)へ切り替えた時に前の設定が
         残ってしまう(=ended が発火しなくなる)事故を防ぎます。
+
+        ⚠️⚠️ **v219から、🕺ノリノリRun再生の1曲リピートは loop属性 を
+           使いません**(竹弘の要望、棚③⑫「1曲ループで接続再生」)。
+           あちらは**接続で繋いでループ**させ、継ぎ目で拍が途切れない
+           ようにします。どちらを使うかは shouldLoopByConnect()
+           (js/connect.js)が1か所で決めています。
+
+        ⚠️ メインメニューは今までどおり loop属性 のままです
+           (v144の画面ロック対策を崩さないため)。
         */
-        audioPlayer.loop = (currentPlayMode === PLAY_MODE_ONE);
+        audioPlayer.loop =
+            (currentPlayMode === PLAY_MODE_ONE) && !shouldLoopByConnect(track);
 
         /*
         上半分(エリア3〜4)に、今かけている曲の情報を表示します。
