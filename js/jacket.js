@@ -112,10 +112,21 @@ const jacketBigEl        = document.getElementById("jacket-big");
 const jacketBigTitleEl   = document.getElementById("jacket-big-title");
 const jacketBigArtistEl  = document.getElementById("jacket-big-artist");
 
-// ---- 差し替え機能の部品(v207で追加) ----
+// ---- 差し替え機能の部品(v207で追加、v208で3ボタン化) ----
 const jacketBtnOriginalEl = document.getElementById("jacket-btn-original");
-const jacketBtnReplaceEl  = document.getElementById("jacket-btn-replace");
-const jacketFileInputEl   = document.getElementById("jacket-file-input");
+const jacketBtnMyFileEl   = document.getElementById("jacket-btn-myfile");
+const jacketBtnCameraEl   = document.getElementById("jacket-btn-camera");
+
+// 撮った / 選んだ直後の確認ボタン(v208)
+const jacketBigButtonsEl     = document.getElementById("jacket-big-buttons");
+const jacketConfirmButtonsEl = document.getElementById("jacket-confirm-buttons");
+const jacketBtnAcceptEl      = document.getElementById("jacket-btn-accept");
+const jacketBtnRetryEl       = document.getElementById("jacket-btn-retry");
+const jacketBtnCancelEl      = document.getElementById("jacket-btn-cancel");
+
+// 見えないファイル選択(v208で2つに分けた)
+const jacketMyFileInputEl = document.getElementById("jacket-myfile-input");
+const jacketCameraInputEl = document.getElementById("jacket-camera-input");
 
 /*
 ⚠️⚠️ **今どの曲を開いているかを、ここで覚えておきます(v207)。**
@@ -135,6 +146,32 @@ const jacketFileInputEl   = document.getElementById("jacket-file-input");
 対して行います。
 */
 let jacketViewTrackId = null;
+
+/*
+⚠️ **まだ保存していない画像を、ここで預かります(v208)。**
+
+撮った(選んだ)直後は、すぐDBへ書かずに**この変数に置いたまま
+ジャケット枠に映します。** 竹弘が ✓ を押して初めて保存します。
+
+【なぜ即保存しないのか】
+
+竹弘の当初案は「📷 を押したら『ジャケ写に設定する』『カメラで
+撮影する』の2択」でした。その「設定する」という一手間が欲しい
+感覚は正しく、**撮った瞬間に上書きされるのは怖い**からです。
+ただ、それは押す前ではなく**撮った後**に置く方が自然で、
+しかも「今ジャケットが何に設定されているか」に左右されません。
+
+⚠️ 中身は**すでに480pxへ縮小済み**です。確認の段階で原寸を
+   抱えておくと、大きな写真でメモリを無駄に使うためです。
+*/
+let jacketPendingBlob = null;
+
+/*
+その画像をどこから持ってきたか("camera" か "myfile")。
+確認ボタンの真ん中を「📷 撮り直す」にするか「📁 選び直す」に
+するかを決めるためだけに使います。
+*/
+let jacketPendingSource = "";
 
 /*
 上半分のエリアです。大きさの上限を決めるために、実際の高さを
@@ -202,6 +239,13 @@ function openJacketView(){
     jacketBigEl.style.width  = size + "px";
     jacketBigEl.style.height = size + "px";
 
+    /*
+    ⚠️ 前回の「確認中」を必ず持ち越さないようにします(v208)。
+       撮ったまま閉じて別の曲で開くと、前の写真が映ったままに
+       なってしまいます。
+    */
+    clearJacketPending();
+
     // ---- 中身(画像 / カメラアイコン)を入れます ----
     renderJacketBig(track);
 
@@ -211,7 +255,7 @@ function openJacketView(){
     jacketBigTitleEl.textContent  = buildTitleText(track);
     jacketBigArtistEl.textContent = track.artist || "";
 
-    // ---- ボタン2つの押せる / 押せないを決めます ----
+    // ---- ボタンの押せる / 押せないを決めます ----
     refreshJacketButtons(track);
 
     jacketPanelEl.style.display = "flex";
@@ -235,10 +279,14 @@ function renderJacketBig(track){
     jacketBigEl.innerHTML = "";
 
     /*
-    どの画像を出すかは getTrackCover()(js/list-view.js)が決めます。
-    差し替えがあればそちら、無ければ元のジャケットです。
+    ---- どの画像を映すか ----
+
+    ① まだ保存していない画像を預かっていれば、**それを優先**します
+       (撮った直後の確認中。竹弘が ✓ を押すまでDBには入りません)
+    ② それが無ければ getTrackCover()(js/list-view.js)に任せます
+       (差し替えがあればそちら、無ければ元のジャケット)
     */
-    const cover = getTrackCover(track);
+    const cover = jacketPendingBlob || getTrackCover(track);
 
     if(cover){
 
@@ -277,27 +325,62 @@ function renderJacketBig(track){
 
 
 /**
- * ボタン2つの「押せる / 押せない」を決めます(v207)。
+ * ボタンの見せ方を決めます(v208で3ボタン＋確認行に作り替え)。
  *
- * 竹弘の指定を表にすると、こうなります。
+ * 画面には**2つの状態**があります。
  *
- *     曲の状態              オリジナルジャケット   📷 差し替え
- *     ------------------   -------------------   -----------
- *     元あり・差し替えなし   押せない(今それ)      押せる
- *     元あり・差し替えあり   押せる(元に戻る)      押せる(撮り直し)
+ *     ふつうの状態   🖼️ 📁 📷        … これから選ぶ
+ *     確認中の状態   ✓ 📷/📁 ✕      … 撮った直後。保存する前
+ *
+ * どちらを出すかは jacketPendingBlob(預かり中の画像)があるかで
+ * 決まります。**旗を別に持たない**のがこのアプリの流儀です
+ * (旗とデータが食い違うと直しようがなくなるため)。
+ *
+ * ふつうの状態での「押せる / 押せない」:
+ *
+ *     曲の状態              🖼️ オリジナル        📁 📷
+ *     ------------------   -----------------   -----
+ *     元あり・差し替えなし   押せない(今それ)     押せる
+ *     元あり・差し替えあり   押せる(元に戻る)     押せる
  *     元なし                押せない(戻る先が無い) 押せる
  *
- * つまり『オリジナルジャケット』が押せるのは、**元のジャケットが
- * あり、かつ差し替え中**の時だけです。
- *
- * ⚠️ 『📷 差し替え』はいつでも押せます。何度撮り直しても、
- *    元のジャケット(cover_art)には一切触れません。
+ * ⚠️ 📁 と 📷 はいつでも押せます。何度やり直しても、元のジャケット
+ *    (cover_art)には一切触れません。
  *
  * @param {Object} track … 表示中の曲
  */
 function refreshJacketButtons(track){
 
-    if(!jacketBtnOriginalEl || !jacketBtnReplaceEl){ return; }
+    if(!jacketBigButtonsEl || !jacketConfirmButtonsEl){ return; }
+
+    // ---- 確認中かどうかで、出すボタンの行を入れ替えます ----
+    const confirming = !!jacketPendingBlob;
+
+    jacketBigButtonsEl.style.display     = confirming ? "none" : "flex";
+    jacketConfirmButtonsEl.style.display = confirming ? "flex" : "none";
+
+    if(confirming){
+
+        /*
+        真ん中のボタンは「もう一度やる」です。どこから来たかで
+        絵文字と説明を変えます(カメラから来たのに📁が出ると
+        「別の物を選ばされる」ように見えるため)。
+        */
+        if(jacketBtnRetryEl){
+
+            const fromCamera = (jacketPendingSource === "camera");
+
+            jacketBtnRetryEl.textContent = fromCamera ? "📷" : "📁";
+            jacketBtnRetryEl.title       = fromCamera ? "撮り直す" : "選び直す";
+
+        }
+
+        return;
+
+    }
+
+    // ---- ふつうの状態 ----
+    if(!jacketBtnOriginalEl){ return; }
 
     const hasOriginal = !!(track && track.cover_art);
     const hasCustom   = !!(track && track.cover_art_custom);
@@ -308,7 +391,16 @@ function refreshJacketButtons(track){
     */
     jacketBtnOriginalEl.disabled = !(hasOriginal && hasCustom);
 
-    jacketBtnReplaceEl.disabled = false;
+}
+
+
+/**
+ * 預かり中の画像を捨てます(確認をやめる / 画面を開き直す時)。
+ */
+function clearJacketPending(){
+
+    jacketPendingBlob   = null;
+    jacketPendingSource = "";
 
 }
 
@@ -401,12 +493,13 @@ function refreshCoverEverywhere(track){
 }
 
 /**
- * 『📷 差し替え』が押された時の処理です。
+ * 『📁 マイファイル』が押された時の処理です。
  *
- * 見えないファイル選択(#jacket-file-input)を代わりに押します。
- * Androidでは「カメラで撮る / ギャラリーから選ぶ」の選択画面が出ます。
+ * 見えないファイル選択(#jacket-myfile-input)を代わりに押します。
+ * capture が付いていないので、Androidの選択画面から写真フォルダを
+ * たどって選べます。
  */
-function startJacketReplace(event){
+function startJacketFromMyFile(event){
 
     /*
     ⚠️ **この押下をパネルへ伝えません。**
@@ -415,14 +508,83 @@ function startJacketReplace(event){
     */
     event.stopPropagation();
 
-    if(!jacketFileInputEl){ return; }
+    jacketPendingSource = "myfile";
 
-    jacketFileInputEl.click();
+    if(jacketMyFileInputEl){ jacketMyFileInputEl.click(); }
+
+}
+
+/**
+ * 『📷 カメラ』が押された時の処理です。
+ *
+ * #jacket-camera-input には capture="environment" が付いているので、
+ * 選択画面をはさまず**いきなり外カメラ**が起動します
+ * (竹弘:「📷ボタンを押したら、スマホには必ずカメラが付いているので」)。
+ *
+ * ⚠️ **v209でここをアプリ内カメラに差し替えます。** 竹弘の本来の
+ *    希望は「ジャケ写の表示範囲に外カメラの撮影中映像をリアルで
+ *    表示してキャプチャ」です。取り込んだ後の流れ(確認 → ✓ で保存)は
+ *    そのまま使えるので、**差し替えるのはこの関数だけ**で済みます。
+ */
+function startJacketFromCamera(event){
+
+    event.stopPropagation();
+
+    jacketPendingSource = "camera";
+
+    if(jacketCameraInputEl){ jacketCameraInputEl.click(); }
+
+}
+
+/**
+ * 『もう一度』(確認中の真ん中のボタン)が押された時の処理です。
+ *
+ * 来た道と同じ方へ戻します。
+ */
+function retryJacketSource(event){
+
+    event.stopPropagation();
+
+    if(jacketPendingSource === "camera"){
+
+        if(jacketCameraInputEl){ jacketCameraInputEl.click(); }
+
+    }
+    else{
+
+        if(jacketMyFileInputEl){ jacketMyFileInputEl.click(); }
+
+    }
+
+}
+
+/**
+ * 『✕ やめる』が押された時の処理です。
+ *
+ * 預かっていた画像を捨てて、元の表示に戻します。
+ * **DBには何も書いていない**ので、捨てるだけで元通りです。
+ */
+function cancelJacketPending(event){
+
+    event.stopPropagation();
+
+    clearJacketPending();
+
+    const track = getJacketViewTrack();
+
+    if(!track){ return; }
+
+    renderJacketBig(track);
+    refreshJacketButtons(track);
 
 }
 
 /**
  * 写真が選ばれた(または撮られた)時の処理です。
+ *
+ * ⚠️ **ここではまだDBに書きません。** 480pxに縮小して預かり、
+ *    ジャケット枠に映して竹弘に見てもらいます。保存するのは
+ *    ✓ が押された時(applyJacketPending)です。
  */
 async function handleJacketFileChosen(event){
 
@@ -440,7 +602,7 @@ async function handleJacketFileChosen(event){
     const track = getJacketViewTrack();
 
     if(!track){
-        console.error("ジャケット差し替え中止 : 対象の曲が分かりません");
+        console.error("ジャケット取り込み中止 : 対象の曲が分かりません");
         return;
     }
 
@@ -454,14 +616,18 @@ async function handleJacketFileChosen(event){
         切り取ってから縮小するので、4:3のスマホ写真でも歪みません。
 
         ⚠️ **同じ関数・同じ定数を通すことに意味があります。**
-           竹弘の指定「取り込む際にファイルサイズを不用意に大きく
-           したくない。480pxに解像度を落として登録したい」に対して、
-           ここに別の数字を書くと、将来 COVER_ART_SIZE を変えた時に
-           **差し替えだけ古いサイズのまま残ります。**
+           竹弘の指定「1曲あたりのファイルサイズが大きくならないように、
+           取込時に解像度を今のジャケ写サイズに解像度変更は絶対して
+           取り込んで欲しい」に対して、ここに別の数字を書くと、将来
+           COVER_ART_SIZE を変えた時に**ここだけ古いサイズのまま**
+           残ります。
 
         スマホの写真は4000×3000(1200万画素)ほどありますが、
         480px角にすると約1/26になり、他のジャケットと同じ
         数十KBに収まります。
+
+        ⚠️ **縮小は「確認の前」にやります。** 後回しにすると、
+           確認している間ずっと1200万画素を抱えることになります。
         */
         const blob = await shrinkImageBlob(
             file,
@@ -470,9 +636,52 @@ async function handleJacketFileChosen(event){
         );
 
         if(!blob){
-            console.error("ジャケット差し替え中止 : 画像を読めませんでした");
+            console.error("ジャケット取り込み中止 : 画像を読めませんでした");
             return;
         }
+
+        // ---- まだ保存せず、預かって映します ----
+        jacketPendingBlob = blob;
+
+        renderJacketBig(track);
+        refreshJacketButtons(track);
+
+        console.log(
+            "ジャケット候補を取り込みました :",
+            track.file_name,
+            Math.round(blob.size / 1024) + "KB",
+            "(まだ保存していません)"
+        );
+
+    }
+    catch(error){
+
+        console.error(
+            "ジャケット取り込み失敗 :",
+            error.name,
+            error.message
+        );
+
+    }
+
+}
+
+/**
+ * 『✓ 決定』が押された時の処理です。
+ *
+ * 預かっていた画像を、はじめてDBへ保存します。
+ */
+async function applyJacketPending(event){
+
+    event.stopPropagation();
+
+    const track = getJacketViewTrack();
+
+    if(!track || !jacketPendingBlob){ return; }
+
+    const blob = jacketPendingBlob;
+
+    try{
 
         /*
         ⚠️⚠️ **cover_art(元のジャケット)には一切触りません。**
@@ -483,6 +692,9 @@ async function handleJacketFileChosen(event){
         track.cover_art_custom = blob;
 
         await idbPut(STORE_MUSIC,track);
+
+        // 保存できたので、預かりは終わりです
+        clearJacketPending();
 
         refreshCoverEverywhere(track);
 
@@ -496,7 +708,7 @@ async function handleJacketFileChosen(event){
     catch(error){
 
         console.error(
-            "ジャケット差し替え失敗 :",
+            "ジャケットの保存に失敗 :",
             error.name,
             error.message
         );
@@ -520,6 +732,9 @@ async function restoreOriginalJacket(event){
     const track = getJacketViewTrack();
 
     if(!track || !track.cover_art_custom){ return; }
+
+    // 確認中の画像が残っていたら捨てます(元に戻すのが目的のため)
+    clearJacketPending();
 
     try{
 
@@ -587,32 +802,54 @@ if(jacketPanelEl){
 }
 
 /*
-差し替えの受け口(v207)。
+ジャケット差し替えの受け口(v207で新設、v208で3ボタン＋確認に)。
+
+⚠️ **どのボタンの処理も先頭で stopPropagation() を呼んでいます。**
+   1つでも忘れると、そのボタンを押した瞬間に画面が閉じます。
 */
-if(jacketBtnReplaceEl){
-
-    jacketBtnReplaceEl.addEventListener("click",startJacketReplace);
-
-}
-
 if(jacketBtnOriginalEl){
-
     jacketBtnOriginalEl.addEventListener("click",restoreOriginalJacket);
-
 }
 
-if(jacketFileInputEl){
+if(jacketBtnMyFileEl){
+    jacketBtnMyFileEl.addEventListener("click",startJacketFromMyFile);
+}
 
-    /*
-    "change" は「選んだ内容が変わった」時に起きる合図です。
-    カメラで撮った直後も、ギャラリーから選んだ直後も、ここへ来ます。
+if(jacketBtnCameraEl){
+    jacketBtnCameraEl.addEventListener("click",startJacketFromCamera);
+}
 
-    ⚠️ カメラを使っている間、ノリRunは裏に回ります。**音は鳴り
-       続けます**(2デッキ構造で音が途切れないため)が、戻ってくる
-       までに曲が次へ繋がっていることがあります。
-       だから保存先は currentTrackId ではなく jacketViewTrackId です
-       (ファイル上部の解説)。
-    */
-    jacketFileInputEl.addEventListener("change",handleJacketFileChosen);
+// ---- 確認中の3つ ----
+if(jacketBtnAcceptEl){
+    jacketBtnAcceptEl.addEventListener("click",applyJacketPending);
+}
 
+if(jacketBtnRetryEl){
+    jacketBtnRetryEl.addEventListener("click",retryJacketSource);
+}
+
+if(jacketBtnCancelEl){
+    jacketBtnCancelEl.addEventListener("click",cancelJacketPending);
+}
+
+/*
+見えないファイル選択の受け口。
+
+"change" は「選んだ内容が変わった」時に起きる合図です。
+カメラで撮った直後も、写真フォルダから選んだ直後も、ここへ来ます。
+**2つとも同じ処理**へ繋ぎます(受け取った後にやることは同じで、
+違うのは「どこから来たか」だけ。それは jacketPendingSource が
+覚えています)。
+
+⚠️ カメラを使っている間、ノリRunは裏に回ります。**音は鳴り続けます**
+   (2デッキ構造で音が途切れないため)が、戻ってくるまでに曲が次へ
+   繋がっていることがあります。だから保存先は currentTrackId ではなく
+   jacketViewTrackId です(ファイル上部の解説)。
+*/
+if(jacketMyFileInputEl){
+    jacketMyFileInputEl.addEventListener("change",handleJacketFileChosen);
+}
+
+if(jacketCameraInputEl){
+    jacketCameraInputEl.addEventListener("change",handleJacketFileChosen);
 }
