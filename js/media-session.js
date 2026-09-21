@@ -90,12 +90,31 @@ function updateMediaSessionMetadata(track){
         mediaSessionArtworkUrl = URL.createObjectURL(track.cover_art);
 
         /*
-        cover_art は docs/db-schema.md の通り、常に96×96pxへ
-        縮小済みのJPEGです。sizesにその実際の値を書いておきます。
+        cover_art は docs/db-schema.md の通り、一辺 COVER_ART_SIZE px の
+        正方形へ縮小済みのJPEGです。sizes にその実際の値を伝えます。
+
+        ⚠️ **数値を書き写さず、js/metadata.js の定数から組み立てます。**
+           v205まではここに "96x96" と直接書いてあり、v206で保存解像度を
+           96→480pxに上げた時に**ここだけ古い値が残ってロック画面に
+           嘘のサイズを伝える**ところでした(CLAUDE.mdの「同じ数値を
+           2か所に書かない」の実例)。定数を見に行く形なら、次に解像度を
+           変えてもここは自動で追従します。
+
+        sizes は「この画像は何ドット四方か」をOSに伝えるものです。
+        Androidのロック画面は複数の候補から適した大きさを選ぶ作りなので、
+        ここが実物と食い違うと、選ばれなかったり粗く表示されたりします。
+
+        ⚠️ 読み込み順の補足:c014.html では js/metadata.js が
+           このファイルより**後ろ**に並んでいます。それでも大丈夫なのは、
+           この行が動くのは**曲が鳴り始めた時**で、その頃には全部の
+           <script> が読み終わっているからです(読み込んだ瞬間に
+           使うのであれば順番を気にする必要があります)。
         */
+        const coverSizeText = COVER_ART_SIZE + "x" + COVER_ART_SIZE;
+
         artwork.push({
             src: mediaSessionArtworkUrl,
-            sizes: "96x96",
+            sizes: coverSizeText,
             type: "image/jpeg"
         });
 
