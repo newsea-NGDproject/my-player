@@ -478,14 +478,66 @@ function getMetronomeGain(){
  */
 function canRingMetronome(){
 
+    const reason = findMetronomeBlockReason();
+
+    // 【開発用調査ログ】理由が変わった時だけ知らせます(v218)
+    logMetronomeBlockReason(reason);
+
+    return (reason === "");
+
+}
+
+/*
+============================================================
+【開発用調査ログ】前回出した「鳴らない理由」(v218)
+
+⚠️ **本番リリース前に消すもの**(CLAUDE.mdの削除リストに登録済み)。
+
+canRingMetronome() は**毎秒2回**呼ばれるので、そのたびに
+console.log すると🐛パネルが埋まります。**理由が変わった時だけ**
+出すために、前回の理由を覚えておきます
+(js/queue.js の wrapLoggedFromTrackId と同じ手口)。
+============================================================
+*/
+let metronomeLastBlockReason = "(まだ)";
+
+/** 【開発用調査ログ】理由が変わった時だけ知らせます(v218) */
+function logMetronomeBlockReason(reason){
+
+    if(reason === metronomeLastBlockReason){ return; }
+
+    metronomeLastBlockReason = reason;
+
+    console.log(
+        "ノリノリアシスト : " + (reason === "" ? "★鳴らせます" : "鳴らせない理由 = " + reason)
+    );
+
+}
+
+/**
+ * 鳴らせない理由を1つ返します。鳴らせるなら空文字を返します。
+ *
+ * ⚠️ **v218で canRingMetronome から中身を切り出しました。**
+ *    判断の順番も中身も1つも変えていません。変えたのは
+ *    「false を返す」だけだったところを「**なぜ**false なのか」も
+ *    返すようにした点だけです。
+ *
+ *    竹弘の実機で「メインメニューから戻っても復帰しない」が出た時、
+ *    **鳴らない理由がどこにも出ていなかった**ため、当てずっぽうで
+ *    直すしかありませんでした。理由が見えれば1回のテストで分かります
+ *    (v200で「ログに何も写っていないこと自体が手がかり」になったのと
+ *    同じ考え方)。
+ */
+function findMetronomeBlockReason(){
+
     // 設定でOFFなら鳴らしません
-    if(!metronomeEnabled){ return false; }
+    if(!metronomeEnabled){ return "設定がOFF"; }
 
     // 🕺ノリノリRun再生の時だけです(竹弘の指示。冒頭のコメント参照)
-    if(!isNoriRunMode){ return false; }
+    if(!isNoriRunMode){ return "ノリノリRun再生ではない"; }
 
     // 音を出す回路そのものが無ければ鳴らせません
-    if(!deckAudioCtx){ return false; }
+    if(!deckAudioCtx){ return "音を出す回路がまだ無い"; }
 
     /*
     🔇 消音中は鳴らしません(v193)。
@@ -502,7 +554,7 @@ function canRingMetronome(){
        音」にしか効かず、すでに2秒先まで入っている予約は止められない
        ためです。片方だけでは「押したのに数回鳴る」状態になります。
     */
-    if(audioPlayer.muted){ return false; }
+    if(audioPlayer.muted){ return "🔇 消音中"; }
 
     /*
     「カチッ」の時だけ、音源(click.wav)の読み込み待ちがあります。
@@ -513,7 +565,7 @@ function canRingMetronome(){
     */
     if(metronomeSound === METRONOME_SOUND_CLICK && !metronomeClickBuffer){
 
-        return false;
+        return "カチッの音源をまだ読み込めていない";
 
     }
 
@@ -525,26 +577,48 @@ function canRingMetronome(){
        言う「曲と曲の間だけ音がなくなる」状態になり、繋ぎ目がうまく
        いったかを耳で確かめられません。
     */
-    if(audioPlayer.paused && !isConnectSilence()){ return false; }
+    if(audioPlayer.paused && !isConnectSilence()){ return "曲が止まっている"; }
 
     const track = libraryMap[currentTrackId];
 
-    if(!track){ return false; }
+    if(!track){ return "鳴っている曲が分からない"; }
 
     /*
     ノリ注入(タップ補正)がまだの曲では鳴らしません。
-
-    startTS(1拍目の位置)と manualBPM(測ったテンポ)が無いと、拍が
-    どこにあるか分かりません。当てずっぽうで鳴らすと、曲と無関係な
-    位置でカチカチ鳴って**かえって走りを乱します。**
-
-    🕺ノリノリRun再生の曲一覧には注入済みしか並びませんが、
-    メインメニューから未注入の曲を持ち込んだ直後だけ、この状態に
-    なりえます(js/connect.js が「繋がない」と判断するのと同じ場面)。
+    判断は下の hasNoriBeatData() にまとめてあります。
     */
-    if(!track.startTS || !track.manualBPM){ return false; }
+    if(!hasNoriBeatData(track)){ return "🛌 ノリ注入がまだの曲"; }
 
-    return true;
+    // ここまで来たら鳴らせます
+    return "";
+
+}
+
+/**
+ * その曲に「拍の情報」があるかどうかを返します(v217で切り出し)。
+ *
+ * startTS(1拍目の位置)と manualBPM(測ったテンポ)が無いと、拍が
+ * どこにあるか分かりません。当てずっぽうで鳴らすと、曲と無関係な
+ * 位置でカチカチ鳴って**かえって走りを乱します。**
+ *
+ * 🕺ノリノリRun再生の曲一覧には注入済みしか並びませんが、
+ * メインメニューから未注入の曲を持ち込んだ直後だけ、この状態に
+ * なりえます(js/connect.js が「繋がない」と判断するのと同じ場面)。
+ *
+ * ⚠️ **判断を1か所にまとめているのが肝心です。** v217から
+ *    js/settings.js も「ノリノリアシストの設定を開けるか」を決めるのに
+ *    この関数を使います。同じ条件を2か所に書くと、片方だけ直した時に
+ *    **「設定は開けるのに鳴らない」「鳴るのに設定が開けない」**という
+ *    食い違いが起きます(getTrackCover を1か所にまとめたのと同じ考え方)。
+ *
+ * @param  {Object}  track … libraryMap から取り出した1曲分のデータ
+ * @return {boolean} 拍の情報があれば true
+ */
+function hasNoriBeatData(track){
+
+    if(!track){ return false; }
+
+    return !!(track.startTS && track.manualBPM);
 
 }
 
@@ -1303,7 +1377,26 @@ function refreshMetronome(){
     細かい可否の判断は canRingMetronome() が毎回やるので、ここでは
     大きく構えておく方が安定します。
     */
-    if(metronomeEnabled && isNoriRunMode){
+    const shouldRun = (metronomeEnabled && isNoriRunMode);
+
+    /*
+    【開発用調査ログ】見張りを動かすか止めるかを知らせます(v218)。
+
+    ⚠️ **本番リリース前に消すもの**(CLAUDE.mdの削除リストに登録済み)。
+
+    ここが呼ばれること自体が少ない(設定変更・再生開始・モード復帰の
+    時だけ)ので、毎回出しても🐛パネルは埋まりません。
+    「復帰したのに鳴らない」時に、**見張りは動いたのか / そもそも
+    呼ばれていないのか**を切り分けるための1行です。
+    */
+    console.log(
+        "ノリノリアシスト : 見張りを" + (shouldRun ? "動かします" : "止めます")
+        + "(設定=" + (metronomeEnabled ? "ON" : "OFF")
+        + " / ノリノリRun=" + (isNoriRunMode ? "はい" : "いいえ")
+        + " / いま動作中=" + (metronomeTimerId !== null ? "はい" : "いいえ") + ")"
+    );
+
+    if(shouldRun){
 
         // 音がまだ無ければ、ここで用意を始めます
         loadMetronomeClick();
@@ -1485,6 +1578,112 @@ bindDeckEvent("play",function(){
     refreshMetronome();
 
 });
+
+/*
+======================================================================
+ 🕺ノリノリRun再生に「戻ってきた」時に復帰する(v217)
+======================================================================
+
+【何が起きていたか(竹弘の要望)】
+
+    「ノリノリアシスト設定の復帰 … メインメニューから戻ったら
+      復帰させる」
+
+v216までは、こうなっていました。
+
+    ① 🕺でアシストが鳴っている
+    ② メインメニューへ戻る
+       → 見張りが自分で気づいて止まる(scheduleMetronomeBeats の冒頭)
+    ③ 🕺へ戻る
+       → **曲は鳴り続けているので play が起きない**
+       → **アシストが戻ってこない**
+    ④ 次の曲に変わって、ようやく復帰
+
+復帰のきっかけが `play` しか無かったのが原因です。モードを切り替えても
+音は途切れない作りなので、**戻ってきたこと自体に気づく相手がいません**
+でした。
+
+【なぜモード側(js/norirun.js)に1行足さないのか】
+
+このファイルの約束は「**消す時はこのファイルを消すだけで戻せる**」
+です(冒頭の解説)。norirun.js に呼び出しを書くと、アシストをやめる時に
+あちらも直す必要が出てきます。だから**こちらから様子を見に行きます**
+(bindDeckEvent で再生を見に行っているのと同じ考え方)。
+
+【どうやって気づくか】
+
+🕺モードは `#app` に `norirun-mode` というクラスが付く/外れるだけで
+表されます(js/norirun.js)。MutationObserver は「その要素に変化が
+あったら教えて」とブラウザに頼む仕組みで、**class が書き換わった
+瞬間**に呼んでもらえます。0.5秒ごとに見に行くような無駄がありません。
+
+⚠️ **「付いた瞬間」だけを拾います。** class は検索モードの出入りでも
+   書き換わるので、毎回 refreshMetronome を呼ぶと無駄が出ます。
+   前回の状態を覚えておいて、**OFF→ON に変わった時だけ**動きます。
+
+⚠️ **未注入曲(🛌)の時は、これでも鳴りません。** それで正しい動きです
+   (竹弘の指定:「今鳴っているのが未注入曲なら、次のノリ注入曲から
+   復帰」)。見張りは動き出しますが、canRingMetronome() が
+   startTS / manualBPM の無い曲を弾くので音は出ず、**次に注入済みの
+   曲が鳴り始めた時に自然と鳴り出します。**
+*/
+/*
+⚠️⚠️ **js/norirun.js の noriRunAppEl は使えません。**
+
+   c014.html の読み込み順は metronome.js(6738行目) → norirun.js
+   (6744行目)です。あちらの `const noriRunAppEl` は**この時点では
+   まだ生まれていない**ので、ここで名前を書くと**読み込んだ瞬間に
+   エラーになり、ノリノリアシストが丸ごと動かなくなります。**
+
+   ⚠️ 中で使うだけ(関数の中から読む)なら順番は関係ありません。
+      曲が鳴る頃には全部のファイルが読み終わっているためです。
+      **危ないのは、こういう「読み込んだその場で使う」場合だけ**です。
+
+   だから同じ要素を自分で取り直します。#app は <script> より前に
+   書かれているので、必ず見つかります。
+*/
+const metronomeAppEl = document.getElementById("app");
+
+if(metronomeAppEl){
+
+    // 前回見た時、🕺モードだったか
+    let metronomeWasNoriRun = metronomeAppEl.classList.contains("norirun-mode");
+
+    const metronomeModeObserver = new MutationObserver(function(){
+
+        const nowNoriRun = metronomeAppEl.classList.contains("norirun-mode");
+
+        // 変わっていなければ何もしません
+        if(nowNoriRun === metronomeWasNoriRun){ return; }
+
+        metronomeWasNoriRun = nowNoriRun;
+
+        if(!nowNoriRun){ return; }
+
+        /*
+        🕺へ入った(戻ってきた)ところです。
+
+        ⚠️ isNoriRunMode(js/norirun.js の変数)は、クラスを付ける前に
+           true になっています。順番が入れ替わっても困らないよう、
+           refreshMetronome() は変数の方を見て判断します。
+        */
+        console.log("ノリノリアシスト : ノリノリRunに戻ったので復帰します");
+
+        refreshMetronome();
+
+    });
+
+    /*
+    attributes:true で「属性が変わったら」、attributeFilter で
+    「その中でも class だけ」を見張ります。中身(子要素)の変化は
+    見ないので、曲一覧を作り直しても呼ばれません。
+    */
+    metronomeModeObserver.observe(metronomeAppEl,{
+        attributes: true,
+        attributeFilter: ["class"]
+    });
+
+}
 
 bindDeckEvent("pause",function(){
 
