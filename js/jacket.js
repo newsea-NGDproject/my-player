@@ -124,6 +124,13 @@ const jacketBtnAcceptEl      = document.getElementById("jacket-btn-accept");
 const jacketBtnRetryEl       = document.getElementById("jacket-btn-retry");
 const jacketBtnCancelEl      = document.getElementById("jacket-btn-cancel");
 
+// アートワークの選び直しと、上書きの確認(v210)
+const jacketArtworkButtonsEl   = document.getElementById("jacket-artwork-buttons");
+const jacketOverwriteButtonsEl = document.getElementById("jacket-overwrite-buttons");
+const jacketBtnOverwriteEl     = document.getElementById("jacket-btn-overwrite");
+const jacketBtnOverwriteCancelEl = document.getElementById("jacket-btn-overwrite-cancel");
+const jacketWarningEl          = document.getElementById("jacket-warning");
+
 // 見えないファイル選択(v208で2つに分けた)
 const jacketMyFileInputEl = document.getElementById("jacket-myfile-input");
 const jacketCameraInputEl = document.getElementById("jacket-camera-input");
@@ -172,6 +179,28 @@ let jacketPendingBlob = null;
 するかを決めるためだけに使います。
 */
 let jacketPendingSource = "";
+
+/*
+⚠️ **この画面が今どのボタンの行を出しているか(v210)。**
+
+    "normal"    🖼️ 📁 📷              ふつう
+    "confirm"   ✓/⚠️ 📷 ✕            撮った / 選んだ直後
+    "artwork"   [元][自作] ✕          アートワークの選び直し
+    "overwrite" 🗑️ ✕ + 赤い注意書き   上書きの最終確認
+
+【なぜ状態を変数で持つのか】
+
+v207では「旗を持たない(データだけで決める)」方針を書きましたが、
+あれは**どの画像を見せるか**という"データ"の話です。
+こちらは**画面がどの段階にいるか**という別の話で、データからは
+決められません(「アートワークの選び直しを開いているか」は、
+どこにも書かれていないため)。
+
+⚠️ **代わりに、出す行を決める場所を refreshJacketButtons() の
+   1か所だけにしてあります。** あちこちで display を触ると、
+   「2つの行が同時に出る」という事故が必ず起きます。
+*/
+let jacketUiState = "normal";
 
 /*
 上半分のエリアです。大きさの上限を決めるために、実際の高さを
@@ -238,6 +267,44 @@ function openJacketView(){
 
     jacketBigEl.style.width  = size + "px";
     jacketBigEl.style.height = size + "px";
+
+    /*
+    ⚠️⚠️ **ボタン行にも同じ幅を入れます(v209で追加)。**
+
+    竹弘の実機報告(v208):
+        「ジャケ幅ではなく、曲名もしくはアーティスト名、ファイル名で
+          幅が決まっている。ボタン3つは、ジャケ幅に合わせて欲しい」
+
+    CSSの width:100% は「親の幅」ですが、その親
+    (#jacket-panel-inner)は**中でいちばん広い部品に合わせて広がる**
+    ので、長い曲名があると親ごと広がり、ボタンもそれに付き合って
+    いました。
+
+    → ここでジャケットと**まったく同じ数字**を渡します。
+      上で計算した size をそのまま使うので、**2か所で別々に
+      計算することはありません**(片方だけ直す事故が起きない)。
+
+    ⚠️ 曲名・アーティスト名の幅は今のままでOK(竹弘の指定)。
+       揃えるのはボタンだけです。
+    */
+    const buttonRows = [
+        jacketBigButtonsEl,
+        jacketConfirmButtonsEl,
+        jacketArtworkButtonsEl,
+        jacketOverwriteButtonsEl
+    ];
+
+    for(const row of buttonRows){
+        if(row){ row.style.width = size + "px"; }
+    }
+
+    /*
+    注意書きもジャケット幅に収めます。はみ出すと、パネル全体が
+    そのぶん広がってボタンまで巻き添えになります。
+    */
+    if(jacketWarningEl){
+        jacketWarningEl.style.width = size + "px";
+    }
 
     /*
     ⚠️ 前回の「確認中」を必ず持ち越さないようにします(v208)。
@@ -353,13 +420,23 @@ function refreshJacketButtons(track){
 
     if(!jacketBigButtonsEl || !jacketConfirmButtonsEl){ return; }
 
-    // ---- 確認中かどうかで、出すボタンの行を入れ替えます ----
-    const confirming = !!jacketPendingBlob;
+    /*
+    ---- 出す行を1つだけ決めます ----
 
-    jacketBigButtonsEl.style.display     = confirming ? "none" : "flex";
-    jacketConfirmButtonsEl.style.display = confirming ? "flex" : "none";
+    ⚠️ **display を触るのはこの4行だけ**にしてあります。
+       他の場所から個別に触ると「2つの行が同時に出る」事故が
+       必ず起きます。
+    */
+    setRowVisible(jacketBigButtonsEl,      jacketUiState === "normal");
+    setRowVisible(jacketConfirmButtonsEl,  jacketUiState === "confirm");
+    setRowVisible(jacketArtworkButtonsEl,  jacketUiState === "artwork");
+    setRowVisible(jacketOverwriteButtonsEl,jacketUiState === "overwrite");
 
-    if(confirming){
+    const hasOriginal = !!(track && track.cover_art);
+    const hasCustom   = !!(track && track.cover_art_custom);
+
+    // ---- 撮った / 選んだ直後 ----
+    if(jacketUiState === "confirm"){
 
         /*
         真ん中のボタンは「もう一度やる」です。どこから来たかで
@@ -375,6 +452,46 @@ function refreshJacketButtons(track){
 
         }
 
+        /*
+        ⚠️ **すでに自作ジャケットがある時は ✓ ではなく ⚠️ にします**
+           (v210、竹弘の指定)。自作の置き場所は1つしかないので、
+           決定すると**前に作ったものが消えます。**
+
+           押す前から「これは上書きだ」と分かるようにしておき、
+           ⚠️ を押した時に最終確認("overwrite"の行)へ進みます。
+        */
+        if(jacketBtnAcceptEl){
+
+            jacketBtnAcceptEl.textContent = hasCustom ? "⚠️" : "✓";
+
+            jacketBtnAcceptEl.title = hasCustom
+                ? "今の自作ジャケットに上書きする"
+                : "この写真をジャケットにする";
+
+        }
+
+        hideJacketWarning();
+
+        return;
+
+    }
+
+    // ---- 上書きの最終確認 ----
+    if(jacketUiState === "overwrite"){
+
+        showJacketWarning("今の自作ジャケットは消えます。上書きしますか?");
+
+        return;
+
+    }
+
+    hideJacketWarning();
+
+    // ---- アートワークの選び直し ----
+    if(jacketUiState === "artwork"){
+
+        renderArtworkChoices(track);
+
         return;
 
     }
@@ -382,14 +499,138 @@ function refreshJacketButtons(track){
     // ---- ふつうの状態 ----
     if(!jacketBtnOriginalEl){ return; }
 
-    const hasOriginal = !!(track && track.cover_art);
-    const hasCustom   = !!(track && track.cover_art_custom);
-
     /*
-    disabled は「このボタンは今押せません」という標準の印です。
-    見た目は c014.html の :disabled のCSS(薄くする)が担当します。
+    ⚠️ 🖼️ が押せるのは **選べる絵が2つある時だけ**(v210)。
+
+       v209までは「元に戻せる時だけ」でしたが、v210で役割が
+       「オリジナルに戻す」から「**どちらを使うか選ぶ**」に
+       変わりました。1つしか無ければ選びようがないので押せません。
+
+    見た目は c014.html の :disabled のCSS(背景は不透明のまま、
+    縁を灰色に、絵文字だけ薄く)が担当します。
     */
     jacketBtnOriginalEl.disabled = !(hasOriginal && hasCustom);
+
+}
+
+
+/**
+ * ボタンの行を出す / 隠すだけの小さな部品です。
+ *
+ * flex で並べているので、出す時は "flex" に戻す必要があります
+ * ("block" にすると横並びが崩れます)。
+ */
+function setRowVisible(rowEl,visible){
+
+    if(!rowEl){ return; }
+
+    rowEl.style.display = visible ? "flex" : "none";
+
+}
+
+/** 赤い注意書きを出します。 */
+function showJacketWarning(text){
+
+    if(!jacketWarningEl){ return; }
+
+    jacketWarningEl.textContent   = text;
+    jacketWarningEl.style.display = "block";
+
+}
+
+/** 赤い注意書きを消します。 */
+function hideJacketWarning(){
+
+    if(!jacketWarningEl){ return; }
+
+    jacketWarningEl.style.display = "none";
+
+}
+
+
+/**
+ * アートワークの選び直しの中身(最大2つ)を作ります(v210)。
+ *
+ * 竹弘の指定:
+ *     「ノリRunDBにある最大2つジャケ写(オリジナルとそれ以外)の
+ *       ボタンを表示してもらい、ボタンのサイズの中で、ジャケ写を表示」
+ *
+ * ⚠️ 今選ばれている方には .jacket-artwork-on を付けて、内側に
+ *    テーマ色の線を出します(枠を太くすると中の画像がガタつくため)。
+ *
+ * @param {Object} track … 表示中の曲
+ */
+function renderArtworkChoices(track){
+
+    if(!jacketArtworkButtonsEl){ return; }
+
+    jacketArtworkButtonsEl.innerHTML = "";
+
+    if(!track){ return; }
+
+    // 今どちらが使われているか(getTrackCover と同じ判断)
+    const usingOriginal = (track.cover_art_use === "original" && track.cover_art);
+
+    /*
+    候補は最大2つです。持っていない方は並べません
+    (押せないボタンを置いても選びようがないため)。
+    */
+    const choices = [
+        {blob:track.cover_art,        use:"original", label:"元のジャケット"},
+        {blob:track.cover_art_custom, use:"custom",   label:"自分で作ったジャケット"}
+    ];
+
+    for(const choice of choices){
+
+        if(!choice.blob){ continue; }
+
+        const button = document.createElement("button");
+        button.type  = "button";
+        button.title = choice.label;
+
+        /*
+        createJacketImage()(js/list-view.js)を借ります。一時URLの
+        後始末まで面倒を見てくれるので、こちらで覚える必要がありません。
+        */
+        const img = createJacketImage(choice.blob);
+        img.className = "jacket-artwork-thumb";
+
+        button.appendChild(img);
+
+        // 今使われている方に印を付けます
+        const isOn = (choice.use === "original") ? usingOriginal : !usingOriginal;
+
+        if(isOn){ button.classList.add("jacket-artwork-on"); }
+
+        /*
+        ⚠️ ここでも stopPropagation が要ります(パネルは
+           「どこを押しても閉じる」作りのため)。
+        */
+        button.addEventListener("click",function(event){
+            event.stopPropagation();
+            chooseArtwork(choice.use);
+        });
+
+        jacketArtworkButtonsEl.appendChild(button);
+
+    }
+
+    /*
+    最後に「やめる」を置きます。開いたけれど変えたくない、という
+    時に閉じられないと困るためです。
+    */
+    const closeButton = document.createElement("button");
+    closeButton.type        = "button";
+    closeButton.title       = "やめる";
+    closeButton.textContent = "✕";
+
+    closeButton.addEventListener("click",function(event){
+        event.stopPropagation();
+        jacketUiState = "normal";
+        refreshJacketButtons(getJacketViewTrack());
+    });
+
+    jacketArtworkButtonsEl.appendChild(closeButton);
 
 }
 
@@ -401,6 +642,13 @@ function clearJacketPending(){
 
     jacketPendingBlob   = null;
     jacketPendingSource = "";
+
+    /*
+    ⚠️ 画面の段階も「ふつう」へ戻します(v210)。預かりを捨てたのに
+       確認の行が出たままだと、押しても何も起きないボタンが
+       画面に残ります。
+    */
+    jacketUiState = "normal";
 
 }
 
@@ -570,12 +818,72 @@ function cancelJacketPending(event){
 
     clearJacketPending();
 
+    jacketUiState = "normal";
+
     const track = getJacketViewTrack();
 
     if(!track){ return; }
 
     renderJacketBig(track);
     refreshJacketButtons(track);
+
+}
+
+/**
+ * 確認中の ✓ / ⚠️ が押された時の入口です(v210)。
+ *
+ * すでに自作ジャケットがある(＝上書きになる)なら、**もう一段だけ**
+ * 確認をはさみます。無ければそのまま保存します。
+ *
+ * ⚠️ ブラウザ標準の confirm() は使いません。押されるまでJavaScriptが
+ *    止まり、走行中だと曲の接続やノリノリアシストの予約まで
+ *    巻き添えで止まるためです(js/queue.js の解説、v110の判断)。
+ */
+function acceptJacketPending(event){
+
+    event.stopPropagation();
+
+    const track = getJacketViewTrack();
+
+    if(!track || !jacketPendingBlob){ return; }
+
+    if(track.cover_art_custom){
+
+        // 上書きになるので、赤い注意書きを出して1回だけ確認します
+        jacketUiState = "overwrite";
+
+        refreshJacketButtons(track);
+
+        return;
+
+    }
+
+    applyJacketPending();
+
+}
+
+/**
+ * 上書き確認の『✕ やめる』です。撮った写真は捨てずに、
+ * 1つ前(確認中)へ戻します。
+ */
+function cancelJacketOverwrite(event){
+
+    event.stopPropagation();
+
+    jacketUiState = "confirm";
+
+    refreshJacketButtons(getJacketViewTrack());
+
+}
+
+/**
+ * 上書き確認の『🗑️ 上書きする』です。
+ */
+function confirmJacketOverwrite(event){
+
+    event.stopPropagation();
+
+    applyJacketPending();
 
 }
 
@@ -643,6 +951,8 @@ async function handleJacketFileChosen(event){
         // ---- まだ保存せず、預かって映します ----
         jacketPendingBlob = blob;
 
+        jacketUiState = "confirm";
+
         renderJacketBig(track);
         refreshJacketButtons(track);
 
@@ -667,13 +977,12 @@ async function handleJacketFileChosen(event){
 }
 
 /**
- * 『✓ 決定』が押された時の処理です。
- *
  * 預かっていた画像を、はじめてDBへ保存します。
+ *
+ * ⚠️ ボタンから直接は呼びません。必ず acceptJacketPending()
+ *    (上書きになるかを見る係)か、上書き確認の 🗑️ から呼ばれます。
  */
-async function applyJacketPending(event){
-
-    event.stopPropagation();
+async function applyJacketPending(){
 
     const track = getJacketViewTrack();
 
@@ -688,13 +997,25 @@ async function applyJacketPending(event){
            竹弘の指定「もともとあるジャケ写は上書きしない」。
            差し替えは cover_art_custom という別の場所に入れるので、
            何度撮り直しても元の絵は無傷で残ります。
+
+        ⚠️ 一方 cover_art_custom は**1つしか持ちません。** だから
+           ここへ来る前に上書き確認をはさんでいます(v210)。
         */
         track.cover_art_custom = blob;
+
+        /*
+        ⚠️ 作ったばかりの絵を見せないと意味がないので、旗も
+           「自作を使う」に倒します(v210)。元のジャケットを見ている
+           最中に撮った場合でも、撮った直後はそれが出ます。
+        */
+        track.cover_art_use = "custom";
 
         await idbPut(STORE_MUSIC,track);
 
         // 保存できたので、預かりは終わりです
         clearJacketPending();
+
+        jacketUiState = "normal";
 
         refreshCoverEverywhere(track);
 
@@ -718,45 +1039,62 @@ async function applyJacketPending(event){
 }
 
 /**
- * 『オリジナルジャケット』が押された時の処理です。
+ * 🖼️ 『アートワーク』が押された時の処理です(v210で役割を変更)。
  *
- * 差し替えを**消す**だけで元に戻ります。getTrackCover() が
- * 「差し替えが無ければ cover_art」を返すためで、「今どちらを
- * 表示中か」という旗を別に持つ必要がありません。
+ * ⚠️ **v209までは「オリジナルに戻す(＝自作を削除する)」でした。**
+ *    竹弘の指摘「オリジナルに戻すとカメラ写真を破棄してしまう」を
+ *    受けて、**消さずに選び直す**形に変えました。
+ *
+ * ここでは選び直しの行を開くだけで、DBには何も書きません。
  */
-async function restoreOriginalJacket(event){
+function openArtworkChoices(event){
 
-    // ⚠️ パネルが閉じないように(startJacketReplace と同じ理由)
+    // ⚠️ パネルが閉じないように
     event.stopPropagation();
+
+    jacketUiState = "artwork";
+
+    refreshJacketButtons(getJacketViewTrack());
+
+}
+
+/**
+ * アートワークの候補が選ばれた時の処理です(v210)。
+ *
+ * ⚠️⚠️ **どちらの画像も消しません。** 「どちらを使うか」の旗
+ *    (cover_art_use)を書き換えるだけです。だから何度でも
+ *    行ったり来たりできます ―― これが竹弘の求めていた
+ *    「オリジナルに戻した後、さらに前回の設定に簡単に戻せる」です。
+ *
+ * @param {String} use … "original" か "custom"
+ */
+async function chooseArtwork(use){
 
     const track = getJacketViewTrack();
 
-    if(!track || !track.cover_art_custom){ return; }
-
-    // 確認中の画像が残っていたら捨てます(元に戻すのが目的のため)
-    clearJacketPending();
+    if(!track){ return; }
 
     try{
 
-        /*
-        delete は「そのフィールドごと消す」命令です。
-        null を入れるのではなく消しているのは、DBに使われない項目を
-        残さないためです(cover_art_custom が無い曲=差し替えていない曲、
-        という見分けがそのまま付きます)。
-        */
-        delete track.cover_art_custom;
+        track.cover_art_use = use;
 
         await idbPut(STORE_MUSIC,track);
 
+        jacketUiState = "normal";
+
         refreshCoverEverywhere(track);
 
-        console.log("オリジナルのジャケットに戻しました :",track.file_name);
+        console.log(
+            "ジャケットを切り替えました :",
+            track.file_name,
+            use === "original" ? "元のジャケット" : "自分で作ったジャケット"
+        );
 
     }
     catch(error){
 
         console.error(
-            "オリジナルへの復帰に失敗 :",
+            "ジャケットの切り替えに失敗 :",
             error.name,
             error.message
         );
@@ -808,7 +1146,7 @@ if(jacketPanelEl){
    1つでも忘れると、そのボタンを押した瞬間に画面が閉じます。
 */
 if(jacketBtnOriginalEl){
-    jacketBtnOriginalEl.addEventListener("click",restoreOriginalJacket);
+    jacketBtnOriginalEl.addEventListener("click",openArtworkChoices);
 }
 
 if(jacketBtnMyFileEl){
@@ -821,7 +1159,7 @@ if(jacketBtnCameraEl){
 
 // ---- 確認中の3つ ----
 if(jacketBtnAcceptEl){
-    jacketBtnAcceptEl.addEventListener("click",applyJacketPending);
+    jacketBtnAcceptEl.addEventListener("click",acceptJacketPending);
 }
 
 if(jacketBtnRetryEl){
@@ -831,6 +1169,21 @@ if(jacketBtnRetryEl){
 if(jacketBtnCancelEl){
     jacketBtnCancelEl.addEventListener("click",cancelJacketPending);
 }
+
+// ---- 上書きの確認(v210) ----
+if(jacketBtnOverwriteEl){
+    jacketBtnOverwriteEl.addEventListener("click",confirmJacketOverwrite);
+}
+
+if(jacketBtnOverwriteCancelEl){
+    jacketBtnOverwriteCancelEl.addEventListener("click",cancelJacketOverwrite);
+}
+
+/*
+⚠️ アートワークの選び直しのボタンは**その都度作る**ので、
+   受け口は renderArtworkChoices() の中で付けています
+   (どの画像を持っているかが曲ごとに違うため)。
+*/
 
 /*
 見えないファイル選択の受け口。
