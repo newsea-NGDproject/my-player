@@ -1,0 +1,1027 @@
+/*
+======================================================================
+ queue.js ── 連続再生(次にどの曲を鳴らすかを決める)
+
+----------------------------------------------------------------------
+
+【このファイルの役割】
+
+ 曲が最後まで流れ終わった時に、自動で次の曲を鳴らします。
+ 「次は何を鳴らすか」の判断を、まとめてここが受け持ちます。
+
+   findNextTrackId()   … 次に鳴らすべき曲を探す(自動再生用)
+   playNextTrack()     … 次の曲を鳴らす(駄目ならさらに次へ)
+   skipTrack()         … ⏭ ⏮ が押された時に隣の曲を鳴らす
+   buildShuffleOrder() … ランダム再生用の順番を作る
+   loadPlayModeSetting() … 前回選んだ再生モードを復元する
+
+----------------------------------------------------------------------
+
+【なぜ player.js とファイルを分けたのか】
+
+ 役割がはっきり2つに分かれるためです。
+
+   player.js … 渡された1曲を「鳴らす」係(権限確認・ファイル読み込み)
+   queue.js  … 「次は何を鳴らすか」を決める係
+
+ 竹弘がこの後に予定している **曲送り/曲戻し** も「次は何を鳴らすか」の
+ 話なので、ここに入ります。機能が増えても player.js は太りません。
+
+----------------------------------------------------------------------
+
+【竹弘が決めた仕様(2026-08-16)】
+
+   ・曲が終わったら、次の曲を自動で再生する(基本機能)
+   ・再生できない曲に出会ったら、⚠️パネルは出すが **止まらずに
+     飛ばして次の曲へ進む**
+   ・すでに除外済みの曲は、最初から素通りする
+   ・再生モードは4つ。ボタン1つを押すたびに切り替わる
+
+ 最後の狙いが大事です。一度「了承」を押した曲は、二度と走行中の
+ 邪魔をしません。
+
+----------------------------------------------------------------------
+
+【走行中に音楽が止まらないことを最優先にしている】
+
+ このアプリはマラソン中に使います。ポケットやアームバンドに入れた
+ まま走るので、何かあっても竹弘はすぐ画面を見られません。
+
+ だから「困ったら止める」ではなく「困っても先へ進む」を基本に
+ しています。v110で alert(押されるまでJavaScriptが止まる)を
+ やめて自作パネルにしたのも、この方針のためです。
+======================================================================
+*/
+
+
+// ==========================================================
+// 1. 再生モード(v113)
+// ==========================================================
+/*
+曲一覧の見出しにある丸ボタンを押すたびに、次の順で切り替わります。
+
+    🔁(薄いグレー) … OFF      一覧の最後まで来たら止まる
+    🔁(青)         … 全曲ループ 最後まで来たら先頭へ戻る
+    🔂(青)         … 1曲リピート 今の曲だけを繰り返す
+    🔀(青)         … ランダム   順番をシャッフルして流す
+
+【なぜ OFF を入れたのか(竹弘の判断)】
+
+OFFが無いと必ずどれかが有効になり、**放っておくと音楽が永遠に
+鳴り続けます。** 走り終わった後に自然に終わってほしいので、
+「最後まで来たら止まる」状態を残しました。
+
+【なぜ文字列で持つのか】
+
+0,1,2,3 のような数値でも作れますが、後からコードを読んだ時に
+「2ってどれだっけ」と分からなくなります。"one" と書いてあれば
+1曲リピートだと読んで分かるので、間違いが起きにくくなります。
+*/
+const PLAY_MODE_OFF = "off";
+const PLAY_MODE_ALL = "all";
+const PLAY_MODE_ONE = "one";
+const PLAY_MODE_SHUFFLE = "shuffle";
+
+/*
+ボタンを押した時に切り替わる順番です。
+
+配列にしておくと、切り替えの処理が「今の位置の次を取るだけ」で
+済みます。順番を変えたくなった時も、この並びを入れ替えるだけです。
+*/
+const PLAY_MODE_SEQUENCE = [
+    PLAY_MODE_OFF,
+    PLAY_MODE_ALL,
+    PLAY_MODE_ONE,
+    PLAY_MODE_SHUFFLE
+];
+
+/*
+モードごとにボタンへ出す記号です。
+
+OFFと全曲ループが同じ 🔁 なのは意図的で、**色の濃さで区別します**
+(OFFは薄いグレー、全曲ループは青)。記号まで変えてしまうと、
+走りながら見た時に「何の記号だったか」を思い出す手間が増えるためです。
+*/
+const PLAY_MODE_ICONS = {
+    off: "🔁",
+    all: "🔁",
+    one: "🔂",
+    shuffle: "🔀"
+};
+
+// 今どのモードかを覚えておきます(初期値はOFF=今までと同じ動き)
+let currentPlayMode = PLAY_MODE_OFF;
+
+
+// ==========================================================
+// 2. 続けて失敗した時の歯止め
+// ==========================================================
+/*
+何曲まで続けて飛ばすかの上限です。
+
+【なぜ上限が要るのか】
+
+「失敗したら次へ」をそのまま繰り返すと、**もし全曲が鳴らせない
+状態(フォルダの権限が切れた等)になった時に、369曲を一気に
+駆け抜けてしまいます。** 一瞬で最後まで到達し、⚠️パネルには
+大量の曲が積み上がることになります。
+
+そこで、続けて10曲失敗したらそこで手を止めます。10曲も連続で
+駄目なら、それは個々の曲の問題ではなく、もっと大きな原因
+(権限切れなど)が起きていると考えられるためです。
+
+「続けて」なので、間に1曲でも鳴れば数え直しになります。
+*/
+const MAX_CONSECUTIVE_SKIP = 10;
+
+
+// ==========================================================
+// 3. ランダム再生用の順番
+// ==========================================================
+/*
+シャッフルした曲順(track_idの配列)です。
+
+【画面の曲一覧は並び替えません】
+
+ランダム再生でも、画面に見えている曲の並びは変わりません。
+別の配列をここに用意し、**再生する順番だけ**を入れ替えています。
+
+もし currentOrderList そのものをシャッフルしてしまうと、竹弘が
+時間をかけて並べた曲順が、ランダムを押した瞬間に消えてしまいます。
+「聴く順番」と「並べた順番」は別物として扱います。
+*/
+let shuffleOrder = [];
+
+/**
+ * いま鳴らしてよい曲の順番を返します(v166で追加)。
+ *
+ * 【なぜ currentOrderList を直接見てはいけないのか】
+ * 🕺ノリノリRun再生モードでは、画面にノリ注入済みの曲しか並んでいません。
+ * ところが「次の曲」を決める処理は曲順(currentOrderList)を直接見ていた
+ * ため、**画面に無い曲(🛌)が次に鳴ってしまう**不具合がありました
+ * (竹弘の実機報告、2026-08-30)。
+ *
+ * 画面に並んでいるものと、次に鳴るものは、必ず一致していなければ
+ * なりません。そこで「今のモードで鳴らせる曲」をここ1か所で決め、
+ * 曲送り・自動再生・ランダムのすべてがこれを見るようにしました。
+ *
+ * @return {string[]} 鳴らしてよい曲IDの配列
+ */
+function getPlayOrderList(){
+
+    // メインメニューでは全曲がそのまま対象です
+    if(!isNoriRunMode){ return currentOrderList; }
+
+    /*
+    ノリ注入済みの曲だけに絞ります。判定は js/tap.js の
+    hasSavedTapResult() を借りており、曲一覧の絞り込み
+    (js/list-view.js)とまったく同じ基準です。
+    */
+    return currentOrderList.filter(function(trackId){
+
+        const track = libraryMap[trackId];
+
+        return track && hasSavedTapResult(track);
+
+    });
+
+}
+
+/**
+ * 曲順をシャッフルして、ランダム再生用の順番を作ります。
+ *
+ * 除外された曲(グレー表示)は最初から入れません。
+ */
+function buildShuffleOrder(){
+
+    // まず、鳴らせる曲だけを集めます
+    shuffleOrder = getPlayOrderList().filter(function(trackId){
+        return !isExcluded(libraryMap[trackId]);
+    });
+
+    /*
+    【フィッシャー・イェーツのシャッフル】
+
+    トランプを切るのと同じことを配列でやる、昔からある確実な方法です。
+
+      1. 一番後ろの札に注目する
+      2. まだ触っていない札の中から1枚を無作為に選ぶ
+      3. その2枚を入れ替える
+      4. 注目する場所を1つ前にずらして、1に戻る
+
+    後ろから順に「この位置に来る札」を確定させていくので、
+    全部の並び方が同じ確率で出てきます。
+
+    Math.random() は 0以上1未満の小数を返す標準の命令です。
+    (i + 1) を掛けて Math.floor() で小数を切り捨てると、
+    0 から i までの整数が1つ得られます。
+
+    ※「配列を適当に混ぜる」だけなら sort() で乱数を返す書き方も
+      ありますが、あれは並びに偏りが出ることが知られています。
+      曲順は毎回きれいに混ざってほしいので、こちらを使います。
+    */
+    for(let i = shuffleOrder.length - 1; i > 0; i--){
+
+        const j = Math.floor(Math.random() * (i + 1));
+
+        const temp = shuffleOrder[i];
+        shuffleOrder[i] = shuffleOrder[j];
+        shuffleOrder[j] = temp;
+
+    }
+
+    console.log("ランダム再生の順番を作りました :",shuffleOrder.length,"曲");
+
+}
+
+
+// ==========================================================
+// 4. 次に鳴らす曲を探す
+// ==========================================================
+/*
+「一覧の最後まで来たので先頭に戻ります」を、**同じ曲について1回だけ**
+出すための控えです(v199)。
+
+【なぜ要るのか】
+下の findNextTrackId() は、曲が終わった時だけ呼ばれるわけではありません。
+🕺ノリノリRun再生では**接続点の15秒前から、1秒に約4回**呼ばれます
+(js/connect.js が「次の曲は誰か」を聞き直し続けるため)。
+今の曲が一覧の最後だと、そのたびに同じ一文が出て、🐛パネルが
+数十行埋まっていました(2026-09-13 竹弘のログ③)。
+
+動きそのものは正常です。ただ、🐛パネルは1行増えるたびに画面を
+描き直すので、**ミドルクラス機で重さを測る時の雑音**になります。
+
+【どう控えるか】
+先頭に戻った時の「元の曲」を覚えておき、同じ曲ならもう出しません。
+ふつうに次の曲が見つかった時は空に戻すので、一覧を2周目に回って
+また最後の曲に来た時は、ちゃんともう一度出ます。
+
+⚠️ 「曲が実際に変わった瞬間に出す」形にしなかったのは、その瞬間を
+   知っているのが js/connect.js(曲接続=ノリRunの心臓部)だからです。
+   ログのためだけに心臓部へ手を入れるのは割に合わないので、
+   このファイルの中だけで片付けました。
+*/
+let wrapLoggedFromTrackId = null;
+
+/**
+ * 指定した曲の「次」に鳴らすべき曲を返します。
+ *
+ * 除外された曲(グレー表示)は飛ばします。
+ *
+ * @param  {string} fromTrackId - どの曲の次を探すか
+ * @return {string|null} 次の曲のtrack_id。もう無ければ null
+ */
+function findNextTrackId(fromTrackId){
+
+    // ---- 1曲リピート ----
+    /*
+    同じ曲を返します。ただし実際の鳴らし直しは playNextTrack() が
+    もっと軽い方法で行うので、ここへ来ることはほとんどありません
+    (曲送りボタンを作った時のために、筋を通してあります)。
+    */
+    if(currentPlayMode === PLAY_MODE_ONE){
+        return fromTrackId;
+    }
+
+    // ---- ランダム ----
+    if(currentPlayMode === PLAY_MODE_SHUFFLE){
+        return findNextInShuffle(fromTrackId);
+    }
+
+    // ---- OFF / 全曲ループ ----
+    /*
+    今のモードで鳴らせる曲だけを対象にします(v166)。
+    🕺ノリノリRun再生では、ノリ注入済みの曲だけが並びます。
+    */
+    const orderList = getPlayOrderList();
+
+    /*
+    今の曲が、その並びの何番目にいるかを調べます。
+
+    indexOf は「配列の中で何番目にあるか」を返す標準の命令で、
+    見つからない時は -1 を返します。
+    */
+    const currentIndex = orderList.indexOf(fromTrackId);
+
+    /*
+    ---- 今の曲が、その並びにいない時(v169) ----
+
+    【いつ起きるか】
+    メインメニューで🛌の曲を鳴らしたまま🕺ノリノリRun再生へ入ると、
+    その曲は曲一覧から消えますが、**鳴り続けます**(走っている最中に
+    曲を強制的に止める方が違和感が大きい、という竹弘の判断)。
+    この時 orderList(ノリ注入済みだけの並び)に今の曲はいないので、
+    indexOf は -1 を返します。
+
+    【v168までの動き = 竹弘が実機で見つけた不具合】
+    -1 のまま下の for文へ進むと i=0 から始まるため、**曲一覧の
+    いちばん上の曲**が次に鳴っていました。
+
+        竹弘:「曲一覧のトップに戻って再生される為、メインメニューに
+                戻った際に、再生曲位置にジャンプしてしまう為、
+                再生曲によっては中盤以降ではなくなってしまう」
+
+    369曲の中盤を聴いていたのに、モードを往復しただけで一覧の先頭へ
+    飛ばされてしまう、という問題です。
+
+    【直した後】
+    全曲の並び(currentOrderList)を頼りに、**今の曲より後ろにある
+    最初のノリ注入曲**を返します。竹弘の言葉では「メインメニューの
+    一覧の再生中以降から抽出された曲」。聴いていた場所を見失いません。
+    */
+    if(currentIndex === -1){
+
+        return findNextFromFullOrder(fromTrackId,orderList);
+
+    }
+
+    /*
+    今の曲の1つ後ろから、順番に見ていきます。
+
+    除外された曲は飛ばすので、「次」は必ずしも隣とは限りません。
+    鳴らせる見込みのある曲が見つかった時点で、それを返します。
+    */
+    for(let i = currentIndex + 1; i < orderList.length; i++){
+
+        const trackId = orderList[i];
+
+        if(!isExcluded(libraryMap[trackId])){
+
+            /*
+            ふつうに次の曲が見つかったので、「先頭に戻った」控えを
+            空に戻します(v199)。理由は wrapLoggedFromTrackId のコメント。
+            */
+            wrapLoggedFromTrackId = null;
+
+            return trackId;
+        }
+
+    }
+
+    /*
+    最後まで見ても見つからなかった場合の分かれ道です。
+
+      全曲ループ … 先頭に戻って、最初の鳴らせる曲を返す
+      OFF        … null を返して、そこで再生を終える
+    */
+    if(currentPlayMode === PLAY_MODE_ALL){
+
+        for(let i = 0; i < orderList.length; i++){
+
+            const trackId = orderList[i];
+
+            if(!isExcluded(libraryMap[trackId])){
+
+                /*
+                同じ曲について2回目以降は黙ります(v199)。
+                v198までは、接続点の15秒前から1秒に約4回この一文が
+                出ていました。理由は wrapLoggedFromTrackId のコメント。
+                */
+                if(wrapLoggedFromTrackId !== fromTrackId){
+
+                    console.log("一覧の最後まで来たので先頭に戻ります");
+
+                    wrapLoggedFromTrackId = fromTrackId;
+
+                }
+
+                return trackId;
+
+            }
+
+        }
+
+    }
+
+    return null;
+
+}
+
+/**
+ * 今の曲が「鳴らせる曲の並び」にいない時に、次の曲を探します(v169)。
+ *
+ * 全曲の並び(currentOrderList)の中で今の曲の位置を調べ、そこから
+ * **後ろへ向かって**、最初に見つかった鳴らせる曲を返します。
+ *
+ * @param  {string}   fromTrackId - どの曲の次を探すか(並びにいない曲)
+ * @param  {string[]} orderList   - 今のモードで鳴らせる曲の並び
+ * @return {string|null} 次の曲のtrack_id。もう無ければ null
+ */
+function findNextFromFullOrder(fromTrackId,orderList){
+
+    /*
+    全曲の並びの中で、今の曲が何番目かを調べます。
+
+    currentOrderList は「竹弘が並べた曲ぜんぶの順番」で、モードを
+    切り替えても中身は変わりません(絞り込みは画面の描画と
+    getPlayOrderList() が行っており、並び順そのものには手を触れない
+    作りにしてあります)。だからこそ、こちらを「物差し」に使えます。
+    */
+    const fullIndex = currentOrderList.indexOf(fromTrackId);
+
+    if(fullIndex >= 0){
+
+        // 今の曲の1つ後ろから、全曲の並びを順に見ていきます
+        for(let i = fullIndex + 1; i < currentOrderList.length; i++){
+
+            const trackId = currentOrderList[i];
+
+            /*
+            「今のモードで鳴らせる曲」かつ「除外されていない曲」だけを
+            採ります。orderList.indexOf(trackId) が -1 でなければ、
+            その曲は今の画面にも並んでいる、という意味です。
+            */
+            if(orderList.indexOf(trackId) !== -1 && !isExcluded(libraryMap[trackId])){
+
+                return trackId;
+
+            }
+
+        }
+
+        /*
+        今の曲より後ろに、鳴らせる曲が1曲も無かった場合です。
+
+        全曲ループなら下へ進んで先頭から探し直しますが、それ以外
+        (OFF＝最後で止まる設定)は**ここで終わり**です。
+
+        ⚠️ v168まではこの区別ができていませんでした。-1 のせいで
+           「まだ並びの先頭にいる」と誤解し、OFFなのに一覧の先頭の曲を
+           鳴らしてしまう状態でした。竹弘の指摘を直す過程で見つかった、
+           もう1つの不具合です。
+        */
+        if(currentPlayMode !== PLAY_MODE_ALL){ return null; }
+
+    }
+
+    /*
+    ここへ来るのは次の2つの場合です。
+
+      ・全曲ループで、今の曲より後ろに鳴らせる曲が無かった
+      ・全曲の並びにも今の曲が見当たらなかった(通常は起きません)
+
+    どちらも「先頭から最初の鳴らせる曲」へ着地するのが自然です。
+    */
+    for(let i = 0; i < orderList.length; i++){
+
+        const trackId = orderList[i];
+
+        if(!isExcluded(libraryMap[trackId])){ return trackId; }
+
+    }
+
+    return null;
+
+}
+
+/**
+ * ランダム再生で、次に鳴らす曲を探します。
+ */
+function findNextInShuffle(fromTrackId){
+
+    // まだ順番を作っていなければ、ここで作ります
+    if(shuffleOrder.length === 0){
+        buildShuffleOrder();
+    }
+
+    const currentIndex = shuffleOrder.indexOf(fromTrackId);
+
+    for(let i = currentIndex + 1; i < shuffleOrder.length; i++){
+
+        const trackId = shuffleOrder[i];
+
+        // 順番を作った後で除外された曲があるかもしれないので、ここでも確認します
+        if(libraryMap[trackId] && !isExcluded(libraryMap[trackId])){
+            return trackId;
+        }
+
+    }
+
+    /*
+    ひと通り流し終わったら、**順番を作り直してまた続けます。**
+
+    ランダム再生の途中で止まってしまうと、走っている最中に無音に
+    なってしまうためです。切り直したトランプで、もう一周する形。
+
+    作り直した順番の先頭が「今まで鳴っていた曲」だと、同じ曲が
+    2回続いてしまいます。それを避けるため、違う曲が見つかるまで
+    先へ進んでから返しています。
+    */
+    buildShuffleOrder();
+
+    for(const trackId of shuffleOrder){
+
+        if(trackId !== fromTrackId){
+            return trackId;
+        }
+
+    }
+
+    return null;
+
+}
+
+
+// ==========================================================
+// 5. 次の曲を鳴らす
+// ==========================================================
+/**
+ * 次の曲を鳴らします。鳴らなければ、さらにその次へ進みます。
+ */
+async function playNextTrack(){
+
+    // 【開発用調査ログ】原因判明後に削除(CLAUDE.md参照)
+    logDebugEvent("playNextTrack開始 (mode=" + currentPlayMode + ")");
+
+    /*
+    ---- 1曲リピートは、もうここには来ません(v144) ----
+
+    以前はここに「1曲リピート専用の軽い再生」の分岐がありました。
+    v144で、1曲リピートは audio要素の loop 属性(js/player.js の
+    playTrack()が設定)に置き換えたため、リピート中は ended
+    イベントそのものが発火しなくなり、この playNextTrack() が
+    呼ばれること自体が無くなりました。
+
+    経緯(画面ロック中の再生調査、2026-08-23)は player.js の
+    audioPlayer.loop を設定している箇所のコメントを参照してください。
+    */
+
+    let nextTrackId = findNextTrackId(currentTrackId);
+
+    // 続けて何曲失敗したかの数え役
+    let failCount = 0;
+
+    /*
+    while は「条件を満たす間くり返す」書き方です。
+    次の曲が見つかる限り、鳴るまで試し続けます。
+
+    【なぜ「自分自身をもう一度呼ぶ(再帰)」にしなかったか】
+
+    失敗するたびに playNextTrack() を呼び直す書き方もできますが、
+    369曲すべてが鳴らない場合に呼び出しが369段も積み重なります。
+    while なら何曲あっても積み上がらないので、こちらにしました。
+    */
+    while(nextTrackId){
+
+        /*
+        playTrack() は「鳴り始めたかどうか」を返します(v112で追加)。
+
+        await を付けているのは、鳴るか鳴らないかの結果が出るまで
+        待つ必要があるためです。待たずに次へ進むと、前の曲の結果が
+        出ないうちに次の曲を鳴らし始めてしまいます。
+        */
+        const started = await playTrack(nextTrackId);
+
+        // 鳴った。ここで役目は終わりです
+        if(started){ return; }
+
+        failCount++;
+
+        if(failCount >= MAX_CONSECUTIVE_SKIP){
+
+            console.warn(
+                "続けて" + MAX_CONSECUTIVE_SKIP + "曲再生できなかったため、" +
+                "自動再生を止めました。フォルダの権限が切れている可能性があります。"
+            );
+
+            return;
+
+        }
+
+        console.log("再生できないため次の曲へ進みます :",nextTrackId);
+
+        /*
+        失敗した曲の「次」を探し直します。
+
+        currentTrackId ではなく nextTrackId を渡しているのが要点です。
+        失敗した時点で currentTrackId はもう書き換わっていることが
+        あり、それを基準にすると同じ曲を何度も試しかねないためです。
+        */
+        nextTrackId = findNextTrackId(nextTrackId);
+
+    }
+
+    console.log("最後の曲まで再生しました(自動再生を終了します)");
+
+}
+
+
+// ==========================================================
+// 6. 曲送り / 曲戻し(v119)
+// ==========================================================
+/*
+曲一覧の見出しにある ⏭ ⏮ を押した時の処理です。
+
+【自動再生の「次の曲」と、なぜ別の関数なのか】
+
+上の findNextTrackId() は曲が終わった時に呼ばれるもので、1曲リピート
+なら同じ曲を返します。しかし **⏭ を押したのに同じ曲が鳴り直したら、
+竹弘は「壊れている」と感じます。**
+
+ボタンを押すのは「今の曲はもういい、隣へ行きたい」という
+はっきりした意思表示です。そのため1曲リピート中でも、こちらは
+必ず隣の曲へ進みます(一般的な音楽プレイヤーと同じ振る舞いです)。
+
+竹弘の指示で、⏮ は **いつでも前の曲へ** 戻ります(「3秒以上聴いて
+いたら今の曲の頭出し」という作りにはしていません。押した時に何が
+起きるかが毎回同じ方が、走りながらでも迷わないためです)。
+*/
+
+/**
+ * 今の曲の1つ隣を探します。
+ *
+ * @param  {number} step - +1 なら次の曲、-1 なら前の曲
+ * @return {string|null} 見つかった曲のtrack_id
+ */
+function findNeighborTrackId(step){
+
+    /*
+    ランダム再生の時は、シャッフルした順番の中で隣を探します。
+    そうしないと「⏭ で進んだ曲」と「自動で流れる曲」が食い違います。
+    */
+    const list = (currentPlayMode === PLAY_MODE_SHUFFLE)
+        ? shuffleOrder
+        : getPlayOrderList();
+
+    if(list.length === 0){ return null; }
+
+    const currentIndex = list.indexOf(currentTrackId);
+
+    /*
+    ---- 今の曲が、その並びにいない時(v169) ----
+
+    自動で次へ進む時(findNextTrackId)とまったく同じ事情です。
+    メインメニューで🛌の曲を鳴らしたまま🕺ノリノリRun再生へ入ると、
+    その曲は並びにいないので -1 になります。
+
+    ⚠️ v168まではモードに関係なく「先頭の鳴らせる曲」を返していました。
+       そのため **⏮(前の曲)を押しても一覧の先頭へ飛んで**しまいます。
+       前へ戻りたいのに先頭へ行く、という動きです。竹弘はまだこの
+       操作を踏んでいませんでしたが、根っこは同じ場所でした。
+    */
+    if(currentIndex === -1){
+
+        const neighbor = findNeighborFromFullOrder(step,list);
+
+        if(neighbor){ return neighbor; }
+
+        // その方向に1曲も無ければ、端に着いた時と同じ扱いにします
+        return findWrapAroundTrackId(step,list);
+
+    }
+
+    /*
+    隣へ1つずつ動きながら、鳴らせる曲を探します。
+    除外された曲は飛ばすので、隣が必ず「1つ先」とは限りません。
+    */
+    for(let i = currentIndex + step; i >= 0 && i < list.length; i += step){
+
+        const trackId = list[i];
+
+        if(libraryMap[trackId] && !isExcluded(libraryMap[trackId])){
+            return trackId;
+        }
+
+    }
+
+    // 端に着きました(扱いは下の関数にまとめてあります)
+    return findWrapAroundTrackId(step,list);
+
+}
+
+/**
+ * 今の曲が「鳴らせる曲の並び」にいない時に、隣の曲を探します(v169)。
+ *
+ * findNextFromFullOrder() の ⏭ ⏮ 版です。あちらが「後ろへ」だけ
+ * 進むのに対し、こちらは step の向きに合わせて前後どちらへも進みます。
+ *
+ * @param  {number}   step - +1 なら次の曲(⏭)、-1 なら前の曲(⏮)
+ * @param  {string[]} list - 今のモードで鳴らせる曲の並び
+ * @return {string|null} 見つかった曲のtrack_id。無ければ null
+ */
+function findNeighborFromFullOrder(step,list){
+
+    /*
+    ランダム再生の時は、今までどおり先頭の鳴らせる曲を返します。
+
+    シャッフルした順番(shuffleOrder)は毎回切り直したトランプなので、
+    **並び順に意味がありません。** 「竹弘が並べた順で1つ後ろ」を
+    探しても、ランダム再生の趣旨に合わないためです。
+    先頭の曲自体が無作為に選ばれたものなので、これで十分です。
+    */
+    if(currentPlayMode === PLAY_MODE_SHUFFLE){
+
+        for(const trackId of list){
+            if(!isExcluded(libraryMap[trackId])){ return trackId; }
+        }
+
+        return null;
+
+    }
+
+    const fullIndex = currentOrderList.indexOf(currentTrackId);
+
+    if(fullIndex < 0){ return null; }
+
+    /*
+    step の向きへ、全曲の並びを1曲ずつ見ていきます。
+
+        ⏭(step=+1) … 今の曲より後ろにある、最初の🕺
+        ⏮(step=-1) … 今の曲より手前にある、最後の🕺
+
+    どちらも「今いた場所の隣」へ行くので、聴いていた場所を
+    見失いません。
+    */
+    for(let i = fullIndex + step; i >= 0 && i < currentOrderList.length; i += step){
+
+        const trackId = currentOrderList[i];
+
+        if(list.indexOf(trackId) !== -1 && !isExcluded(libraryMap[trackId])){
+            return trackId;
+        }
+
+    }
+
+    return null;
+
+}
+
+/**
+ * 端に着いた時、反対の端へ回り込みます。
+ *
+ * v169で findNeighborTrackId() から切り出しました。今の曲が並びに
+ * いない時の経路からも、まったく同じ扱いをしたかったためです
+ * (2か所に同じ処理を書くと、片方だけ直す事故が起きます)。
+ *
+ * @param  {number}   step - +1 なら次の曲(⏭)、-1 なら前の曲(⏮)
+ * @param  {string[]} list - 今のモードで鳴らせる曲の並び
+ * @return {string|null} 回り込んだ先の曲。回り込まない設定なら null
+ */
+function findWrapAroundTrackId(step,list){
+
+    /*
+    全曲ループとランダムの時だけ、反対の端へ回り込みます(一覧の
+    最後で ⏭ を押したら先頭へ、先頭で ⏮ を押したら最後へ)。
+    OFFと1曲リピートの時は、端で止まります。
+    */
+    if(currentPlayMode !== PLAY_MODE_ALL && currentPlayMode !== PLAY_MODE_SHUFFLE){
+
+        return null;
+
+    }
+
+    const wrapStart = (step > 0) ? 0 : list.length - 1;
+
+    for(let i = wrapStart; i >= 0 && i < list.length; i += step){
+
+        const trackId = list[i];
+
+        if(libraryMap[trackId] && !isExcluded(libraryMap[trackId])){
+            return trackId;
+        }
+
+    }
+
+    return null;
+
+}
+
+/**
+ * ⏭ / ⏮ が押された時に、隣の曲を鳴らします。
+ */
+async function skipTrack(step){
+
+    // まだ1曲も選んでいない時は、鳴らすものがないので何もしません
+    if(!currentTrackId){ return; }
+
+    const trackId = findNeighborTrackId(step);
+
+    if(!trackId){
+
+        console.log("これ以上、進める曲がありません");
+
+        return;
+
+    }
+
+    /*
+    鳴らせなかった場合の追いかけはしません。
+
+    ここは竹弘が自分で押したボタンなので、⚠️パネルが出た時点で
+    「この曲は駄目だった」と分かります。勝手に次々と飛ばしていくと、
+    どこまで進んだのか分からなくなってしまいます
+    (自動再生の時に飛ばし続けるのは、画面を見ていないためです)。
+    */
+    await playTrack(trackId);
+
+}
+
+const prevBtn = document.getElementById("prev-btn");
+const nextBtn = document.getElementById("next-btn");
+
+prevBtn.addEventListener("click",function(){
+    skipTrack(-1);
+});
+
+nextBtn.addEventListener("click",function(){
+    skipTrack(1);
+});
+
+
+// ==========================================================
+// 7. 曲が終わったら次へ
+// ==========================================================
+/*
+ended は「曲が最後まで流れ終わった」時に起きる、audio要素の
+標準のイベントです。
+
+【停止ボタンで止めた時に、次の曲が鳴り出さない理由】
+
+止めた時に起きるのは pause であって ended ではありません。
+そのためこの処理は動かず、信号待ちや給水で止めても
+勝手に曲が進んでしまうことはありません。
+
+【なぜ自分でタイマーを回さないのか】
+
+「残り時間を測って、0になったら次へ」と自作することもできますが、
+再生速度を変える機能(ピッチ定規)があるため、残り時間の計算が
+複雑になります。ended はブラウザが実際の再生を見て教えてくれる
+合図なので、速度を変えても正しいタイミングで届きます。
+*/
+/*
+⚠️ v167から bindDeckEvent(js/deck.js)を通しています。
+
+デッキが2枚になったため、1枚目にだけ耳を付けると、2枚目に主役が
+交代した瞬間に「曲が終わった」という知らせが届かなくなり、次の曲へ
+進まなくなります。bindDeckEvent は両方に耳を付けたうえで、
+**いま鳴っている方から来た知らせだけ**を通してくれます。
+
+繋いでいる最中は2曲が同時に鳴るので、この選別が特に効きます。
+裏でフェードアウト中の曲が終わった知らせで次へ飛んでしまう、
+という事故を防げます。
+*/
+bindDeckEvent("ended",function(){
+
+    console.log("曲が終わりました。次の曲へ進みます");
+
+    playNextTrack();
+
+});
+
+
+// ==========================================================
+// 8. 再生モードのボタン(v113)
+// ==========================================================
+
+const playModeBtn = document.getElementById("play-mode-btn");
+
+/*
+ボタンが押されたら、次のモードへ切り替えます。
+*/
+playModeBtn.addEventListener("click",function(){
+
+    /*
+    今のモードが並びの何番目かを調べ、その次へ進みます。
+
+    % は「割った余り」を求める記号です。最後(3番目)まで来た時に
+    (3 + 1) % 4 = 0 となって先頭に戻るので、if文を書かずに
+    ぐるりと一周させられます。
+    */
+    const currentIndex = PLAY_MODE_SEQUENCE.indexOf(currentPlayMode);
+    const nextIndex = (currentIndex + 1) % PLAY_MODE_SEQUENCE.length;
+
+    currentPlayMode = PLAY_MODE_SEQUENCE[nextIndex];
+
+    /*
+    ランダムに切り替わった時点で、順番を作り直します。
+
+    走るたびに違う並びで聴けるようにするためです。前回の順番が
+    残っていると、アプリを開くたびに同じ流れになってしまいます。
+    */
+    if(currentPlayMode === PLAY_MODE_SHUFFLE){
+        buildShuffleOrder();
+    }
+
+    /*
+    audio要素の loop 属性も、その場で切り替えます(v144)。
+
+    js/player.js の playTrack() でも設定していますが、あちらは
+    「次の曲を鳴らし始める瞬間」にしか効きません。今まさに鳴っている
+    曲の途中でモードを切り替えた場合(例: 連続再生中に1曲リピートへ
+    切り替える)にも即座に反映されるよう、ここでも設定します。
+
+    ⚠️ **判断は shouldLoopByConnect()(js/connect.js)に任せます(v219)。**
+       🕺ノリノリRun再生の1曲リピートは loop属性 ではなく**接続で繋いで**
+       ループさせるためです(棚③⑫)。**同じ条件をここに書き写すと、
+       片方だけ直した時に loop属性 と接続が二重に効いて、助走中に
+       曲が頭へ戻るという壊れ方をします。**
+    */
+    audioPlayer.loop =
+        (currentPlayMode === PLAY_MODE_ONE)
+        && !shouldLoopByConnect(libraryMap[currentTrackId]);
+
+    updatePlayModeButton();
+
+    savePlayModeSetting();
+
+    console.log("再生モードを変更しました :",currentPlayMode);
+
+});
+
+/**
+ * ボタンの記号と色を、今のモードに合わせます。
+ */
+function updatePlayModeButton(){
+
+    playModeBtn.textContent = PLAY_MODE_ICONS[currentPlayMode];
+
+    /*
+    OFFの時だけ薄いグレー、それ以外は青くします。
+
+    classList.toggle は「第2引数がtrueなら付ける、falseなら外す」
+    という命令です。付ける/外すをif文で書き分けなくて済みます。
+    */
+    playModeBtn.classList.toggle(
+        "play-mode-off",
+        currentPlayMode === PLAY_MODE_OFF
+    );
+
+    playModeBtn.classList.toggle(
+        "play-mode-active",
+        currentPlayMode !== PLAY_MODE_OFF
+    );
+
+}
+
+
+// ==========================================================
+// 9. 再生モードの保存と復元
+// ==========================================================
+/*
+選んだモードは settings ストアに残し、次にアプリを開いた時も
+同じモードで始められるようにします(並び順の保存と同じ考え方)。
+
+走る前に決めた設定が、走り出す時にも残っていてほしいためです。
+*/
+
+async function savePlayModeSetting(){
+
+    try{
+
+        // settings ストアはキーを自分で指定する形なので、3つ目の引数に渡します
+        await idbPut(STORE_SETTINGS,currentPlayMode,"play_mode");
+
+    }
+    catch(error){
+
+        console.error(
+            "再生モードの保存に失敗 :",
+            error.name,
+            error.message
+        );
+
+    }
+
+}
+
+/**
+ * 保存してある再生モードを読み込み、ボタンに反映します。
+ *
+ * js/main.js の起動処理から、曲順を読み込んだ後に呼ばれます。
+ */
+async function loadPlayModeSetting(){
+
+    try{
+
+        const saved = await idbGet(STORE_SETTINGS,"play_mode");
+
+        /*
+        保存されている値が、今のコードで使える4つのどれかである時だけ
+        受け入れます。将来モードの名前を変えた場合に、古い値が残って
+        いても壊れないようにするためです。
+        */
+        if(saved && PLAY_MODE_SEQUENCE.indexOf(saved) !== -1){
+            currentPlayMode = saved;
+        }
+
+        // ランダムで終了していた場合は、ここで順番を作り直します
+        if(currentPlayMode === PLAY_MODE_SHUFFLE){
+            buildShuffleOrder();
+        }
+
+    }
+    catch(error){
+
+        console.error(
+            "再生モードの読み込みに失敗 :",
+            error.name,
+            error.message
+        );
+
+    }
+
+    // 読み込めなかった時もボタンの見た目は整えます(初期値のOFF表示になります)
+    updatePlayModeButton();
+
+}
