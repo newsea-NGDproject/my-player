@@ -245,9 +245,17 @@ function createRowElement(trackId){
     そのURLは使い終わったら必ず解放しなければならないためです
     (createJacketImage の解説を参照)。
     */
-    if(track.cover_art){
+    /*
+    ⚠️ **曲一覧の見た目は v207 でも変えていません**(竹弘の指定:
+       「曲一覧は今のまま。ジャケがあれば表示、無ければ何も置かない」)。
+       変えたのは「どの画像を出すか」の1点だけで、差し替えを作った曲は
+       ここにも差し替えが出ます(上半分・ロック画面・特大表示と同じ絵)。
+    */
+    const rowCover = getTrackCover(track);
+
+    if(rowCover){
         const infoArea = row.querySelector(".info-area");
-        infoArea.appendChild(createJacketImage(track.cover_art));
+        infoArea.appendChild(createJacketImage(rowCover));
     }
 
     /*
@@ -270,6 +278,41 @@ function createRowElement(trackId){
     }
 
     return row;
+
+}
+
+/**
+ * その曲で「表示すべきジャケット」を1つ返します(v207で新設)。
+ *
+ * 【なぜこの関数が要るのか】
+ *
+ * v207から、ジャケットの置き場所が2つになりました。
+ *
+ *     cover_art        … 音楽ファイルに埋め込まれていた本物のジャケット
+ *                        **絶対に上書きしない**(竹弘の指定)
+ *     cover_art_custom … 竹弘がカメラや写真フォルダから作った差し替え
+ *
+ * 表示のルールは一本だけです ――「**差し替えがあればそちらを使う**」。
+ *
+ * ⚠️ **この判断を1か所にまとめているのが肝心です。** ジャケットを
+ *    表示している場所は4つあり(曲一覧・上半分・ロック画面・特大表示)、
+ *    それぞれが `track.cover_art_custom || track.cover_art` と
+ *    書いていたら、**1か所直し忘れた時にそこだけ古い絵が出ます。**
+ *    デッキに何かを当てる時は両方に当てる(v193-v196の教訓)のと
+ *    同じ考え方で、読む口を1つにしておきます。
+ *
+ * ⚠️ 『オリジナルジャケット』ボタンは `cover_art_custom` を**消す**
+ *    だけで元に戻ります。この関数が自動的に cover_art を返すためで、
+ *    「今どちらを表示中か」という旗を別に持つ必要がありません。
+ *
+ * @param  {Object} track … libraryMap から取り出した1曲分のデータ
+ * @return {Blob|null}    … 表示に使う画像。どちらも無ければ null
+ */
+function getTrackCover(track){
+
+    if(!track){ return null; }
+
+    return track.cover_art_custom || track.cover_art || null;
 
 }
 

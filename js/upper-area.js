@@ -105,44 +105,20 @@ function showNowPlaying(track){
 
     // ---- ジャケット画像 ----
     /*
-    前の曲の画像が残らないよう、まず中身を空にします。
+    v207から、ジャケットの描き直しだけを下の関数に切り出しました。
 
-    そのあと、曲一覧と同じ createJacketImage() で <img> を作り、
-    クラス名だけ上半分用(.ua-jacket-img)に付け替えています。
-    曲一覧のジャケットは44px角の固定サイズですが、上半分は
-    エリア3〜4の高さいっぱいに広げるためです。
+    【なぜ切り出したのか】
+    差し替え(📷)でジャケットを作った直後、上半分の表示も
+    入れ替える必要があります。そこで showNowPlaying() をもう一度
+    呼ぶと、**再生位置の表示が 0:00 に戻ってしまいます**
+    (この関数は「曲が変わった時」に呼ばれる前提で、上の方で
+      npSeekEl に 0 を書き込んでいるため)。
 
-    こうすると、一時URLをきちんと解放する後始末(あの関数の
-    onload / onerror でやっています)まで丸ごと再利用でき、
-    list-view.js を1文字も書き換えずに済みます。
+    走っている最中に時間表示が巻き戻るのは、いちばん見せたくない
+    見た目です。だから js/jacket.js からは**ジャケットだけ**を
+    差し替えられるようにしてあります。
     */
-    npJacketEl.innerHTML = "";
-
-    if(track.cover_art){
-
-        const jacketImg = createJacketImage(track.cover_art);
-        jacketImg.className = "ua-jacket-img";
-
-        npJacketEl.appendChild(jacketImg);
-
-        npJacketEl.style.display = "block";
-
-    }
-    else{
-
-        /*
-        ジャケットが無い曲では、枠ごと消します(v91、竹弘の指示)。
-
-        曲一覧と同じ扱いです。あちらもジャケットが取得できた曲に
-        だけ画像を差し込む作りで、無い曲は何も置きません。
-
-        枠が消えると、右端に空いたぶんだけタイトルと
-        アーティストの表示スペースが自動で広がります
-        (.text-block が flex:1 で余りを受け取るため)。
-        */
-        npJacketEl.style.display = "none";
-
-    }
+    refreshNowPlayingJacket(track);
 
     // ---- ピッチ(元ピッチ / 再生ピッチ) ----
     /*
@@ -154,6 +130,86 @@ function showNowPlaying(track){
     こうしないと、曲を選んでから画面に何も出ない時間ができてしまいます。
     */
     updatePitchDisplay(track);
+
+}
+
+
+/**
+ * 上半分のジャケット枠だけを描き直します(v207で新設)。
+ *
+ * 呼ばれるのは2か所です。
+ *     ① showNowPlaying() … 曲が変わった時
+ *     ② js/jacket.js     … 📷で差し替えた時 / オリジナルに戻した時
+ *
+ * @param {Object} track … libraryMap から取り出した1曲分のデータ
+ */
+function refreshNowPlayingJacket(track){
+
+    if(!npJacketEl || !track){ return; }
+
+    // 前の曲の画像が残らないよう、まず中身を空にします
+    npJacketEl.innerHTML = "";
+
+    /*
+    どの画像を出すかは getTrackCover()(js/list-view.js)が決めます。
+    差し替えがあればそちら、無ければ元のジャケットです。
+    */
+    const cover = getTrackCover(track);
+
+    if(cover){
+
+        /*
+        曲一覧と同じ createJacketImage() で <img> を作り、クラス名だけ
+        上半分用(.ua-jacket-img)に付け替えています。曲一覧のジャケットは
+        44px角の固定サイズですが、上半分はエリア3〜4の高さいっぱいに
+        広げるためです。
+
+        こうすると、一時URLをきちんと解放する後始末(あの関数の
+        onload / onerror でやっています)まで丸ごと再利用できます。
+        */
+        const jacketImg = createJacketImage(cover);
+        jacketImg.className = "ua-jacket-img";
+
+        npJacketEl.appendChild(jacketImg);
+
+        npJacketEl.classList.remove("ua-jacket-empty");
+
+        npJacketEl.style.display = "block";
+
+        return;
+
+    }
+
+    /*
+    ---- ジャケットが無い曲(v207で動きを変えました) ----
+
+    v206まではここで**枠ごと消していました**(v91、竹弘の指示)。
+    v207からは、竹弘の指定により**薄い枠の中に同じ薄さのカメラ
+    アイコン**を置きます:
+
+        「画像が無い曲は、今は枠を消しているが → 薄い枠の中に
+          同じ薄さでカメラアイコンを置く」
+
+    狙いは「ここを押せばジャケットを作れる」と分かるようにすること
+    です(竹弘:「写真を撮る事で、ジャケを作れる楽しさを用意したい」)。
+    枠が無いと押す場所そのものが見えませんでした。
+
+    ⚠️ **曲一覧は今まで通り、無い曲には何も置きません**(竹弘の指定)。
+       369行すべてに薄い枠が並ぶと、一覧がうるさくなるためです。
+
+    ⚠️ display を "flex" にしているのは、カメラアイコンを枠の中央に
+       置くためです。**style.display は CSS のクラスより強い**ので、
+       ここで書き換えないと .ua-jacket-empty の指定が効きません。
+    */
+    const emptyMark = document.createElement("span");
+    emptyMark.className = "ua-jacket-empty-mark";
+    emptyMark.textContent = "📷";
+
+    npJacketEl.appendChild(emptyMark);
+
+    npJacketEl.classList.add("ua-jacket-empty");
+
+    npJacketEl.style.display = "flex";
 
 }
 

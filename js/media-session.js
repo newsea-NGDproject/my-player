@@ -85,9 +85,20 @@ function updateMediaSessionMetadata(track){
 
     const artwork = [];
 
-    if(track.cover_art){
+    /*
+    どの画像を出すかは getTrackCover()(js/list-view.js)が決めます。
+    差し替え(📷で作ったジャケット)があればそちら、無ければ
+    音楽ファイルに埋め込まれていた元のジャケットです。
 
-        mediaSessionArtworkUrl = URL.createObjectURL(track.cover_art);
+    ⚠️ **ロック画面もここに合わせます。** 曲一覧・上半分・特大表示だけ
+       差し替わって、ロック画面だけ元の絵のまま…という食い違いが
+       起きないように、4か所すべてが同じ関数を見る形にしています(v207)。
+    */
+    const cover = getTrackCover(track);
+
+    if(cover){
+
+        mediaSessionArtworkUrl = URL.createObjectURL(cover);
 
         /*
         cover_art は docs/db-schema.md の通り、一辺 COVER_ART_SIZE px の
