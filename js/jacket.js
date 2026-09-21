@@ -131,6 +131,11 @@ const jacketBtnOverwriteEl     = document.getElementById("jacket-btn-overwrite")
 const jacketBtnOverwriteCancelEl = document.getElementById("jacket-btn-overwrite-cancel");
 const jacketWarningEl          = document.getElementById("jacket-warning");
 
+// アプリ内カメラ(v212)
+const jacketCameraButtonsEl    = document.getElementById("jacket-camera-buttons");
+const jacketBtnShootEl         = document.getElementById("jacket-btn-shoot");
+const jacketBtnCameraCancelEl  = document.getElementById("jacket-btn-camera-cancel");
+
 // 見えないファイル選択(v208で2つに分けた)
 const jacketMyFileInputEl = document.getElementById("jacket-myfile-input");
 const jacketCameraInputEl = document.getElementById("jacket-camera-input");
@@ -201,6 +206,28 @@ v207では「旗を持たない(データだけで決める)」方針を書き�
    「2つの行が同時に出る」という事故が必ず起きます。
 */
 let jacketUiState = "normal";
+
+/*
+⚠️ **動いているカメラ(v212)。**
+
+getUserMedia() が返す「映像の流れ」です。**使い終わったら必ず
+止めます**(stopLiveCamera)。止め忘れると、画面を閉じても
+カメラのランプが点いたままになり、電池を食い続けます。
+
+⚠️ ノリRunは走りながら使うアプリなので、**電池の食い逃げは
+   特に困ります。** 止める場所は4つあります:
+   撮った時 / ✕ / 画面を閉じた時 / 画面を開き直した時(念のため)。
+*/
+let jacketCameraStream = null;
+
+/*
+⚠️ **今カメラを使いたいかどうか(v212)。**
+
+カメラの許可を聞いている間に竹弘が ✕ を押すことがあります。
+その後で許可が下りると、**誰も見ていないのにカメラが動き出します。**
+この旗を見て、いらなくなっていたらすぐ止めます。
+*/
+let jacketCameraWanted = false;
 
 /*
 上半分のエリアです。大きさの上限を決めるために、実際の高さを
@@ -291,7 +318,8 @@ function openJacketView(){
         jacketBigButtonsEl,
         jacketConfirmButtonsEl,
         jacketArtworkButtonsEl,
-        jacketOverwriteButtonsEl
+        jacketOverwriteButtonsEl,
+        jacketCameraButtonsEl
     ];
 
     for(const row of buttonRows){
@@ -312,6 +340,13 @@ function openJacketView(){
        なってしまいます。
     */
     clearJacketPending();
+
+    /*
+    ⚠️ カメラが動いたままだったら止めます(v212の念のため)。
+       ふつうは閉じる時に止まっていますが、止める場所が1つでも
+       抜けるとカメラが点いたままになるので、開く時にも確認します。
+    */
+    stopLiveCamera();
 
     // ---- 中身(画像 / カメラアイコン)を入れます ----
     renderJacketBig(track);
@@ -344,6 +379,12 @@ function renderJacketBig(track){
        前の画像が残ります。
     */
     jacketBigEl.innerHTML = "";
+
+    /*
+    ⚠️ カメラ用の見た目(黒い背景)を必ず外します(v212)。
+       残っていると、写真を出しているのに枠が黒いままになります。
+    */
+    jacketBigEl.classList.remove("jacket-big-live");
 
     /*
     ---- どの画像を映すか ----
@@ -431,6 +472,7 @@ function refreshJacketButtons(track){
     setRowVisible(jacketConfirmButtonsEl,  jacketUiState === "confirm");
     setRowVisible(jacketArtworkButtonsEl,  jacketUiState === "artwork");
     setRowVisible(jacketOverwriteButtonsEl,jacketUiState === "overwrite");
+    setRowVisible(jacketCameraButtonsEl,   jacketUiState === "camera");
 
     const hasOriginal = !!(track && track.cover_art);
     const hasCustom   = !!(track && track.cover_art_custom);
@@ -486,6 +528,14 @@ function refreshJacketButtons(track){
     }
 
     hideJacketWarning();
+
+    // ---- カメラで撮っている最中 ----
+    if(jacketUiState === "camera"){
+
+        // 出すものは openLiveCamera() 側が用意するので、ここでは何もしません
+        return;
+
+    }
 
     // ---- アートワークの選び直し ----
     if(jacketUiState === "artwork"){
@@ -662,6 +712,13 @@ function closeJacketView(){
     jacketPanelEl.style.display = "none";
 
     /*
+    ⚠️⚠️ **カメラを必ず止めます(v212)。** ここを忘れると、画面を
+       閉じてもカメラのランプが点いたままになり、電池を食い続けます。
+       走りながら使うアプリなので、電池の食い逃げは特に困ります。
+    */
+    stopLiveCamera();
+
+    /*
     画像を捨てておきます。
 
     閉じている間ずっと持っている必要がないのと、次に開いた時は
@@ -763,16 +820,15 @@ function startJacketFromMyFile(event){
 }
 
 /**
- * 『📷 カメラ』が押された時の処理です。
+ * 『📷 カメラ』が押された時の処理です(v212でアプリ内カメラに)。
  *
- * #jacket-camera-input には capture="environment" が付いているので、
- * 選択画面をはさまず**いきなり外カメラ**が起動します
- * (竹弘:「📷ボタンを押したら、スマホには必ずカメラが付いているので」)。
+ * 竹弘の希望:
+ *     「ジャケ写の表示範囲の所に外カメラの撮影中映像をリアルで表示し
+ *       (解像度はジャケ画像と同じ)、ジャケットをキャプチャしたい」
  *
- * ⚠️ **v209でここをアプリ内カメラに差し替えます。** 竹弘の本来の
- *    希望は「ジャケ写の表示範囲に外カメラの撮影中映像をリアルで
- *    表示してキャプチャ」です。取り込んだ後の流れ(確認 → ✓ で保存)は
- *    そのまま使えるので、**差し替えるのはこの関数だけ**で済みます。
+ * ⚠️ v208〜v211はスマホ標準のカメラアプリを呼んでいました。
+ *    取り込んだ後の流れ(確認 → ✓ で保存)は同じものを使うので、
+ *    **差し替えたのはこの関数と、下のカメラ一式だけ**です。
  */
 function startJacketFromCamera(event){
 
@@ -780,7 +836,334 @@ function startJacketFromCamera(event){
 
     jacketPendingSource = "camera";
 
+    openLiveCamera();
+
+}
+
+
+// ==========================================================
+// 3-3. アプリ内カメラ(v212)
+// ==========================================================
+/**
+ * ジャケット枠に、外カメラの映像を流し始めます。
+ *
+ * ⚠️⚠️ **必ず逃げ道を用意してあります。** カメラが使えない場合
+ *    (許可されなかった / カメラが無い / 安全な接続でない)は、
+ *    **スマホ標準のカメラアプリに切り替えます。**
+ *    走っている最中に「押しても何も起きない」が一番困るためです
+ *    (v203で学んだ「待つ処理には必ず時間切れを用意する」と同じ考え方)。
+ */
+async function openLiveCamera(){
+
+    const track = getJacketViewTrack();
+
+    if(!track){ return; }
+
+    jacketCameraWanted = true;
+    jacketUiState      = "camera";
+
+    // 先に画面を切り替えて、「押したのに無反応」を無くします
+    showLiveMessage("カメラを準備しています…");
+    refreshJacketButtons(track);
+
+    /*
+    navigator.mediaDevices は、**安全な接続(https)でないと存在しません。**
+    GitHub Pages は https なので本番では使えますが、手元のファイルを
+    直接開いた時などに落ちないよう確かめておきます。
+    */
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+
+        console.log("アプリ内カメラが使えないので、標準のカメラアプリに切り替えます");
+        fallbackToCameraApp();
+        return;
+
+    }
+
+    try{
+
+        /*
+        ---- カメラを借ります ----
+
+        facingMode:"environment" は**外カメラ**(画面と反対側)です。
+        ジャケットは目の前のものを撮るので外カメラが自然です。
+
+        ⚠️ **ideal にしています。** exact にすると、外カメラが無い端末で
+           エラーになって何も映りません。ideal なら「できれば外、
+           無ければ内」と譲ってくれます。
+
+        ⚠️⚠️ **audio:false を必ず書きます。** 書かないつもりでも、
+           マイクを一緒に借りてしまうと**音楽の再生が止まる恐れ**が
+           あります。ノリRunは走行中に鳴り続けることが最優先なので、
+           映像だけを借ります。
+        */
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video:{ facingMode:{ ideal:"environment" } },
+            audio:false
+        });
+
+        /*
+        ⚠️ 許可を待っている間に ✕ が押されているかもしれません。
+           その場合は**すぐ返します**(誰も見ていないのにカメラが
+           動き続けるのを防ぐため)。
+        */
+        if(!jacketCameraWanted){
+
+            stopStreamTracks(stream);
+            return;
+
+        }
+
+        jacketCameraStream = stream;
+
+        showLiveVideo(stream);
+
+    }
+    catch(error){
+
+        console.log(
+            "アプリ内カメラを開けませんでした :",
+            error.name,
+            "→ 標準のカメラアプリに切り替えます"
+        );
+
+        fallbackToCameraApp();
+
+    }
+
+}
+
+/**
+ * アプリ内カメラが使えない時に、スマホ標準のカメラアプリへ逃がします。
+ */
+function fallbackToCameraApp(){
+
+    stopLiveCamera();
+
+    jacketUiState = "normal";
+
+    const track = getJacketViewTrack();
+
+    renderJacketBig(track);
+    refreshJacketButtons(track);
+
     if(jacketCameraInputEl){ jacketCameraInputEl.click(); }
+
+}
+
+/**
+ * ジャケット枠に文字だけを出します(準備中の案内など)。
+ */
+function showLiveMessage(text){
+
+    if(!jacketBigEl){ return; }
+
+    jacketBigEl.innerHTML = "";
+
+    jacketBigEl.classList.remove("jacket-big-empty");
+    jacketBigEl.classList.add("jacket-big-live");
+
+    const message = document.createElement("div");
+    message.className   = "jacket-live-message";
+    message.textContent = text;
+
+    jacketBigEl.appendChild(message);
+
+}
+
+/**
+ * ジャケット枠に、カメラの映像を流します。
+ */
+function showLiveVideo(stream){
+
+    if(!jacketBigEl){ return; }
+
+    jacketBigEl.innerHTML = "";
+
+    jacketBigEl.classList.remove("jacket-big-empty");
+    jacketBigEl.classList.add("jacket-big-live");
+
+    const video = document.createElement("video");
+    video.className = "jacket-live-video";
+
+    /*
+    ⚠️ **playsInline は必須です。** これが無いと、Androidや
+       iPhoneで映像が**画面いっぱいに乗っ取られ**、ジャケット枠の
+       中に収まりません。
+
+    ⚠️ muted も付けます。音は借りていない(audio:false)ので
+       鳴るものはありませんが、付けておかないと自動再生が
+       ブラウザに止められることがあります。
+    */
+    video.playsInline = true;
+    video.muted       = true;
+    video.autoplay    = true;
+
+    video.srcObject = stream;
+
+    jacketBigEl.appendChild(video);
+
+    /*
+    play() は約束(Promise)を返し、失敗することがあります。
+    ここで落としてもカメラが止まらず残るだけなので、握りつぶさずに
+    記録だけしておきます。
+    */
+    const playPromise = video.play();
+
+    if(playPromise && typeof playPromise.catch === "function"){
+
+        playPromise.catch(function(error){
+            console.log("カメラ映像の再生に失敗 :",error.name);
+        });
+
+    }
+
+}
+
+/**
+ * 映像の流れを止めます(カメラのランプを消すための後始末)。
+ */
+function stopStreamTracks(stream){
+
+    if(!stream || typeof stream.getTracks !== "function"){ return; }
+
+    for(const track of stream.getTracks()){
+        track.stop();
+    }
+
+}
+
+/**
+ * アプリ内カメラを完全に止めます。
+ *
+ * ⚠️ **呼ぶ場所は5つ**:撮った時 / ✕ / 画面を閉じた時 /
+ *    画面を開き直した時(念のため)/ 標準カメラへ逃がす時。
+ *    どれか1つでも抜けると、カメラが点いたままになります。
+ */
+function stopLiveCamera(){
+
+    jacketCameraWanted = false;
+
+    if(jacketCameraStream){
+
+        stopStreamTracks(jacketCameraStream);
+        jacketCameraStream = null;
+
+    }
+
+}
+
+/**
+ * 『✕』(カメラ中)が押された時の処理です。
+ */
+function cancelLiveCamera(event){
+
+    event.stopPropagation();
+
+    stopLiveCamera();
+
+    jacketUiState = "normal";
+
+    const track = getJacketViewTrack();
+
+    renderJacketBig(track);
+    refreshJacketButtons(track);
+
+}
+
+/**
+ * 『📸』が押された時の処理です。今映っている瞬間を切り取ります。
+ *
+ * ⚠️⚠️ **切り取る大きさと画質は、他の取り込みとまったく同じ定数**
+ *    (COVER_ART_SIZE / COVER_ART_QUALITY)を使います。竹弘の指定
+ *    「1曲あたりのファイルサイズが大きくならないように、取込時に
+ *      解像度を今のジャケ写サイズに解像度変更は絶対して欲しい」。
+ *
+ * ⚠️ shrinkImageBlob()(js/metadata.js)を通していないのは、あちらが
+ *    **ファイル(Blob)を受け取る**作りで、映像のひとコマは渡せない
+ *    ためです。**やっていること(中央を正方形に切り取って縮小)は
+ *    同じ**で、数字も同じ定数を見ています。いったんJPEGにしてから
+ *    もう一度縮めると、二重に画質が落ちるので直接描いています。
+ */
+function shootFromLiveCamera(event){
+
+    event.stopPropagation();
+
+    const track = getJacketViewTrack();
+    const video = jacketBigEl ? jacketBigEl.querySelector("video") : null;
+
+    if(!track || !video){ return; }
+
+    /*
+    videoWidth は「映像の本当の大きさ」です。カメラが動き出す前は
+    0 なので、その時は何もしません(0で切り取ると真っ黒になります)。
+    */
+    if(!video.videoWidth || !video.videoHeight){
+
+        console.log("まだカメラの映像が来ていません");
+        return;
+
+    }
+
+    try{
+
+        const canvas = document.createElement("canvas");
+        canvas.width  = COVER_ART_SIZE;
+        canvas.height = COVER_ART_SIZE;
+
+        const context = canvas.getContext("2d");
+
+        /*
+        ---- 中央を正方形に切り取ります ----
+
+        画面では object-fit:cover で「中央の正方形」だけが見えて
+        いるので、**同じ場所を切り出せば見たまま**が保存されます。
+        */
+        const side = Math.min(video.videoWidth,video.videoHeight);
+        const sourceX = (video.videoWidth  - side) / 2;
+        const sourceY = (video.videoHeight - side) / 2;
+
+        context.drawImage(
+            video,
+            sourceX,sourceY,side,side,
+            0,0,COVER_ART_SIZE,COVER_ART_SIZE
+        );
+
+        // 撮ったのでカメラは止めます(ランプを消す)
+        stopLiveCamera();
+
+        canvas.toBlob(function(blob){
+
+            if(!blob){
+                console.error("撮影に失敗しました");
+                cancelLiveCamera({stopPropagation:function(){}});
+                return;
+            }
+
+            // ---- ここから先は 📁 と同じ流れです ----
+            jacketPendingBlob   = blob;
+            jacketPendingSource = "camera";
+            jacketUiState       = "confirm";
+
+            renderJacketBig(track);
+            refreshJacketButtons(track);
+
+            console.log(
+                "カメラで撮りました :",
+                track.file_name,
+                Math.round(blob.size / 1024) + "KB",
+                "(まだ保存していません)"
+            );
+
+        },"image/jpeg",COVER_ART_QUALITY);
+
+    }
+    catch(error){
+
+        console.error("撮影に失敗 :",error.name,error.message);
+
+        cancelLiveCamera({stopPropagation:function(){}});
+
+    }
 
 }
 
@@ -795,14 +1178,18 @@ function retryJacketSource(event){
 
     if(jacketPendingSource === "camera"){
 
-        if(jacketCameraInputEl){ jacketCameraInputEl.click(); }
+        /*
+        ⚠️ v212から、カメラは**アプリ内の生映像**に戻します
+           (標準のカメラアプリではありません)。撮り直しのたびに
+           別の撮り方になると、竹弘が戸惑うためです。
+        */
+        openLiveCamera();
+
+        return;
 
     }
-    else{
 
-        if(jacketMyFileInputEl){ jacketMyFileInputEl.click(); }
-
-    }
+    if(jacketMyFileInputEl){ jacketMyFileInputEl.click(); }
 
 }
 
@@ -1168,6 +1555,15 @@ if(jacketBtnRetryEl){
 
 if(jacketBtnCancelEl){
     jacketBtnCancelEl.addEventListener("click",cancelJacketPending);
+}
+
+// ---- アプリ内カメラ(v212) ----
+if(jacketBtnShootEl){
+    jacketBtnShootEl.addEventListener("click",shootFromLiveCamera);
+}
+
+if(jacketBtnCameraCancelEl){
+    jacketBtnCameraCancelEl.addEventListener("click",cancelLiveCamera);
 }
 
 // ---- 上書きの確認(v210) ----
