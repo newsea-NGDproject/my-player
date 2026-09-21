@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v211)ノリRun
+        (v212)ノリRun
         メインメニュー
 
     </title>
@@ -3480,7 +3480,8 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         #jacket-big-buttons,
         #jacket-confirm-buttons,
         #jacket-artwork-buttons,
-        #jacket-overwrite-buttons{
+        #jacket-overwrite-buttons,
+        #jacket-camera-buttons{
             display:flex;
             gap:8px;
 
@@ -3494,7 +3495,8 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         #jacket-big-buttons button,
         #jacket-confirm-buttons button,
         #jacket-artwork-buttons button,
-        #jacket-overwrite-buttons button{
+        #jacket-overwrite-buttons button,
+        #jacket-camera-buttons button{
             /*
             ⚠️ **3つの幅を必ず同じにします**(竹弘「並ぶボタンの端は
                必ず揃える」)。大事なのは最後の 0 です。
@@ -3601,8 +3603,74 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         #jacket-big-buttons button:active,
         #jacket-confirm-buttons button:active,
         #jacket-artwork-buttons button:active,
-        #jacket-overwrite-buttons button:active{
+        #jacket-overwrite-buttons button:active,
+        #jacket-camera-buttons button:active{
             filter:brightness(0.9);
+        }
+
+        /* ======================================================
+           アプリ内カメラの生映像(v212)
+        ====================================================== */
+        /*
+        ジャケット枠の中に、外カメラの映像をそのまま流します。
+
+        ⚠️ **ここは height:100% で正しく効きます。** #jacket-big は
+           js/jacket.js が px で大きさを入れているので「親の大きさが
+           決まっている」状態だからです。
+           (アートワークの縮小画像で % が効かなかったのは、あちらの
+             親=ボタンの高さが中身で決まる作りだったため。同じ % でも
+             効く/効かないが分かれるので、親を見て決めること)
+
+        ⚠️ object-fit:cover にしているのは、**撮れる範囲と見えている
+           範囲を一致させる**ためです。カメラの映像は横長(4:3など)
+           ですが、枠は正方形なので、はみ出す左右は切り落として
+           中央の正方形だけを見せます。撮る時もまったく同じ
+           「中央の正方形」を切り出すので、**見たままが保存されます。**
+        */
+        .jacket-live-video{
+            width:100%;
+            height:100%;
+            object-fit:cover;
+            display:block;
+
+            /* 枠の角丸からはみ出さないように */
+            border-radius:8px;
+        }
+
+        /*
+        カメラの許可を待っている間などに出す文字です。
+        黒い枠の中に出るので白にします。
+        */
+        .jacket-live-message{
+            padding:12px;
+
+            color:#fff;
+            font-size:0.85rem;
+            font-weight:700;
+            text-align:center;
+            line-height:1.5;
+        }
+
+        /*
+        映像を流している間のジャケット枠。
+
+        中身が来るまでの間、白いままだと眩しいので黒くしておきます
+        (カメラアプリと同じ感覚)。
+        */
+        #jacket-big.jacket-big-live{
+            display:flex;
+            align-items:center;
+            justify-content:center;
+
+            background:#000;
+        }
+
+        /*
+        📸 だけ目立たせます。撮る瞬間を間違えないように。
+        */
+        #jacket-btn-shoot{
+            background:var(--theme-color);
+            color:#fff;
         }
 
         /* ======================================================
@@ -5484,6 +5552,29 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
                     title="上書きする">🗑️</button>
 
             <button type="button" id="jacket-btn-overwrite-cancel"
+                    title="やめる">✕</button>
+
+        </div>
+
+        <!-- ------------------------------------------------------
+         アプリ内カメラで撮っている最中のボタン(v212、竹弘の指定)
+
+             「ジャケ写の表示範囲の所に外カメラの撮影中映像を
+               リアルで表示し(解像度はジャケ画像と同じ)、
+               ジャケットをキャプチャしたい」
+
+         上のジャケット枠に生の映像が流れ、📸 でその瞬間を切り取ります。
+         切り取った後は、ふだんと同じ確認の行([✓/⚠️][📷][✕])に進みます。
+
+         ⚠️ **カメラは ✕ か画面を閉じた時に必ず止めます。** 止め忘れると
+            カメラのランプが点いたままになり、電池も食い続けます。
+        ------------------------------------------------------ -->
+        <div id="jacket-camera-buttons" style="display:none;">
+
+            <button type="button" id="jacket-btn-shoot"
+                    title="この瞬間をジャケットにする">📸</button>
+
+            <button type="button" id="jacket-btn-camera-cancel"
                     title="やめる">✕</button>
 
         </div>
