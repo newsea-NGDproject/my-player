@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v208)ノリRun
+        (v210)ノリRun
         メインメニュー
 
     </title>
@@ -3453,8 +3453,34 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
            その中に3つを等分に入れるので、「ジャケ幅内に収まる
            限界の大きさ」が自動的に出ます。
         */
+        /*
+        ⚠️⚠️ **幅は js/jacket.js が px で入れます(v209で修正)。**
+
+        竹弘の実機報告(v208):
+            「ジャケ幅ではなく、曲名もしくはアーティスト名、
+              ファイル名で幅が決まっている。ボタン3つは、
+              ジャケ幅に合わせて欲しい」
+
+        【なぜ width:100% では駄目だったのか】
+
+        100% は「親の幅」ですが、その親(#jacket-panel-inner)は
+        **中でいちばん幅の広い部品に合わせて広がる**作りです。
+        曲名やファイル名はジャケットより長いことが多いので、
+        親が文字の幅まで広がり、100%がそれを指していました。
+
+        → **ジャケットの幅(px)を直接入れる**のが確実です。その値は
+          js/jacket.js が開くたびに計算しているので、同じ数字を
+          ボタン行にも渡します。**2か所で別々に計算しません。**
+
+        ⚠️ 曲名・アーティスト名・ファイル名の幅は**今のままでOK**
+           (竹弘の指定)。揃えるのはボタンだけです。
+
+        ここに書いてある width は、万一JSが走らなかった時の保険です。
+        */
         #jacket-big-buttons,
-        #jacket-confirm-buttons{
+        #jacket-confirm-buttons,
+        #jacket-artwork-buttons,
+        #jacket-overwrite-buttons{
             display:flex;
             gap:8px;
 
@@ -3466,7 +3492,9 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         }
 
         #jacket-big-buttons button,
-        #jacket-confirm-buttons button{
+        #jacket-confirm-buttons button,
+        #jacket-artwork-buttons button,
+        #jacket-overwrite-buttons button{
             /*
             ⚠️ **3つの幅を必ず同じにします**(竹弘「並ぶボタンの端は
                必ず揃える」)。大事なのは最後の 0 です。
@@ -3530,15 +3558,122 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         pointer-events:none は「この要素へのタップを受け付けない」
         という指定で、disabled と合わせて二重に塞いでいます。
         */
+        /*
+        ⚠️⚠️ **v209で直しました。opacity をボタン全体に掛けないこと。**
+
+        竹弘の実機報告:「『オリジナルボタン』が透明になって見にくい」
+
+        v208は button そのものに opacity:0.4 を掛けていたため、
+        **白い背景ごと透けて**、後ろのジャケットや画面が絵文字に
+        重なって読めなくなっていました。
+
+        直し方は「薄くする場所を分ける」ことです。
+
+            背景   … 不透明のまま(var(--card-bg))
+            縁取り … テーマ色 → 灰色(押せないことの合図)
+            絵文字 … 中の <span> だけを薄く + 灰色に
+
+        ⚠️ **絵文字の色は CSS の color では変えられません**(絵文字は
+           文字ではなく小さな絵として描かれるため)。だから
+           filter:grayscale で色味を抜いています。
+
+        ⚠️ **消す(display:none)という手は採りません。** 残り2つが
+           広がってボタンの位置が毎回ずれ、曲を切り替えるたびに
+           指の置き場所を探し直すことになるためです
+           (竹弘「ボタンサイズは変えたくない」)。
+
+        pointer-events:none は「この要素へのタップを受け付けない」
+        という指定で、disabled と合わせて二重に塞いでいます。
+        */
         #jacket-big-buttons button:disabled{
-            opacity:0.4;
+            background:var(--card-bg);
+            border-color:var(--border-color);
+
             cursor:default;
             pointer-events:none;
         }
 
+        #jacket-big-buttons button:disabled span{
+            opacity:0.35;
+            filter:grayscale(1);
+        }
+
         #jacket-big-buttons button:active,
-        #jacket-confirm-buttons button:active{
+        #jacket-confirm-buttons button:active,
+        #jacket-artwork-buttons button:active,
+        #jacket-overwrite-buttons button:active{
             filter:brightness(0.9);
+        }
+
+        /* ======================================================
+           アートワークの選び直し(v210)
+        ====================================================== */
+        /*
+        ボタンの中にジャケットの実物を出します(竹弘:「ボタンの
+        サイズの中で、ジャケ写を表示。雰囲気がわかるからこれでよい」)。
+
+        ⚠️ **正方形のまま出します。** ボタンは横長なので、高さいっぱいの
+           正方形を中央に置く形にしています。横に引き伸ばすと
+           ジャケットに見えなくなるためです。
+
+        padding を小さくしているのは、限られた高さの中で画像を
+        なるべく大きく見せるためです。
+        */
+        #jacket-artwork-buttons button{
+            padding:4px 0;
+        }
+
+        .jacket-artwork-thumb{
+            height:100%;
+            aspect-ratio:1 / 1;
+            object-fit:cover;
+
+            border-radius:4px;
+            display:block;
+        }
+
+        /*
+        今そのジャケットが選ばれている方の印です。
+
+        ⚠️ **枠を太くするのではなく、内側に線を足します**(box-shadow の
+           inset)。太さを変えると**ボタンの中身の大きさが変わって
+           画像がガタつく**ためです。色はテーマ色を使います。
+        */
+        #jacket-artwork-buttons button.jacket-artwork-on{
+            box-shadow:inset 0 0 0 3px var(--theme-color);
+        }
+
+        /* ======================================================
+           上書きの確認(v210)
+        ====================================================== */
+        /*
+        注意書き。赤にするのは「これは戻せない」という合図です。
+
+        ⚠️ 幕(黒っぽい半透明)の上に出るので、赤は明るめにします。
+           暗い赤だと幕に溶けて読めません。
+        */
+        #jacket-warning{
+            margin-top:8px;
+
+            color:#ff6b6b;
+            font-size:0.8rem;
+            font-weight:700;
+            text-align:center;
+
+            max-width:100%;
+        }
+
+        /*
+        「上書きする」だけは赤で塗りつぶします。
+
+        テーマ色(青/暁色)のままだと、他の確定ボタンと同じ見た目に
+        なってしまい、**戻せない操作だと気づけません。**
+        ここだけは色で役割を変えます。
+        */
+        #jacket-btn-overwrite{
+            background:#e5484d;
+            border-color:#e5484d;
+            color:#fff;
         }
 
         /*
@@ -5229,13 +5364,13 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         <div id="jacket-big-buttons">
 
             <button type="button" id="jacket-btn-original"
-                    title="オリジナルのジャケットに戻す">🖼️</button>
+                    title="オリジナルのジャケットに戻す"><span>🖼️</span></button>
 
             <button type="button" id="jacket-btn-myfile"
-                    title="マイファイルから写真を選ぶ">📁</button>
+                    title="マイファイルから写真を選ぶ"><span>📁</span></button>
 
             <button type="button" id="jacket-btn-camera"
-                    title="カメラで撮る">📷</button>
+                    title="カメラで撮る"><span>📷</span></button>
 
         </div>
 
@@ -5275,6 +5410,49 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
                     title="やめる">✕</button>
 
         </div>
+
+        <!-- ------------------------------------------------------
+         🖼️ アートワークの選び直し(v210、竹弘の指定)
+
+             「『アートワーク』押したら、ノリRunDBにある最大2つの
+               ジャケ写(オリジナルとそれ以外)のボタンを表示してもらい、
+               ボタンのサイズの中で、ジャケ写を表示」
+
+         ⚠️ **中身は js/jacket.js が毎回入れ直します。** どちらの画像を
+            持っているかは曲ごとに違うためです。ここは空の器です。
+
+         ⚠️ 今選ばれている方は、枠を太いテーマ色にして示します
+            (js/jacket.js が .jacket-artwork-on を付けます)。
+        ------------------------------------------------------ -->
+        <div id="jacket-artwork-buttons" style="display:none;"></div>
+
+        <!-- ------------------------------------------------------
+         上書きの確認(v210、竹弘の指定)
+
+             「『(マイファイル)か(カメラ写真)』が登録されている場合は、
+               📷機能で決定する時、とマイファイルから写真をジャケ写に
+               設定する際、データがすでに存在している場合は
+               上書き確認を入れられないだろうか?」
+
+         ⚠️⚠️ **ブラウザ標準の confirm() は使いません。**
+            このアプリは「押されるまでJavaScriptが止まる」ダイアログを
+            再生中に出さない方針です(js/queue.js の解説。v110で
+            alert を廃止した時の判断)。走行中に止まると、曲の接続や
+            ノリノリアシストの予約まで巻き添えで止まります。
+            だから**画面の中で**確認します。
+        ------------------------------------------------------ -->
+        <div id="jacket-overwrite-buttons" style="display:none;">
+
+            <button type="button" id="jacket-btn-overwrite"
+                    title="上書きする">🗑️</button>
+
+            <button type="button" id="jacket-btn-overwrite-cancel"
+                    title="やめる">✕</button>
+
+        </div>
+
+        <!-- 上書き確認の時だけ出す注意書き -->
+        <div id="jacket-warning" style="display:none;"></div>
 
     </div>
 </div>
