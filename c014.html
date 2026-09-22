@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v221)ノリRun
+        (v222)ノリRun
         メインメニュー
 
     </title>
@@ -4397,6 +4397,462 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             height:120px;
         }
 
+        /* ======================================================
+           同期モード ② ターンテーブル(v222)
+        ====================================================== */
+        /*
+        竹弘の要望(2026-09-22):「DJのターンテーブル風にはしてくれないの?」
+
+        ピッに合わせて叩く面を、レコードを載せたターンテーブルにしました。
+
+            止まっている(idle)      … トーンアームは上がったまま。
+                                      ラベルがゆっくり「息をする」ように光って
+                                      「ここを押して」と誘う
+            測っている(measuring)  … トーンアームが盤に降り、レコードが回る。
+                                      叩いた数だけ周りのストロボの点が灯る
+            値が出た(done)         … 盤が止まり、ラベルに遅延(ms)が出る
+
+        【なぜ 45回転なのか(1周 1.333秒)】
+
+        レコードの回転数は 33⅓回転 と 45回転 が定番です。33⅓回転だと
+        1周が 1.8秒で、**ピッ(0.6秒おき)のちょうど3回分**になります。
+        すると盤の目印(キューシール)が、3拍ごとに同じ場所へ来る
+        「目で追えるリズム」になってしまいます。
+
+        ⚠️ **この画面では、目で見えるリズムがあってはいけません。**
+           画面はBluetoothを通らないので、目で合わせると遅延が0と
+           測られてしまいます(js/sync.js の「② Bluetooth遅延」の説明)。
+           45回転なら1周がピッ2.22回分で、拍とは揃いません。
+
+        【大きさの決め方】
+
+        ターンテーブルの中身(盤・点・トーンアーム)は、幅300pxの台
+        (.sync-deck-stage)の上に**px で**置いています。トーンアームの先が
+        盤の上に降りるかどうかは、盤とアームの位置関係で決まるので、
+        画面の幅で比率が変わるとアームが盤から外れてしまうためです。
+        台は真ん中に置くので、どの画面幅でもレコードは中央に来ます
+        (竹弘の「画面中央を芯に左右対称」。いずれの左右反転にも備えて)。
+        */
+        #sync-panel .sync-deck{
+            position:relative;
+            display:block;
+
+            width:100%;
+            height:232px;
+
+            margin:0;
+            padding:0;
+
+            border:none;
+            border-radius:20px;
+
+            /* 黒い金属の台。上から光が当たっているように、上側を少し明るく */
+            background:radial-gradient(120% 90% at 50% 0%,#3a3a3e 0%,#232326 55%,#18181a 100%);
+
+            box-shadow:
+                inset 0 1px 0 rgba(255,255,255,0.08),
+                inset 0 -2px 6px rgba(0,0,0,0.5),
+                0 10px 24px rgba(var(--theme-rgb),0.22);
+
+            overflow:hidden;
+
+            font:inherit;
+            color:#ffffff;
+
+            cursor:pointer;
+
+            /*
+            叩いている最中に画面がスクロールしたり、長押しで文字が選ばれたり、
+            押した所が青く光ったりしないようにします(叩くことに集中できるように)。
+            */
+            touch-action:none;
+            -webkit-tap-highlight-color:transparent;
+            user-select:none;
+            -webkit-user-select:none;
+        }
+
+        /* 幅300pxの台。真ん中に置きます(上の【大きさの決め方】) */
+        #sync-panel .sync-deck-stage{
+            position:absolute;
+            top:0;
+            left:50%;
+
+            width:300px;
+            height:232px;
+
+            transform:translateX(-50%);
+        }
+
+        /* 盤を載せる場所(直径172px。中心は台の (150px, 116px)) */
+        #sync-panel .sync-platter{
+            position:absolute;
+            left:64px;
+            top:30px;
+
+            width:172px;
+            height:172px;
+        }
+
+        /*
+        黒いレコード盤。
+
+        repeating-radial-gradient は「同心円の模様を繰り返す」書き方で、
+        細い黒と少し明るい黒を1.5pxずつ交互に並べて**溝**を描いています。
+        */
+        #sync-panel .sync-vinyl{
+            position:absolute;
+            inset:0;
+
+            border-radius:50%;
+
+            background:repeating-radial-gradient(circle at 50% 50%,#0d0d0e 0 1.5px,#1c1c1f 1.5px 3px);
+
+            box-shadow:
+                0 0 0 3px #0a0a0a,
+                0 6px 14px rgba(0,0,0,0.6);
+
+            /*
+            回転は最初から付けておいて、止めておきます(paused)。
+            測りはじめると running にするだけで回り出し、止めると
+            **止めた角度のまま**止まります(本物のレコードと同じ)。
+            */
+            animation:sync-spin 1.3333s linear infinite;
+            animation-play-state:paused;
+        }
+
+        /*
+        盤に貼った目印(キューシール)。
+
+        レコードの溝は同心円なので、回しても回っているように見えません。
+        DJは曲の頭の位置が分かるよう盤に小さなシールを貼りますが、
+        それに見立てた目印で「回っている」ことを見せます。
+        */
+        #sync-panel .sync-cue{
+            position:absolute;
+            left:50%;
+            top:9px;
+
+            width:5px;
+            height:16px;
+            margin-left:-2.5px;
+
+            border-radius:2px;
+
+            background:var(--theme-color);
+            box-shadow:0 0 6px rgba(var(--theme-rgb),0.7);
+        }
+
+        /*
+        盤の照り返し。**盤と一緒には回しません**(部屋の明かりは動かないので、
+        光る場所は同じまま、その下で盤が回るのが本物らしい見え方です)。
+        conic-gradient は「中心から扇形に色を変える」書き方です。
+        */
+        #sync-panel .sync-sheen{
+            position:absolute;
+            inset:0;
+
+            border-radius:50%;
+
+            background:conic-gradient(from 20deg,
+                rgba(255,255,255,0) 0deg,
+                rgba(255,255,255,0.10) 30deg,
+                rgba(255,255,255,0) 70deg,
+                rgba(255,255,255,0) 180deg,
+                rgba(255,255,255,0.07) 210deg,
+                rgba(255,255,255,0) 250deg);
+
+            pointer-events:none;
+        }
+
+        /*
+        真ん中のラベル(暁色)。回数や値をここに出します。
+
+        ⚠️ 暁色は var(--theme-color) から取ります(色の数値を書き写さない
+           決まり)。上に白い光を重ねて、少し立体に見せています。
+        */
+        #sync-panel .sync-record-label{
+            position:absolute;
+            left:50%;
+            top:50%;
+
+            width:80px;
+            height:80px;
+            margin:-40px 0 0 -40px;
+
+            border-radius:50%;
+
+            display:flex;
+            flex-direction:column;
+            align-items:center;
+            justify-content:center;
+
+            /*
+            大きな字と小さな字の間を少し空けて、そこにレコードの軸
+            (::after)が来るようにします。
+            */
+            gap:9px;
+
+            background:
+                radial-gradient(circle at 35% 30%,rgba(255,255,255,0.38) 0%,rgba(255,255,255,0) 60%),
+                var(--theme-color);
+
+            box-shadow:inset 0 0 0 2px rgba(0,0,0,0.12);
+
+            color:#ffffff;
+        }
+
+        /* レコードの軸(真ん中の小さな丸) */
+        #sync-panel .sync-record-label::after{
+            content:"";
+
+            position:absolute;
+            left:50%;
+            top:50%;
+
+            width:6px;
+            height:6px;
+            margin:-3px 0 0 -3px;
+
+            border-radius:50%;
+
+            background:#d1d1d6;
+            box-shadow:inset 0 1px 1px rgba(0,0,0,0.5);
+        }
+
+        #sync-panel .sync-label-big{
+            font-size:1.35rem;
+            font-weight:900;
+            line-height:1;
+
+            /* 数字の幅を揃えて、叩くたびに数字が左右にぶれないようにします */
+            font-variant-numeric:tabular-nums;
+        }
+
+        #sync-panel .sync-label-small{
+            font-size:0.65rem;
+            font-weight:bold;
+            line-height:1;
+
+            opacity:0.9;
+        }
+
+        /*
+        周りのストロボの点(12個)。
+
+        入れ物(.sync-dots)を盤の中心に大きさ0で置き、点をそこから
+        「(--i × 30度) 回してから、上へ98px」動かします。--i は HTML に
+        書いた 0〜11 の番号で、0 が12時の位置、あとは時計回りに並びます。
+
+        ⚠️ rotate と translateY の順番が要です。先に回してから動かすので、
+           「回した向きのまま上へ」動き、時計の文字盤のように並びます。
+        */
+        #sync-panel .sync-dots{
+            position:absolute;
+            left:50%;
+            top:50%;
+
+            width:0;
+            height:0;
+        }
+
+        #sync-panel .sync-dot{
+            position:absolute;
+            left:-4px;
+            top:-4px;
+
+            width:8px;
+            height:8px;
+
+            border-radius:50%;
+
+            background:rgba(255,255,255,0.14);
+
+            transform:rotate(calc(var(--i) * 30deg)) translateY(-98px);
+
+            transition:background 0.15s,box-shadow 0.15s;
+        }
+
+        /* 灯った点(5〜12回目 = 測る本番)は暁色に光ります */
+        #sync-panel .sync-dot.sync-dot-on{
+            background:var(--theme-color);
+            box-shadow:0 0 8px rgba(var(--theme-rgb),0.9);
+        }
+
+        /* 1〜4回目(ならし)は、灯っても控えめな白にします */
+        #sync-panel .sync-dot.sync-dot-warmup.sync-dot-on{
+            background:rgba(255,255,255,0.6);
+            box-shadow:none;
+        }
+
+        /*
+        トーンアーム。右上の軸(丸)から、細い腕が下へ伸びています。
+
+        rotate の角度で腕の向きが変わります(プラスで時計回り =
+        腕の先が左 = 盤の方へ寄る)。
+
+            4度  … 盤の外で休んでいる(止まっている時・値が出た時)
+            24度 … 盤の外側の溝に降りている(測っている時)
+        */
+        #sync-panel .sync-tonearm{
+            position:absolute;
+            top:22px;
+            right:20px;
+
+            width:18px;
+            height:18px;
+
+            border-radius:50%;
+
+            background:radial-gradient(circle at 40% 35%,#e5e5ea,#8e8e93);
+            box-shadow:0 2px 4px rgba(0,0,0,0.6);
+        }
+
+        #sync-panel .sync-tonearm-arm{
+            position:absolute;
+            left:50%;
+            top:50%;
+
+            width:4px;
+            height:118px;
+            margin-left:-2px;
+
+            border-radius:2px;
+
+            background:linear-gradient(90deg,#9a9aa0,#e5e5ea,#9a9aa0);
+
+            /* 回す中心を、腕の上の端(=軸)にします */
+            transform-origin:50% 0;
+            transform:rotate(4deg);
+
+            transition:transform 0.6s cubic-bezier(0.3,0.7,0.3,1);
+        }
+
+        /* 腕の先の針の付いた部分(ヘッドシェル) */
+        #sync-panel .sync-tonearm-arm::after{
+            content:"";
+
+            position:absolute;
+            left:50%;
+            bottom:-6px;
+
+            width:12px;
+            height:16px;
+            margin-left:-6px;
+
+            border-radius:2px;
+
+            background:#c7c7cc;
+            box-shadow:0 2px 3px rgba(0,0,0,0.5);
+        }
+
+        /* ---- 姿ごとの動き ---- */
+
+        /* 測っている間だけ、盤が回り、トーンアームが降ります */
+        #sync-panel .sync-deck[data-phase="measuring"] .sync-vinyl{
+            animation-play-state:running;
+        }
+
+        #sync-panel .sync-deck[data-phase="measuring"] .sync-tonearm-arm{
+            transform:rotate(24deg);
+        }
+
+        /*
+        止まっている時は、ラベルがゆっくり「息をする」ように光って、
+        押す場所を知らせます(ピッはまだ鳴っていないので、見えるリズムが
+        あっても測定には影響しません)。
+        */
+        #sync-panel .sync-deck[data-phase="idle"] .sync-record-label{
+            animation:sync-invite 2.4s ease-in-out infinite;
+        }
+
+        /* 叩いた瞬間だけ、盤が少し沈んで、ラベルが明るくなります */
+        #sync-panel .sync-deck-hit .sync-platter{
+            animation:sync-hit 0.16s ease-out;
+        }
+
+        #sync-panel .sync-deck-hit .sync-record-label{
+            animation:sync-flash 0.2s ease-out;
+        }
+
+        @keyframes sync-spin{
+            from{ transform:rotate(0deg); }
+            to{ transform:rotate(360deg); }
+        }
+
+        @keyframes sync-hit{
+            0%{ transform:scale(0.965); }
+            100%{ transform:scale(1); }
+        }
+
+        @keyframes sync-flash{
+            0%{ filter:brightness(1.35); }
+            100%{ filter:brightness(1); }
+        }
+
+        @keyframes sync-invite{
+            0%,100%{ box-shadow:inset 0 0 0 2px rgba(0,0,0,0.12),0 0 0 0 rgba(var(--theme-rgb),0.55); }
+            50%{ box-shadow:inset 0 0 0 2px rgba(0,0,0,0.12),0 0 0 12px rgba(var(--theme-rgb),0); }
+        }
+
+        /*
+        スマホの設定で「動きを減らす」を選んでいる人には、回転や光の
+        動きを止めます(乗り物酔いのような気分の悪さを感じる人がいるため)。
+        点が灯る・値が出るといった大事な知らせは、そのまま残ります。
+        */
+        @media (prefers-reduced-motion:reduce){
+
+            #sync-panel .sync-vinyl,
+            #sync-panel .sync-record-label,
+            #sync-panel .sync-platter{
+                animation:none !important;
+            }
+
+            #sync-panel .sync-tonearm-arm{
+                transition:none;
+            }
+
+        }
+
+        /*
+        ターンテーブルの下の一言と説明。
+
+        ⚠️ 高さを最低2行ぶん確保しています。姿によって1行だったり2行
+           だったりするので、そのままだと下の「決定」「測り直す」が上下に
+           動いてしまいます(押す場所が動くと指が迷う)。
+        */
+        #sync-panel .sync-deck-caption{
+            display:flex;
+            align-items:center;
+            justify-content:center;
+
+            min-height:2.8em;
+            margin:14px 0 0 0;
+
+            font-size:0.95rem;
+            font-weight:bold;
+            line-height:1.4;
+            text-align:center;
+
+            color:var(--text-main);
+        }
+
+        /* 値の数字だけ、暁色で少し大きく */
+        #sync-panel .sync-deck-caption b{
+            font-size:1.25em;
+            color:var(--theme-color);
+        }
+
+        #sync-panel .sync-deck-sub{
+            display:flex;
+            align-items:flex-start;
+            justify-content:center;
+
+            min-height:2.9em;
+
+            line-height:1.45;
+            text-align:center;
+        }
+
         /* 見出し。flex-shrink:0 で、本文が長くても縮ませません */
         .license-header{
             flex-shrink:0;
@@ -6720,7 +7176,7 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
        ① を「決定」するまで ② は display:none のまま隠れています。
        どの段を見せるかは js/sync.js の refreshSyncPanel() が決めます。
 
-    ⚠️ v221(段①)では ① までを作っています。② は見出しだけです。
+    ⚠️ v221(段①)で ① を、v222(段②)で ② を作りました。③ は見出しだけです。
 -->
 <div id="sync-panel" style="display:none;">
 
@@ -6787,10 +7243,93 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
 
         </section>
 
-        <!-- ② Bluetooth遅延(段②で作ります) -->
+        <!-- ② Bluetooth遅延(v222) -->
         <section class="sync-step" id="sync-step-latency" style="display:none;">
 
             <p class="connect-heading">② Bluetooth遅延</p>
+
+            <p class="connect-note">
+                イヤホンから音が届くまでの遅れを測って、<br>
+                みんなの耳に同じ瞬間に届くようにします。<br>
+                測った値は、次からもそのまま使えます。
+            </p>
+
+            <div class="sync-step-body">
+
+                <!--
+                    ターンテーブル(竹弘の要望「DJのターンテーブル風にはしてくれないの?」)。
+                    全体が1つの大きなボタンで、どこを叩いても数えます。
+
+                        .sync-vinyl        … 黒いレコード盤(測っている間だけ回る)
+                        .sync-cue          … 盤に貼った目印(DJが使う「キューシール」)
+                        .sync-sheen        … 盤の照り返し(回らない。光は動かないため)
+                        .sync-record-label … 真ん中の暁色のラベル。回数や値を出す
+                        .sync-dots         … 周りのストロボの点。叩いた数だけ灯る
+                        .sync-tonearm      … トーンアーム。測っている間だけ盤に降りる
+
+                    姿の切り替えは data-phase(idle / measuring / done)を
+                    js/sync.js が書き換えるだけで、動きはすべて CSS です。
+
+                    ⚠️ ラベルの文字は、回らない層(.sync-record-label)に
+                       置いています。盤と一緒に回ると読めなくなるためです。
+
+                    ⚠️ 1〜4個目の点(.sync-dot-warmup)は「ならし」なので、
+                       灯っても暁色にせず、控えめな白にしています。
+                -->
+                <button type="button" id="sync-latency-pad" class="sync-deck" data-phase="idle">
+                    <span class="sync-deck-stage">
+                        <span class="sync-platter">
+                            <span class="sync-vinyl"><span class="sync-cue"></span></span>
+                            <span class="sync-sheen"></span>
+                            <span class="sync-record-label">
+                                <span class="sync-label-big" id="sync-pad-big">▶</span>
+                                <span class="sync-label-small" id="sync-pad-small">タップ</span>
+                            </span>
+                            <span class="sync-dots" id="sync-dots">
+                                <span class="sync-dot sync-dot-warmup" style="--i:0"></span>
+                                <span class="sync-dot sync-dot-warmup" style="--i:1"></span>
+                                <span class="sync-dot sync-dot-warmup" style="--i:2"></span>
+                                <span class="sync-dot sync-dot-warmup" style="--i:3"></span>
+                                <span class="sync-dot" style="--i:4"></span>
+                                <span class="sync-dot" style="--i:5"></span>
+                                <span class="sync-dot" style="--i:6"></span>
+                                <span class="sync-dot" style="--i:7"></span>
+                                <span class="sync-dot" style="--i:8"></span>
+                                <span class="sync-dot" style="--i:9"></span>
+                                <span class="sync-dot" style="--i:10"></span>
+                                <span class="sync-dot" style="--i:11"></span>
+                            </span>
+                        </span>
+                        <span class="sync-tonearm"><span class="sync-tonearm-arm"></span></span>
+                    </span>
+                </button>
+
+                <!--
+                    ターンテーブルの下の一言と説明(js/sync.js が書き換えます)。
+                    中の <span> を1つ挟んでいるのは、<br> や <b> を含む文を
+                    1つのかたまりとして上下中央に置くためです(外の <p> を
+                    flex にすると、<b> や <br> が1つずつバラバラの部品として
+                    並べられてしまうため)。
+                -->
+                <p class="sync-deck-caption"><span id="sync-pad-caption"></span></p>
+                <p class="connect-note sync-deck-sub"><span id="sync-pad-sub"></span></p>
+
+            </div>
+
+            <div class="sync-btn-row">
+                <button type="button" id="sync-latency-decide-btn" class="sync-btn sync-btn-primary">決定</button>
+                <button type="button" id="sync-latency-redo-btn" class="sync-btn">測り直す</button>
+            </div>
+
+            <!-- なぜ押せないのか / 次に何をするのか(js/sync.js が書き換えます) -->
+            <p class="connect-note sync-guide" id="sync-latency-guide"></p>
+
+        </section>
+
+        <!-- ③ 曲開始時刻(段③で作ります。v222では見出しだけ) -->
+        <section class="sync-step" id="sync-step-start" style="display:none;">
+
+            <p class="connect-heading">③ 曲開始時刻</p>
 
             <p class="connect-note">
                 (準備中。次の版で作ります)
