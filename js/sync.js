@@ -33,7 +33,10 @@
  1機能ずつ実機で確かめる決まりに合わせて、4段に分けて作ります。
 
      段①(v221) … 画面の開け閉め・入った時の一時停止・①ピッチ
-     段②(v222) … ②Bluetooth遅延の測定と保存 ← いまここ
+     段②(v222) … ②Bluetooth遅延の測定と保存
+          (v223) … ターンテーブルの作り込み(モニタ・「く」の字アーム・
+                    ノブ・フェーダー・サンプラー・暁色の仲間の色)と、
+                    前回と大きく違う時の一言 ← いまここ
      段③        … ③時刻ボタンと、その時刻に拍を揃えたスタート
      段④        … ④薄暗いロック画面・イヤホン操作・時刻からの再開
 
@@ -196,6 +199,36 @@ const SYNC_LATENCY_DEBOUNCE_MS = 200;
 */
 const SYNC_LATENCY_SETTING_KEY = "sync_latency_ms";
 
+/*
+前回の値からこれ以上離れたら「もう一度測ってみて」と勧める差(ミリ秒)。v223。
+
+【竹弘の実測(2026-09-22)から決めた数字】
+
+    同じBluetoothイヤホンで6回 : 432 / 247 / 257 / 283 / 288 / 263
+
+432 だけが飛び抜けていて、ほかの5回(平均約265)との差は約167ms。
+これは人が「音を聴いてから反応する」のにかかる時間(約150〜180ms)と
+ほぼ同じで、**リズムに乗って叩く代わりに、ピッを聴いてから叩いた回**
+だと考えられます(竹弘の言葉では「油断すると400とか出ちゃう」)。
+
+    ふつうの測り直しのばらつき … 5回で 247〜288(幅41ms)
+    反応で叩いてしまった時     … +150〜180ms 跳ねる
+
+その間の 80ms を境目にしました。イヤホンを替えた時は本当に値が
+変わるので、止めはせず、一言添えるだけにしています。
+*/
+const SYNC_LATENCY_PREV_WARN_MS = 80;
+
+/*
+ターンテーブルの台の幅(px)。v223。
+
+中身は、この幅の台の上に px で置いてあります(c014.html の
+「同期モード ② ターンテーブル」の【大きさの決め方】)。画面がこれより
+狭い時は、fitSyncDeck() が台ごと縮めます。
+⚠️ c014.html の .sync-deck-stage の width と必ず同じ値にすること。
+*/
+const SYNC_DECK_STAGE_WIDTH = 320;
+
 
 // ==========================================================
 // 2. 今の状態
@@ -243,6 +276,14 @@ const syncState = {
 
     // 今の値が「前回保存した値」か(true)、「今測った値」か(false)
     latencyFromSaved: false,
+
+    /*
+    前回保存した値(比べるための控え。v223)。まだ無ければ null。
+
+    測り直した値がこれから大きく離れていたら、一言添えます
+    (SYNC_LATENCY_PREV_WARN_MS のコメント)。
+    */
+    latencyPrevMs: null,
 
     // ②の「決定」が押されているか
     latencyDecided: false,
@@ -339,6 +380,20 @@ const syncPadSubEl = document.getElementById("sync-pad-sub");
 HTMLに最初から12個並べてあり、querySelectorAll で全部まとめて取ります。
 */
 const syncDotEls = document.querySelectorAll("#sync-dots .sync-dot");
+
+/*
+左上のモニタ(v223)。竹弘の指定「タップ開始後の情報をモニタに表示したい」。
+
+    #sync-mon-status … 1行目の状態(READY / ● REC / DONE …)
+    #sync-mon-big    … 2行目の大きな字(06/12、250ms)
+    #sync-mon-sub    … 3行目のひとこと(WARM-UP / MEASURE / ±9ms OK …)
+*/
+const syncMonStatusEl = document.getElementById("sync-mon-status");
+const syncMonBigEl = document.getElementById("sync-mon-big");
+const syncMonSubEl = document.getElementById("sync-mon-sub");
+
+// 左下のサンプラーの4つのパッド(叩くたびに順に光らせます。v223)
+const syncSamplerPadEls = document.querySelectorAll("#sync-latency-pad .sync-sampler-pad");
 
 const syncLatencyDecideBtn = document.getElementById("sync-latency-decide-btn");
 const syncLatencyRedoBtn = document.getElementById("sync-latency-redo-btn");
@@ -481,6 +536,7 @@ async function openSyncPanel(){
     const savedLatency = await loadSyncLatency();
 
     syncState.latencyMs = savedLatency;
+    syncState.latencyPrevMs = savedLatency;
     syncState.latencySpreadMs = null;
     syncState.latencyFromSaved = (savedLatency !== null);
     syncState.latencyPhase = (savedLatency !== null) ? "done" : "idle";
@@ -810,9 +866,20 @@ function refreshSyncLatencyStep(){
 
         caption = "ピッに合わせてタップ";
 
-        sub = "画面は見ずに、耳だけで合わせてください<br>" +
-              "(1〜" + SYNC_LATENCY_WARMUP + "回目はならし・" +
-              (SYNC_LATENCY_WARMUP + 1) + "回目から測ります)";
+        /*
+        v223で1行目を「音を待たずに、リズムに乗って」に変えました。
+
+        竹弘の実測で1回だけ 432ms(ほかは約265ms)が出ました。差の約167ms は
+        人が「音を聴いてから反応する」時間とほぼ同じで、**ピッを待ってから
+        叩くと、その分だけ遅く測られます**(SYNC_LATENCY_PREV_WARN_MS の
+        コメント)。走る時の足はリズムを予想して踏むので、測る時も同じ
+        叩き方をしてもらいます。
+
+        「1〜4回目はならし」の案内は、左上のモニタ(WARM-UP / MEASURE)に
+        移しました。
+        */
+        sub = "音を待たずに、リズムに乗って叩いてください<br>" +
+              "画面は見ずに、耳だけで合わせましょう";
 
     }
     else{
@@ -833,11 +900,20 @@ function refreshSyncLatencyStep(){
             sub = "イヤホンが同じなら、<br>このまま使えます";
 
         }
-        else if(syncState.latencySpreadMs !== null &&
-                syncState.latencySpreadMs > SYNC_LATENCY_SPREAD_WARN_MS){
+        else if(isSyncSpreadLarge()){
 
             sub = "⚠️ ばらつき ±" + syncState.latencySpreadMs + "ms(大きめです)<br>" +
                   "もう一度測ると、正確になります";
+
+        }
+        else if(isSyncFarFromPrev()){
+
+            /*
+            前回の値から大きく離れた時(v223)。イヤホンを替えたのなら
+            正しい変化なので、止めずに一言添えるだけにします。
+            */
+            sub = "⚠️ 前回(" + syncState.latencyPrevMs + "ms)と大きく違います<br>" +
+                  "同じイヤホンなら、もう一度測ってみてください";
 
         }
         else{
@@ -858,6 +934,8 @@ function refreshSyncLatencyStep(){
     if(syncPadSmallEl){ syncPadSmallEl.textContent = small; }
     if(syncPadCaptionEl){ syncPadCaptionEl.innerHTML = caption; }
     if(syncPadSubEl){ syncPadSubEl.innerHTML = sub; }
+
+    refreshSyncMonitor();
 
     // ---- ストロボの点 ----
     /*
@@ -914,6 +992,129 @@ function refreshSyncLatencyStep(){
     if(syncStepStartEl){
         syncStepStartEl.style.display = (visible && decided) ? "" : "none";
     }
+
+    /*
+    画面の幅に合わせて台を縮めます(v223)。②が見えている時だけ測れる
+    (隠れている間は幅が0と測られる)ので、ここで毎回合わせ直します。
+    */
+    if(visible){ fitSyncDeck(); }
+
+}
+
+/**
+ * 叩いた8回のばらつきが大きすぎるか(測り直しを勧める目安を超えたか)。
+ *
+ * @return {boolean}
+ */
+function isSyncSpreadLarge(){
+
+    return syncState.latencySpreadMs !== null &&
+           syncState.latencySpreadMs > SYNC_LATENCY_SPREAD_WARN_MS;
+
+}
+
+/**
+ * 今測った値が、前回保存した値から大きく離れているか(v223)。
+ *
+ * 前回の値を出しているだけの時や、前回の値が無い時は false です。
+ *
+ * @return {boolean}
+ */
+function isSyncFarFromPrev(){
+
+    if(syncState.latencyFromSaved){ return false; }
+
+    if(syncState.latencyPrevMs === null || syncState.latencyMs === null){ return false; }
+
+    return Math.abs(syncState.latencyMs - syncState.latencyPrevMs) > SYNC_LATENCY_PREV_WARN_MS;
+
+}
+
+/**
+ * 左上のモニタの3行を、今の状態に合わせて書き換えます(v223)。
+ *
+ * 液晶らしく、英字と数字だけで短く出します。
+ *
+ * ⚠️⚠️ **「● REC」は点滅させません。** 点滅はピッと関係ない速さでも
+ *    「目で追えるリズム」になりえて、目で合わせると遅延が0と測られて
+ *    しまうためです(js/sync.js の「② Bluetooth遅延」の説明)。
+ */
+function refreshSyncMonitor(){
+
+    const phase = syncState.latencyPhase;
+
+    // 数字を2桁にそろえます(6 → "06")
+    function twoDigits(n){
+        return (n < 10 ? "0" : "") + n;
+    }
+
+    let status = "";
+    let big = "";
+    let sub = "";
+
+    if(phase === "idle"){
+
+        status = "READY";
+        big = "00/" + SYNC_LATENCY_TAPS;
+        sub = "TAP TO START";
+
+    }
+    else if(phase === "measuring"){
+
+        const count = syncMeasureTaps.length;
+
+        status = "● REC";
+        big = twoDigits(count) + "/" + SYNC_LATENCY_TAPS;
+
+        // 次に叩くのが「ならし」か「本番」か
+        sub = (count < SYNC_LATENCY_WARMUP) ? "WARM-UP" : "MEASURE";
+
+    }
+    else{
+
+        status = syncState.latencyDecided ? "SET ✓"
+               : syncState.latencyFromSaved ? "MEMORY"
+               : "DONE";
+
+        big = syncState.latencyMs + "ms";
+
+        if(syncState.latencyFromSaved){
+            sub = "LAST VALUE";
+        }
+        else{
+            const check = (isSyncSpreadLarge() || isSyncFarFromPrev()) ? " CHECK" : " OK";
+            sub = "±" + syncState.latencySpreadMs + "ms" + check;
+        }
+
+    }
+
+    if(syncMonStatusEl){ syncMonStatusEl.textContent = status; }
+    if(syncMonBigEl){ syncMonBigEl.textContent = big; }
+    if(syncMonSubEl){ syncMonSubEl.textContent = sub; }
+
+}
+
+/**
+ * 画面が狭い時、ターンテーブルの台ごと縮めます(v223)。
+ *
+ * 台の中身は幅320pxの上に px で置いてあるので、それより狭い画面
+ * (折り畳みスマホの外の画面など)ではみ出します。はみ出す時だけ、
+ * 「使える幅 ÷ 320」の倍率を CSS の --deck-scale に入れて、見た目の
+ * 比率を保ったまま縮めます。ふつうのスマホ(幅360px以上)では 1 の
+ * ままで、何も変わりません。
+ */
+function fitSyncDeck(){
+
+    if(!syncLatencyPadEl){ return; }
+
+    const width = syncLatencyPadEl.clientWidth;
+
+    // 隠れている間は幅0と測られるので、何もしません
+    if(width <= 0){ return; }
+
+    const scale = Math.min(1,width / SYNC_DECK_STAGE_WIDTH);
+
+    syncLatencyPadEl.style.setProperty("--deck-scale",scale.toFixed(4));
 
 }
 
@@ -975,6 +1176,23 @@ function handleSyncPadPress(event){
         void syncLatencyPadEl.offsetWidth;
 
         syncLatencyPadEl.classList.add("sync-deck-hit");
+
+    }
+
+    /*
+    サンプラーのパッドを1つ光らせます(v223)。叩くたびに
+    左上 → 右上 → 左下 → 右下 → 左上… と順に回ります。
+    やり直しの小技は上の「沈み」と同じです。
+    */
+    if(syncSamplerPadEls.length > 0){
+
+        const pad = syncSamplerPadEls[(syncMeasureTaps.length - 1) % syncSamplerPadEls.length];
+
+        pad.classList.remove("sync-sampler-hit");
+
+        void pad.offsetWidth;
+
+        pad.classList.add("sync-sampler-hit");
 
     }
 
@@ -1392,6 +1610,9 @@ function decideSyncLatency(){
     */
     saveSyncLatency(syncState.latencyMs);
 
+    // 保存した値が、次に比べる「前回の値」になります(v223)
+    syncState.latencyPrevMs = syncState.latencyMs;
+
     console.log("同期モード ② 遅延を決定しました :",syncState.latencyMs + "ms");
 
 }
@@ -1672,5 +1893,13 @@ function stopSyncTempoSound(){
             redoSyncLatency();
         });
     }
+
+    /*
+    画面の幅が変わった時(折り畳みスマホを開いた・閉じた等)に、
+    ターンテーブルの大きさを合わせ直します(v223)。
+    */
+    window.addEventListener("resize",function(){
+        fitSyncDeck();
+    });
 
 })();
