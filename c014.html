@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v220)ノリRun
+        (v221)ノリRun
         メインメニュー
 
     </title>
@@ -3179,7 +3179,8 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         */
         #license-panel,
         #connect-panel,
-        #metronome-panel{
+        #metronome-panel,
+        #sync-panel{
             position:fixed;
             top:0;
             right:0;
@@ -3226,9 +3227,14 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
            モードが変わっても #app の中の話なので、ここへは影響しません。
            **色の数値(#ff8c42)をここに書き写していない**のが大事な点で、
            暁色を変えたくなったら :root の1か所を直すだけで済みます。
+
+        v221で「みんなで走る同期モード」(#sync-panel)も並べました。
+        竹弘の指定「条件がノリ注入済の曲・ノリノリRun再生モードの為、
+        イメージカラー暁色」。
         */
         #connect-panel,
-        #metronome-panel{
+        #metronome-panel,
+        #sync-panel{
             --theme-color:var(--theme-color-other);
             --theme-rgb:var(--theme-rgb-other);
         }
@@ -4098,7 +4104,8 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
 
         /* 選択肢のグループ見出し(v173)。少し上に間を空けます */
         #connect-panel .connect-heading,
-        #metronome-panel .connect-heading{
+        #metronome-panel .connect-heading,
+        #sync-panel .connect-heading{
             margin:20px 0 8px 0;
 
             font-size:0.9rem;
@@ -4108,13 +4115,286 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
 
         /* 選択肢の下に添える一言。少し小さく、控えめな色にします */
         #connect-panel .connect-note,
-        #metronome-panel .connect-note{
+        #metronome-panel .connect-note,
+        #sync-panel .connect-note{
             display:block;
             margin-top:4px;
 
             font-size:0.8rem;
             font-weight:normal;
             color:var(--text-sub);
+        }
+
+        /* ======================================================
+           みんなで走る同期モード(v221。js/sync.js)
+        ====================================================== */
+        /*
+        3人のランナーの絵文字(設定メニューと、この画面の見出しで使います)。
+
+        竹弘の指定(2026-09-22):
+
+            絵文字の部分はみんなで走れるをイメージして3人のランナーの
+            絵文字にして、1/2のサイズにしてうまく3人のランナーの
+            絵文字にして欲しい。
+                 🏃🏽
+               🏃‍♂️🏃‍♀️
+            上下の絵文字と中心を合わせて欲しい。
+            また絵文字の後の文字の出だしも、上下の設定項目名と
+            頭出しを合わせて欲しい。
+
+        【どうやって「1つぶん」に収めているか】
+
+        font-size:0.5em … 親の文字の**ちょうど半分**の大きさにします。
+                          設定メニューの記号(.settings-icon)は1.5remなので、
+                          1人あたり0.75remになります。
+        2段に積む      … 半分の大きさを2段なので、**高さの合計はちょうど
+                          絵文字1つぶん**。メニューの行の高さは変わりません。
+
+        【なぜ幅を100%にするのか(中心を合わせる仕組み)】
+
+        下の段(2人)は、半分の大きさでも .settings-icon の幅(1.7rem)を
+        少しはみ出すことがあります(絵文字は1文字の幅が文字の大きさより
+        やや広いため)。
+
+        ふつうの文字の並びで中央揃えにすると、はみ出した分は**右側にだけ**
+        はみ出して、中心が右へずれます。そこで入れ物を枠と同じ幅にして、
+        縦並び(flex)の align-items:center で中央に置きます。こうすると
+        はみ出しても**左右に同じだけ**はみ出すので、中心は枠の中心、
+        つまり上下の🏃・📜の中心とぴたり揃います。
+
+        文字の出だしの位置は .settings-icon の幅(1.7rem)で決まっていて、
+        ここでは幅を変えていないので、項目名の頭も上下と揃ったままです。
+        */
+        .sync-runners{
+            display:flex;
+            flex-direction:column;
+            align-items:center;
+            justify-content:center;
+
+            width:100%;
+
+            font-size:0.5em;
+            line-height:1;
+        }
+
+        .sync-runners > span{
+            display:block;
+            line-height:1;
+            white-space:nowrap;
+        }
+
+        /*
+        見出し(✕の左)の3人です。
+
+        見出しの文字は1remなので、そのまま半分にすると1人0.5rem(8px)と
+        小さすぎて見分けられません。見出しでは入れ物を2remにして、
+        1人1remで描きます(2段で2rem。✕ボタンの40pxより低いので、
+        見出しの高さは変わりません)。
+        */
+        .sync-title{
+            display:flex;
+            align-items:center;
+            gap:8px;
+        }
+
+        .sync-title-icon{
+            flex-shrink:0;
+            width:2.6rem;
+            font-size:2rem;
+            line-height:1;
+        }
+
+        /*
+        ① ② ③ … の1段ぶんの入れ物です。段と段の間を少し空けます。
+        */
+        #sync-panel .sync-step{
+            margin-bottom:8px;
+        }
+
+        /*
+        「決定」済みの段の中身を、薄い灰色にします。
+
+        竹弘の指定:「『決定』ボタン押すと薄い灰色でロックして、次の
+        『Bluetooth遅延設定』を表示」
+
+            opacity   … 全体を薄くする
+            grayscale … 色を抜いて灰色にする(暁色の数字も灰色に)
+            pointer-events:none … 指で触っても反応しなくする
+                                  (定規の側でも setLocked で止めています)
+
+        ⚠️ **ボタンの行(.sync-btn-row)は中身に含めていません。**
+           段ごと灰色にすると「再設定」まで押せなくなるためです。
+        */
+        #sync-panel .sync-step-locked .sync-step-body{
+            opacity:0.45;
+            filter:grayscale(1);
+            pointer-events:none;
+        }
+
+        /*
+        ①の大きな数字と、その下の絵文字・呼び名。
+
+        初期設定の定規(css/setup.css の #pitch-number / #pitch-label)と
+        同じ形にしています。色だけは、この画面が🕺の機能なので暁色
+        (var(--theme-color))です。
+        */
+        #sync-panel .sync-pitch-display{
+            text-align:center;
+            margin-bottom:12px;
+        }
+
+        #sync-pitch-number{
+            font-size:3.5rem;
+            font-weight:900;
+            line-height:1;
+            color:var(--theme-color);
+
+            /*
+            数字の幅を揃えます(1 と 8 で幅が違うと、定規を動かすたびに
+            数字全体が左右にぶれて読みにくいため)。
+            */
+            font-variant-numeric:tabular-nums;
+        }
+
+        #sync-pitch-label{
+            margin-top:8px;
+            font-size:1.3rem;
+            font-weight:bold;
+        }
+
+        /*
+        「決定」「再設定」を並べる行です。
+
+        ⚠️ flex:1 ではなく grid で2等分しています。flex:1 は中の文字の
+           長さによって幅がずれることがあり(v95で実際に起きた)、竹弘の
+           「並ぶボタンの端は必ず揃える」を守れないためです。
+
+        minmax(0,1fr) は「0から、残りを等分した幅まで」という意味です。
+        ただの 1fr だと「中身の文字より細くはならない」という決まりが
+        付いてくるので、長い文字のボタンだけ太る余地が残ります。
+        0 を下限にしておくと、中身と無関係に**必ずきっちり半分ずつ**です。
+        */
+        #sync-panel .sync-btn-row{
+            display:grid;
+            grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+            gap:12px;
+
+            margin-top:14px;
+        }
+
+        #sync-panel .sync-btn{
+            /* 指で確実に押せる高さ(Material Design の48dp) */
+            min-height:48px;
+            padding:10px 8px;
+
+            border-radius:12px;
+            border:2px solid var(--theme-color);
+
+            background:var(--card-bg);
+            color:var(--theme-color);
+
+            font-size:1rem;
+            font-weight:bold;
+
+            cursor:pointer;
+        }
+
+        /* 主役のボタン(決定)は塗りつぶして目立たせます */
+        #sync-panel .sync-btn-primary{
+            background:var(--theme-color);
+            color:#ffffff;
+        }
+
+        #sync-panel .sync-btn:active{
+            filter:brightness(0.85);
+        }
+
+        /*
+        押せないボタンは、消さずに薄くします(竹弘の好み)。
+        消すと位置が動いて指が迷うためです。理由の一言は、すぐ下の
+        .sync-guide に出します(薄いだけだと壊れて見えるため)。
+        */
+        #sync-panel .sync-btn:disabled{
+            opacity:0.35;
+            cursor:default;
+            filter:none;
+        }
+
+        /* ボタンの下の一言(なぜ押せないのか / 次に何をするのか) */
+        #sync-panel .sync-guide{
+            margin-top:8px;
+            text-align:center;
+        }
+
+        /* ======================================================
+           定規の部品(v221。js/ruler.js)
+        ====================================================== */
+        /*
+        createSwipeRuler() が、渡された箱にこのクラスを付けて、中に
+        赤い線と canvas を組み立てます。どこに置いても同じ見た目に
+        なるよう、ここにまとめています。
+
+        見た目は初期設定の定規(css/setup.css の .ruler-outer /
+        .center-line)をそのまま写しました。竹弘が作り込んだ見た目です。
+
+        ⚠️ 高さはここで決めていません(置く場所ごとに決めます)。
+           初期設定は160px、同期モードは下の #sync-ruler で決めています。
+        */
+        .swipe-ruler{
+            position:relative;
+            width:100%;
+
+            background:#ffffff;
+            border-radius:20px;
+            box-shadow:0 8px 20px rgba(0,0,0,0.08);
+
+            overflow:hidden;
+        }
+
+        /* BPMを読む基準の赤い線(真ん中) */
+        .swipe-ruler-center{
+            position:absolute;
+            left:50%;
+            top:0;
+            bottom:0;
+
+            width:3px;
+            background:#ff3b30;
+            border-radius:2px;
+
+            /* 線の太さの半分だけ左へ戻して、線の中心を箱の中心に合わせます */
+            transform:translateX(-50%);
+
+            z-index:1;
+
+            /* 線の上から触っても、下の定規を掴めるようにします */
+            pointer-events:none;
+        }
+
+        .swipe-ruler-canvas{
+            display:block;
+            width:100%;
+            height:100%;
+
+            /*
+            touch-action:none … 定規の上で指を動かした時に、画面が
+            スクロールしたり拡大したりしないようにします(初期設定の
+            #setup-screen と同じ指定を、定規の上だけに限定しています)。
+            */
+            touch-action:none;
+
+            cursor:grab;
+        }
+
+        /*
+        同期モードの定規の高さです。
+
+        初期設定(160px)より低くしています。同じ画面に②③と段が続くので、
+        少しでもスクロールを減らすためです。目盛りと数字は上から65pxまでに
+        描かれるので、120pxあれば下に指を置く場所も十分残ります。
+        */
+        #sync-ruler{
+            height:120px;
         }
 
         /* 見出し。flex-shrink:0 で、本文が長くても縮ませません */
@@ -4338,7 +4618,8 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         */
         #pitch-number::after,
         #pitch-value::after,
-        #base-pitch-value::after{
+        #base-pitch-value::after,
+        #sync-pitch-number::after{
             content:"BPM";
             font-size:0.5em;
             font-weight:600;
@@ -6422,6 +6703,105 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
 
 </div>
 
+<!--
+    設定 ⚙️ →「みんなで走る同期モード」で開く画面(v221。js/sync.js)。
+
+    一緒に走る人と同じマイピッチを設定し、同じ時刻に曲をスタートする
+    機能です。📘 仕様は CLAUDE.md の「追加1」が正。
+
+    見出し・本文・閉じるボタンのクラスは、上の「🎚️ 曲の繋ぎ方」
+    「🏃 ノリノリアシスト」とそのまま共有しています。
+
+    ⚠️ #app の外に置いています(ほかのパネルと同じ)。暁色は CSS の
+       「#connect-panel, #metronome-panel, #sync-panel」の並びで
+       付けています(この画面は🕺の機能なので、どこから開いても暁色)。
+
+    ⚠️ 順を追って1つずつ表示する作りです(竹弘の指定)。
+       ① を「決定」するまで ② は display:none のまま隠れています。
+       どの段を見せるかは js/sync.js の refreshSyncPanel() が決めます。
+
+    ⚠️ v221(段①)では ① までを作っています。② は見出しだけです。
+-->
+<div id="sync-panel" style="display:none;">
+
+    <div class="license-header">
+        <span class="license-title sync-title">
+            <span class="sync-title-icon">
+                <span class="sync-runners"><span>🏃🏽</span><span>🏃‍♂️🏃‍♀️</span></span>
+            </span>
+            <span>みんなで走る同期モード</span>
+        </span>
+        <button type="button" id="sync-close-btn" class="license-close-btn">✕</button>
+    </div>
+
+    <div class="license-body">
+
+        <p>
+            一緒に走る人と同じマイピッチで、<br>
+            同じ時刻に曲をスタートします。<br>
+            お互い好きな曲を聴きながら、<br>
+            同じノリで走れます。
+        </p>
+
+        <p class="connect-note">
+            ※ 🕺ノリノリRun再生の機能です。<br>
+            　 ノリ注入した曲で動きます。
+        </p>
+
+        <!-- ① みんなで走るピッチ -->
+        <section class="sync-step" id="sync-step-pitch">
+
+            <p class="connect-heading">① みんなで走るピッチ</p>
+
+            <p class="connect-note">
+                定規をなぞって、一緒に走る人と<br>
+                同じ数字に合わせてください。<br>
+                このピッチは今回だけ使います<br>
+                (いつものマイピッチは変わりません)。
+            </p>
+
+            <!--
+                「決定」すると、この .sync-step-body の中だけが薄い灰色に
+                なって触れなくなります。ボタンの行を外に出しているのは、
+                「再設定」まで灰色で押せなくならないようにするためです。
+            -->
+            <div class="sync-step-body">
+
+                <div class="sync-pitch-display">
+                    <div id="sync-pitch-number">170</div>
+                    <div id="sync-pitch-label">🏃‍♂️ マラソン</div>
+                </div>
+
+                <!-- 定規は js/ruler.js の createSwipeRuler() がこの中に組み立てます -->
+                <div id="sync-ruler"></div>
+
+            </div>
+
+            <div class="sync-btn-row">
+                <button type="button" id="sync-pitch-decide-btn" class="sync-btn sync-btn-primary">決定</button>
+                <button type="button" id="sync-pitch-reset-btn" class="sync-btn">再設定</button>
+            </div>
+
+            <!-- なぜ押せないのか / 次に何をするのか(js/sync.js が書き換えます) -->
+            <p class="connect-note sync-guide" id="sync-pitch-guide"></p>
+
+        </section>
+
+        <!-- ② Bluetooth遅延(段②で作ります) -->
+        <section class="sync-step" id="sync-step-latency" style="display:none;">
+
+            <p class="connect-heading">② Bluetooth遅延</p>
+
+            <p class="connect-note">
+                (準備中。次の版で作ります)
+            </p>
+
+        </section>
+
+    </div>
+
+</div>
+
 <!-- ================================================================
      【開発用デバッグログパネル】ここから
      実機確認が終わったら、この範囲をまるごと削除してよい。
@@ -6752,6 +7132,22 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
     借りるので、あちらより後に読み込みます。
 -->
 <script src="js/jacket.js"></script>
+<!--
+    定規の部品(v221)。どこにでも置ける「指でなぞってBPMを選ぶ定規」。
+
+    ⚠️ js/sync.js より先に読み込むこと。sync.js は読み込んだその場で
+    createSwipeRuler() を呼んで定規を組み立てるためです。
+-->
+<script src="js/ruler.js"></script>
+<!--
+    みんなで走る同期モード(v221)。
+
+    ⚠️ js/norirun.js より後に読み込むこと。読み込んだその場で
+    NORIRUN_DEFAULT_PITCH(norirun.js の定数)を使うためです。
+    ほかのファイルの関数(pause や cancelConnect など)は、ボタンが
+    押された時に呼ぶだけなので、順番には関係ありません。
+-->
+<script src="js/sync.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>
