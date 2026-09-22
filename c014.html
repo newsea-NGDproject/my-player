@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v222)ノリRun
+        (v223)ノリRun
         メインメニュー
 
     </title>
@@ -4398,47 +4398,86 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         }
 
         /* ======================================================
-           同期モード ② ターンテーブル(v222)
+           同期モード ② ターンテーブル(v222 / v223で作り込み)
         ====================================================== */
         /*
-        竹弘の要望(2026-09-22):「DJのターンテーブル風にはしてくれないの?」
+        竹弘の要望(2026-09-22):
+            v222 「DJのターンテーブル風にはしてくれないの?」
+            v223 「ターンテーブルの見た目を更に今風にカッコよくしたい。
+                   ただし主張しすぎない控えめな感じで」
 
-        ピッに合わせて叩く面を、レコードを載せたターンテーブルにしました。
+        ピッに合わせて叩く面を、DJ機材に見立てたターンテーブルにしています。
 
             止まっている(idle)      … トーンアームは上がったまま。
                                       ラベルがゆっくり「息をする」ように光って
                                       「ここを押して」と誘う
             測っている(measuring)  … トーンアームが盤に降り、レコードが回る。
-                                      叩いた数だけ周りのストロボの点が灯る
-            値が出た(done)         … 盤が止まり、ラベルに遅延(ms)が出る
+                                      叩いた数だけプラッターの段差のランプが灯る
+            値が出た(done)         … 盤が止まり、ラベルとモニタに遅延(ms)が出る
+
+        【色 ―― 暁色の仲間(v223)】
+
+        竹弘:「暁色は夕暮れの綺麗な空をイメージしているので、同系色で
+        色々ない色があるはず。ピンクや牡丹色など」
+
+        夕焼けの空は、地平線の暁色から、上へ行くほどコーラル → ピンク →
+        牡丹色 → 夕暮れの紫 と移り変わります。その5色を差し色に使います。
+        台そのものは黒のまま控えめにして、**光る所・書かれた文字だけ**に
+        色を入れています(主張しすぎないように)。
+
+        ⚠️ 色の数値はここ(#sync-panel)の1か所だけに書いています。
+           この画面の中から var(--dusk-…) で使います。暁色そのものは
+           今までどおり var(--theme-color) です。
 
         【なぜ 45回転なのか(1周 1.333秒)】
 
         レコードの回転数は 33⅓回転 と 45回転 が定番です。33⅓回転だと
         1周が 1.8秒で、**ピッ(0.6秒おき)のちょうど3回分**になります。
-        すると盤の目印(キューシール)が、3拍ごとに同じ場所へ来る
+        すると盤の「NoriRun」の文字が、3拍ごとに同じ場所へ来る
         「目で追えるリズム」になってしまいます。
 
-        ⚠️ **この画面では、目で見えるリズムがあってはいけません。**
+        ⚠️⚠️ **この画面では、目で見えるリズムがあってはいけません。**
            画面はBluetoothを通らないので、目で合わせると遅延が0と
            測られてしまいます(js/sync.js の「② Bluetooth遅延」の説明)。
            45回転なら1周がピッ2.22回分で、拍とは揃いません。
+           モニタの「● REC」も点滅させず、点けっぱなしにしています。
 
         【大きさの決め方】
 
-        ターンテーブルの中身(盤・点・トーンアーム)は、幅300pxの台
-        (.sync-deck-stage)の上に**px で**置いています。トーンアームの先が
-        盤の上に降りるかどうかは、盤とアームの位置関係で決まるので、
-        画面の幅で比率が変わるとアームが盤から外れてしまうためです。
-        台は真ん中に置くので、どの画面幅でもレコードは中央に来ます
-        (竹弘の「画面中央を芯に左右対称」。いずれの左右反転にも備えて)。
+        中身は、幅320px・高さ304pxの台(.sync-deck-stage)の上に**px で**
+        置いています。トーンアームの先が盤の上に降りるかどうかは、盤と
+        アームの位置関係で決まるので、画面の幅で比率が変わるとアームが
+        盤から外れてしまうためです。
+
+            プラッターの中心 … (160, 162)。金属の縁の半径100、盤の半径84
+            アームの軸       … (290, 96)
+            → アームを24度回すと、針の先は盤の中心から約76px(盤の上)
+            → 0度(休み)では約137px(プラッターの外)
+
+        台は真ん中に置きます。画面が320pxより狭い時は、js/sync.js の
+        fitSyncDeck() が --deck-scale に縮める倍率を入れ、台ごと縮めます
+        (見た目の比率は変わりません)。
         */
+        #sync-panel{
+            /* 暁色の仲間(夕焼けの空の、地平線から上へ) */
+            --dusk-coral:#ff7a5c;
+            --dusk-pink:#ff6f91;
+            --dusk-peony:#e7609e;     /* 牡丹色 */
+            --dusk-violet:#9d6bd6;    /* 夕暮れの紫 */
+            --dusk-gold:#ffc46b;      /* 沈む直前の、金色がかった光 */
+
+            /* 半透明で使う時のための、数字だけの形(--theme-rgb と同じ考え方) */
+            --dusk-pink-rgb:255,111,145;
+        }
+
         #sync-panel .sync-deck{
             position:relative;
             display:block;
 
             width:100%;
-            height:232px;
+
+            /* 台の高さ(304px)を、縮める倍率に合わせます */
+            height:calc(304px * var(--deck-scale,1));
 
             margin:0;
             padding:0;
@@ -4446,8 +4485,11 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             border:none;
             border-radius:20px;
 
-            /* 黒い金属の台。上から光が当たっているように、上側を少し明るく */
-            background:radial-gradient(120% 90% at 50% 0%,#3a3a3e 0%,#232326 55%,#18181a 100%);
+            /*
+            黒い台。上から光が当たっているように上側を少し明るくし、
+            ほんのわずかに夕暮れの紫を混ぜています(気づくか気づかないか程度)。
+            */
+            background:radial-gradient(120% 90% at 50% 0%,#37333d 0%,#221f27 55%,#17151b 100%);
 
             box-shadow:
                 inset 0 1px 0 rgba(255,255,255,0.08),
@@ -4471,45 +4513,495 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             -webkit-user-select:none;
         }
 
-        /* 幅300pxの台。真ん中に置きます(上の【大きさの決め方】) */
+        /*
+        台の下の縁に走る、細い光の線(v223)。暁色から紫へ流れる夕焼けの色です。
+        今どきのDJ機材によくある「控えめなLEDの線」に見立てています。
+        */
+        #sync-panel .sync-deck::after{
+            content:"";
+
+            position:absolute;
+            left:18px;
+            right:18px;
+            bottom:0;
+
+            height:2px;
+
+            border-radius:1px;
+
+            background:linear-gradient(90deg,
+                rgba(0,0,0,0),
+                var(--theme-color),
+                var(--dusk-pink),
+                var(--dusk-peony),
+                var(--dusk-violet),
+                rgba(0,0,0,0));
+
+            opacity:0.6;
+
+            pointer-events:none;
+        }
+
+        /* 幅320px・高さ304pxの台。真ん中に置き、狭い画面では縮めます */
         #sync-panel .sync-deck-stage{
             position:absolute;
             top:0;
             left:50%;
 
-            width:300px;
-            height:232px;
+            width:320px;
+            height:304px;
 
-            transform:translateX(-50%);
+            transform:translateX(-50%) scale(var(--deck-scale,1));
+            transform-origin:50% 0;
         }
 
-        /* 盤を載せる場所(直径172px。中心は台の (150px, 116px)) */
-        #sync-panel .sync-platter{
-            position:absolute;
-            left:64px;
-            top:30px;
+        /* ---- 左上のモニタ(v223) ---- */
+        /*
+        竹弘の指定「左上にモニタを設置して、タップ開始後の情報をモニタに
+        表示したい」。
 
-            width:172px;
-            height:172px;
+            1行目 … 状態(READY / ● REC / DONE / MEMORY / SET)と BPM100
+            2行目 … 回数(06/12)や結果(250ms)を大きく
+            3行目 … ひとこと(WARM-UP / MEASURE / ±9ms など)
+
+        液晶の見た目にするため、数字の幅が揃う書体(monospace)で、
+        文字をほんのり光らせています。
+        */
+        #sync-panel .sync-monitor{
+            position:absolute;
+            left:10px;
+            top:10px;
+
+            width:108px;
+            height:50px;
+
+            box-sizing:border-box;
+            padding:5px 7px;
+
+            display:flex;
+            flex-direction:column;
+            justify-content:space-between;
+
+            border-radius:6px;
+
+            background:linear-gradient(180deg,#1d1622 0%,#120e16 100%);
+
+            box-shadow:
+                inset 0 0 0 1px rgba(255,255,255,0.07),
+                inset 0 2px 8px rgba(0,0,0,0.8),
+                0 1px 0 rgba(255,255,255,0.06);
+
+            font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,"Roboto Mono",monospace;
+            text-align:left;
+        }
+
+        #sync-panel .sync-monitor-row{
+            display:flex;
+            justify-content:space-between;
+
+            font-size:8px;
+            font-weight:bold;
+            letter-spacing:0.5px;
+            line-height:1;
+
+            color:var(--dusk-pink);
+            text-shadow:0 0 4px rgba(var(--dusk-pink-rgb),0.6);
+        }
+
+        #sync-panel .sync-monitor-bpm{
+            color:rgba(255,255,255,0.45);
+            text-shadow:none;
+        }
+
+        #sync-panel .sync-monitor-big{
+            font-size:17px;
+            font-weight:bold;
+            line-height:1;
+            letter-spacing:1px;
+
+            color:var(--dusk-gold);
+            text-shadow:0 0 6px rgba(var(--theme-rgb),0.75);
+
+            font-variant-numeric:tabular-nums;
+        }
+
+        #sync-panel .sync-monitor-sub{
+            font-size:7.5px;
+            letter-spacing:0.8px;
+            line-height:1;
+
+            color:rgba(255,255,255,0.5);
+        }
+
+        /* ---- 右上の丸ノブ(v223。飾り) ---- */
+        /*
+        竹弘の指定「デザインで丸型の回すノブ(EQ / Filter / FX)を複数設置」。
+
+        ノブのつまみ(.sync-knob)、周りの目盛り(::before)、向きを示す線
+        (::after)の3枚でできています。線の向きは HTML の --r で、
+        本物らしく少しずつ違う角度にしてあります。
+        */
+        #sync-panel .sync-knobs{
+            position:absolute;
+            top:12px;
+            right:14px;
+
+            display:flex;
+            gap:10px;
+        }
+
+        #sync-panel .sync-knob-wrap{
+            width:30px;
+
+            display:flex;
+            flex-direction:column;
+            align-items:center;
+            gap:5px;
+        }
+
+        #sync-panel .sync-knob{
+            position:relative;
+
+            width:26px;
+            height:26px;
+
+            border-radius:50%;
+
+            background:radial-gradient(circle at 40% 35%,#5a5a64 0%,#2a2a31 65%,#1d1d22 100%);
+
+            box-shadow:
+                0 2px 4px rgba(0,0,0,0.6),
+                inset 0 1px 0 rgba(255,255,255,0.15);
         }
 
         /*
-        黒いレコード盤。
+        周りの目盛り。repeating-conic-gradient で「細い線・すき間」を
+        ぐるりと繰り返し、mask(型抜き)で内側をくり抜いて輪にしています。
+        */
+        #sync-panel .sync-knob::before{
+            content:"";
+
+            position:absolute;
+            inset:-4px;
+
+            border-radius:50%;
+
+            background:repeating-conic-gradient(from 0deg,
+                rgba(255,255,255,0.28) 0deg 2deg,
+                rgba(255,255,255,0) 2deg 30deg);
+
+            -webkit-mask:radial-gradient(circle,transparent 15px,#000 15.5px);
+            mask:radial-gradient(circle,transparent 15px,#000 15.5px);
+        }
+
+        /* 向きを示す線(ピンク)。つまみの中心(上から13px)を軸に --r だけ回します */
+        #sync-panel .sync-knob::after{
+            content:"";
+
+            position:absolute;
+            left:50%;
+            top:3px;
+
+            width:2px;
+            height:8px;
+            margin-left:-1px;
+
+            border-radius:1px;
+
+            background:var(--dusk-pink);
+            box-shadow:0 0 3px rgba(var(--dusk-pink-rgb),0.8);
+
+            transform-origin:50% 10px;
+            transform:rotate(var(--r,0deg));
+        }
+
+        #sync-panel .sync-knob-label{
+            font-size:7px;
+            font-weight:bold;
+            letter-spacing:0.5px;
+            line-height:1;
+
+            color:rgba(255,255,255,0.42);
+        }
+
+        /* ---- フェーダー(v223。飾り) ---- */
+        /*
+        竹弘の指定「クロスフェーダーやピッチフェーダーを設置」。
+
+        ピッチフェーダーは本物のターンテーブルでは右側ですが、右にはトーン
+        アームがあって窮屈になるので、左右の重さの釣り合いを取って左に
+        置きました(竹弘と合意)。
+
+        つまみ(.sync-fader-cap)は2つのフェーダーで同じ見た目を使い回します。
+        */
+        #sync-panel .sync-pitch-fader{
+            position:absolute;
+            left:17px;
+            top:84px;
+
+            width:12px;
+            height:144px;
+        }
+
+        /* 溝(真ん中の黒い細い線) */
+        #sync-panel .sync-pitch-fader::before{
+            content:"";
+
+            position:absolute;
+            left:50%;
+            top:0;
+            bottom:0;
+
+            width:4px;
+            margin-left:-2px;
+
+            border-radius:2px;
+
+            background:#0b0a0d;
+            box-shadow:inset 0 1px 2px rgba(0,0,0,0.9),0 1px 0 rgba(255,255,255,0.06);
+        }
+
+        /* 両脇の目盛り(12pxおきの横線) */
+        #sync-panel .sync-pitch-fader::after{
+            content:"";
+
+            position:absolute;
+            left:-6px;
+            right:-6px;
+            top:0;
+            bottom:0;
+
+            background:repeating-linear-gradient(180deg,
+                rgba(255,255,255,0.18) 0 1px,
+                rgba(255,255,255,0) 1px 12px);
+
+            /* 溝の上には描かず、両脇だけに残します */
+            -webkit-mask:linear-gradient(90deg,#000 0 7px,transparent 7px 17px,#000 17px);
+            mask:linear-gradient(90deg,#000 0 7px,transparent 7px 17px,#000 17px);
+        }
+
+        #sync-panel .sync-fader-cap{
+            position:absolute;
+            left:50%;
+            top:50%;
+
+            width:24px;
+            height:12px;
+            margin:-6px 0 0 -12px;
+
+            border-radius:2px;
+
+            background:linear-gradient(180deg,#e2e4e9 0%,#a3a7af 100%);
+            box-shadow:0 2px 3px rgba(0,0,0,0.6);
+
+            z-index:1;
+        }
+
+        /* つまみの真ん中の線(暁色) */
+        #sync-panel .sync-fader-cap::after{
+            content:"";
+
+            position:absolute;
+            left:3px;
+            right:3px;
+            top:50%;
+
+            height:2px;
+            margin-top:-1px;
+
+            background:var(--theme-color);
+        }
+
+        #sync-panel .sync-pitch-label{
+            position:absolute;
+            left:8px;
+            top:236px;
+
+            width:30px;
+
+            font-size:7px;
+            font-weight:bold;
+            letter-spacing:0.5px;
+            line-height:1;
+            text-align:center;
+
+            color:rgba(255,255,255,0.42);
+        }
+
+        /* クロスフェーダー(台の下の真ん中。横向き) */
+        #sync-panel .sync-xfader{
+            position:absolute;
+            left:96px;
+            top:276px;
+
+            width:128px;
+            height:20px;
+
+            display:flex;
+            align-items:center;
+            gap:7px;
+        }
+
+        #sync-panel .sync-xfader-mark{
+            font-size:7px;
+            font-weight:bold;
+            line-height:1;
+
+            color:rgba(255,255,255,0.42);
+        }
+
+        #sync-panel .sync-xfader-track{
+            position:relative;
+
+            flex:1;
+            height:4px;
+
+            border-radius:2px;
+
+            background:#0b0a0d;
+            box-shadow:inset 0 1px 2px rgba(0,0,0,0.9),0 1px 0 rgba(255,255,255,0.06);
+        }
+
+        /* 横向きなので、つまみを縦長にして真ん中の線も縦にします */
+        #sync-panel .sync-xfader-cap{
+            width:12px;
+            height:20px;
+            margin:-10px 0 0 -6px;
+        }
+
+        #sync-panel .sync-xfader-cap::after{
+            left:50%;
+            right:auto;
+            top:3px;
+            bottom:3px;
+
+            width:2px;
+            height:auto;
+            margin:0 0 0 -1px;
+        }
+
+        /* ---- 左下のサンプラー(v223) ---- */
+        /*
+        竹弘の指定「サンプラーのボタンを設置」。
+
+        4つのパッドは、暁色 → コーラル → ピンク → 牡丹色(HTML の --c)。
+        ふだんは暗く沈んでいて、**叩くたびに1つずつ順番に光ります**
+        (叩いた手ごたえ。ピッには連動しません)。
+
+        color-mix は「2つの色を混ぜる」書き方です。パッドの色を暗い色に
+        30%だけ混ぜて、消えている時の沈んだ色を作っています。
+        ⚠️ 古いブラウザで color-mix が使えない時のために、先に1行、
+           ふつうの暗い色を書いてあります(使えない行は無視されるため)。
+        */
+        #sync-panel .sync-sampler{
+            position:absolute;
+            left:14px;
+            top:254px;
+
+            display:grid;
+            grid-template-columns:16px 16px;
+            gap:5px;
+        }
+
+        #sync-panel .sync-sampler-pad{
+            width:16px;
+            height:16px;
+
+            border-radius:3px;
+
+            background:#2a262e;
+            background:color-mix(in srgb,var(--c) 28%,#18161b);
+
+            box-shadow:
+                inset 0 1px 0 rgba(255,255,255,0.12),
+                0 1px 2px rgba(0,0,0,0.6);
+        }
+
+        #sync-panel .sync-sampler-pad.sync-sampler-hit{
+            animation:sync-sampler-flash 0.35s ease-out;
+        }
+
+        /* ---- プラッター(v223で厚みと段差) ---- */
+        /*
+        竹弘の指定「プラッターに厚みを持たせて欲しい。12個のランプも
+        プラッターの段差の所に配置して欲しい(立体的にしたい)」。
+
+        上から見た形で、3段に重ねて立体に見せています。
+
+            ① 側面(::before) … 下へ6pxずらした濃い円。厚みに見える
+                               下に夕暮れのピンクがほんのり滲む(台の下の光)
+            ② 金属の縁(.sync-platter) … 半径100。ここが「段差」で、
+                               12個のランプはこの面に並びます
+            ③ レコード盤(.sync-vinyl) … 半径84。縁の上に載っていて、
+                               縁に影を落とします
+
+        金属は conic-gradient(中心から扇形に色を変える)で、明るい所と
+        暗い所を交互に入れて、削り出しの金属の光り方にしています。
+        */
+        #sync-panel .sync-platter{
+            position:absolute;
+            left:60px;
+            top:62px;
+
+            width:200px;
+            height:200px;
+
+            border-radius:50%;
+
+            background:conic-gradient(from 10deg,
+                #5d5d67,#2f2f36 12%,#6c6c77 25%,#35353c 38%,
+                #5d5d67 50%,#2f2f36 62%,#6c6c77 75%,#35353c 88%,#5d5d67);
+
+            box-shadow:
+                inset 0 1px 0 rgba(255,255,255,0.35),
+                inset 0 -1px 2px rgba(0,0,0,0.6);
+
+            /*
+            ::before を「この円の後ろ」に置くための指定です。
+            isolation:isolate で、この中だけで重なり順を完結させます
+            (z-index:-1 が台の後ろまで抜けてしまわないように)。
+            */
+            isolation:isolate;
+        }
+
+        /* ① 側面(厚み)と、その下の光 */
+        #sync-panel .sync-platter::before{
+            content:"";
+
+            position:absolute;
+            inset:0;
+
+            border-radius:50%;
+
+            transform:translateY(6px);
+
+            background:linear-gradient(180deg,#1e1e23 0%,#0e0e11 100%);
+
+            box-shadow:
+                0 10px 18px rgba(0,0,0,0.65),
+                0 0 24px rgba(var(--dusk-pink-rgb),0.22);
+
+            z-index:-1;
+        }
+
+        /*
+        ③ 黒いレコード盤。
 
         repeating-radial-gradient は「同心円の模様を繰り返す」書き方で、
         細い黒と少し明るい黒を1.5pxずつ交互に並べて**溝**を描いています。
         */
         #sync-panel .sync-vinyl{
             position:absolute;
-            inset:0;
+            inset:16px;
 
             border-radius:50%;
 
             background:repeating-radial-gradient(circle at 50% 50%,#0d0d0e 0 1.5px,#1c1c1f 1.5px 3px);
 
+            /* 金属の縁に落とす影(盤が縁の上に載っている段差) */
             box-shadow:
-                0 0 0 3px #0a0a0a,
-                0 6px 14px rgba(0,0,0,0.6);
+                0 0 0 1px #050506,
+                0 3px 6px rgba(0,0,0,0.75);
 
             /*
             回転は最初から付けておいて、止めておきます(paused)。
@@ -4520,36 +5012,33 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             animation-play-state:paused;
         }
 
-        /*
-        盤に貼った目印(キューシール)。
-
-        レコードの溝は同心円なので、回しても回っているように見えません。
-        DJは曲の頭の位置が分かるよう盤に小さなシールを貼りますが、
-        それに見立てた目印で「回っている」ことを見せます。
-        */
-        #sync-panel .sync-cue{
+        /* 盤の「NoriRun」の文字(SVG) */
+        #sync-panel .sync-vinyl-art{
             position:absolute;
-            left:50%;
-            top:9px;
+            inset:0;
 
-            width:5px;
-            height:16px;
-            margin-left:-2.5px;
+            width:100%;
+            height:100%;
 
-            border-radius:2px;
+            overflow:visible;
+        }
 
-            background:var(--theme-color);
-            box-shadow:0 0 6px rgba(var(--theme-rgb),0.7);
+        #sync-panel .sync-norirun-text{
+            font-family:-apple-system,"Helvetica Neue",Arial,sans-serif;
+            font-size:15px;
+            font-weight:800;
+            letter-spacing:1.5px;
+
+            fill:url(#sync-norirun-grad);
         }
 
         /*
         盤の照り返し。**盤と一緒には回しません**(部屋の明かりは動かないので、
         光る場所は同じまま、その下で盤が回るのが本物らしい見え方です)。
-        conic-gradient は「中心から扇形に色を変える」書き方です。
         */
         #sync-panel .sync-sheen{
             position:absolute;
-            inset:0;
+            inset:16px;
 
             border-radius:50%;
 
@@ -4565,19 +5054,19 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         }
 
         /*
-        真ん中のラベル(暁色)。回数や値をここに出します。
+        真ん中のラベル。回数や値をここに出します。
 
-        ⚠️ 暁色は var(--theme-color) から取ります(色の数値を書き写さない
-           決まり)。上に白い光を重ねて、少し立体に見せています。
+        v223で、暁色からピンク・牡丹色へ流れるグラデーションにしました
+        (夕焼けの空)。上に白い光を重ねて、少し立体に見せています。
         */
         #sync-panel .sync-record-label{
             position:absolute;
             left:50%;
             top:50%;
 
-            width:80px;
-            height:80px;
-            margin:-40px 0 0 -40px;
+            width:72px;
+            height:72px;
+            margin:-36px 0 0 -36px;
 
             border-radius:50%;
 
@@ -4594,7 +5083,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
 
             background:
                 radial-gradient(circle at 35% 30%,rgba(255,255,255,0.38) 0%,rgba(255,255,255,0) 60%),
-                var(--theme-color);
+                linear-gradient(135deg,var(--theme-color) 0%,var(--dusk-pink) 65%,var(--dusk-peony) 100%);
 
             box-shadow:inset 0 0 0 2px rgba(0,0,0,0.12);
 
@@ -4620,7 +5109,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         }
 
         #sync-panel .sync-label-big{
-            font-size:1.35rem;
+            font-size:1.3rem;
             font-weight:900;
             line-height:1;
 
@@ -4629,7 +5118,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         }
 
         #sync-panel .sync-label-small{
-            font-size:0.65rem;
+            font-size:0.62rem;
             font-weight:bold;
             line-height:1;
 
@@ -4637,11 +5126,13 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         }
 
         /*
-        周りのストロボの点(12個)。
+        ② 金属の縁(段差)に並ぶ12個のランプ。
 
-        入れ物(.sync-dots)を盤の中心に大きさ0で置き、点をそこから
-        「(--i × 30度) 回してから、上へ98px」動かします。--i は HTML に
-        書いた 0〜11 の番号で、0 が12時の位置、あとは時計回りに並びます。
+        入れ物(.sync-dots)をプラッターの中心に大きさ0で置き、ランプを
+        そこから「(--i × 30度) 回してから、上へ92px」動かします。
+        92px は、盤の端(84)と縁の端(100)のちょうど真ん中 = 段差の面です。
+        --i は HTML に書いた 0〜11 の番号で、0 が12時の位置、あとは
+        時計回りに並びます。
 
         ⚠️ rotate と translateY の順番が要です。先に回してから動かすので、
            「回した向きのまま上へ」動き、時計の文字盤のように並びます。
@@ -4657,92 +5148,166 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
 
         #sync-panel .sync-dot{
             position:absolute;
-            left:-4px;
-            top:-4px;
+            left:-3.5px;
+            top:-3.5px;
 
-            width:8px;
-            height:8px;
+            width:7px;
+            height:7px;
 
             border-radius:50%;
 
-            background:rgba(255,255,255,0.14);
+            /* 消えている時は、金属に埋め込まれた暗いレンズ */
+            background:#141417;
+            box-shadow:
+                inset 0 1px 1px rgba(0,0,0,0.9),
+                0 1px 0 rgba(255,255,255,0.18);
 
-            transform:rotate(calc(var(--i) * 30deg)) translateY(-98px);
+            transform:rotate(calc(var(--i) * 30deg)) translateY(-92px);
 
             transition:background 0.15s,box-shadow 0.15s;
         }
 
-        /* 灯った点(5〜12回目 = 測る本番)は暁色に光ります */
-        #sync-panel .sync-dot.sync-dot-on{
-            background:var(--theme-color);
-            box-shadow:0 0 8px rgba(var(--theme-rgb),0.9);
-        }
-
-        /* 1〜4回目(ならし)は、灯っても控えめな白にします */
-        #sync-panel .sync-dot.sync-dot-warmup.sync-dot-on{
-            background:rgba(255,255,255,0.6);
-            box-shadow:none;
-        }
-
         /*
-        トーンアーム。右上の軸(丸)から、細い腕が下へ伸びています。
+        灯ったランプ(5〜12回目 = 測る本番)。
 
-        rotate の角度で腕の向きが変わります(プラスで時計回り =
-        腕の先が左 = 盤の方へ寄る)。
+        v223で、5個目の暁色から12個目の牡丹色へ、**1個ずつ色が移る**ように
+        しました(夕焼けの空の移り変わり)。color-mix で、暁色と牡丹色を
+        「(--i − 4) × 100% ÷ 7」ずつ牡丹色寄りに混ぜています(5個目 0%、
+        12個目 ちょうど100%)。
 
-            4度  … 盤の外で休んでいる(止まっている時・値が出た時)
+        ⚠️ 「14.3% × 7」と書くと 100.1% になり、**100%を超えると無効**に
+           なって12個目だけ灯らなくなります。だから「100% ÷ 7」で書きます。
+
+        ⚠️ color-mix が使えない古いブラウザのために、まず暁色で灯し、
+           @supports(使えるなら)の中でだけ色を移らせます。
+           変数(--lamp)を2回書く逃げ道は**効きません**(変数は中身を
+           確かめずに受け取るので、使えない書き方でも後の方が勝つため)。
+        */
+        #sync-panel .sync-dot.sync-dot-on{
+            --lamp:var(--theme-color);
+
+            background:var(--lamp);
+            box-shadow:
+                0 0 6px var(--lamp),
+                0 0 12px var(--lamp);
+        }
+
+        @supports (color:color-mix(in oklch,red,blue)){
+
+            #sync-panel .sync-dot.sync-dot-on{
+                --lamp:color-mix(in oklch,var(--dusk-peony) calc((var(--i) - 4) * 100% / 7),var(--theme-color));
+            }
+
+        }
+
+        /* 1〜4個目(ならし)は、灯っても色を付けず、控えめな白にします */
+        #sync-panel .sync-dot.sync-dot-warmup.sync-dot-on{
+            background:rgba(255,255,255,0.65);
+            box-shadow:0 0 4px rgba(255,255,255,0.35);
+        }
+
+        /* ---- 「く」の字のトーンアーム(v223。SVG) ---- */
+        /*
+        竹弘の指定「トーンアームのデザインをもう少し複雑に、直線型ではなく
+        『く』の字型にして欲しい」。
+
+        SVG の中の軸は (30,34)。台の上では (290,96) に来るよう、SVG の
+        左上を (260,62) に置いています。
+
+        回すのは .sync-arm-rot(おもり・腕・ヘッドシェル)だけです。
+        transform-box:view-box は「SVG の座標で回す中心を決める」指定で、
+        これで transform-origin:30px 34px が軸の位置を指します。
+
+            0度  … 盤の外で休んでいる(止まっている時・値が出た時)
             24度 … 盤の外側の溝に降りている(測っている時)
         */
         #sync-panel .sync-tonearm{
             position:absolute;
-            top:22px;
-            right:20px;
+            left:260px;
+            top:62px;
 
-            width:18px;
-            height:18px;
+            width:60px;
+            height:180px;
 
-            border-radius:50%;
+            overflow:visible;
 
-            background:radial-gradient(circle at 40% 35%,#e5e5ea,#8e8e93);
-            box-shadow:0 2px 4px rgba(0,0,0,0.6);
+            filter:drop-shadow(0 3px 3px rgba(0,0,0,0.55));
         }
 
-        #sync-panel .sync-tonearm-arm{
-            position:absolute;
-            left:50%;
-            top:50%;
+        #sync-panel .sync-arm-base-outer{
+            fill:#1f1e24;
+            stroke:#4c4b54;
+            stroke-width:1.5;
+        }
 
-            width:4px;
-            height:118px;
-            margin-left:-2px;
+        #sync-panel .sync-arm-base-inner{
+            fill:#3a3942;
+        }
 
-            border-radius:2px;
-
-            background:linear-gradient(90deg,#9a9aa0,#e5e5ea,#9a9aa0);
-
-            /* 回す中心を、腕の上の端(=軸)にします */
-            transform-origin:50% 0;
-            transform:rotate(4deg);
+        #sync-panel .sync-arm-rot{
+            transform-box:view-box;
+            transform-origin:30px 34px;
+            transform:rotate(0deg);
 
             transition:transform 0.6s cubic-bezier(0.3,0.7,0.3,1);
         }
 
-        /* 腕の先の針の付いた部分(ヘッドシェル) */
-        #sync-panel .sync-tonearm-arm::after{
-            content:"";
+        /* おもり */
+        #sync-panel .sync-arm-weight{
+            fill:#2c2b33;
+            stroke:#5c5b65;
+            stroke-width:1;
+        }
 
-            position:absolute;
-            left:50%;
-            bottom:-6px;
+        #sync-panel .sync-arm-stub{
+            stroke:#9a9aa2;
+            stroke-width:3;
+        }
 
-            width:12px;
-            height:16px;
-            margin-left:-6px;
+        /* 腕(金属の管)。折れ目は角を丸めてつなぎます */
+        #sync-panel .sync-arm-tube{
+            fill:none;
+            stroke:#b9bcc3;
+            stroke-width:3.6;
+            stroke-linejoin:round;
+            stroke-linecap:round;
+        }
 
-            border-radius:2px;
+        /* 腕の照り(細い明るい線を重ねて、丸い管に見せます) */
+        #sync-panel .sync-arm-shine{
+            fill:none;
+            stroke:rgba(255,255,255,0.75);
+            stroke-width:1;
+            stroke-linejoin:round;
+            stroke-linecap:round;
 
-            background:#c7c7cc;
-            box-shadow:0 2px 3px rgba(0,0,0,0.5);
+            transform:translateX(-0.8px);
+        }
+
+        /* ヘッドシェル(針の付いた部分) */
+        #sync-panel .sync-arm-head{
+            fill:#d6d8dd;
+            stroke:#6e6d76;
+            stroke-width:1;
+            stroke-linejoin:round;
+        }
+
+        /* ヘッドシェルの根元の、細い暁色の線(控えめな差し色) */
+        #sync-panel .sync-arm-accent{
+            stroke:var(--theme-color);
+            stroke-width:1.6;
+            stroke-linecap:round;
+        }
+
+        /* 指をかけて上げ下げする小さな取っ手(フィンガーリフト) */
+        #sync-panel .sync-arm-lift{
+            stroke:#b9bcc3;
+            stroke-width:1.4;
+            stroke-linecap:round;
+        }
+
+        #sync-panel .sync-arm-cap{
+            fill:#c9ccd2;
         }
 
         /* ---- 姿ごとの動き ---- */
@@ -4752,7 +5317,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             animation-play-state:running;
         }
 
-        #sync-panel .sync-deck[data-phase="measuring"] .sync-tonearm-arm{
+        #sync-panel .sync-deck[data-phase="measuring"] .sync-arm-rot{
             transform:rotate(24deg);
         }
 
@@ -4790,24 +5355,33 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         }
 
         @keyframes sync-invite{
-            0%,100%{ box-shadow:inset 0 0 0 2px rgba(0,0,0,0.12),0 0 0 0 rgba(var(--theme-rgb),0.55); }
-            50%{ box-shadow:inset 0 0 0 2px rgba(0,0,0,0.12),0 0 0 12px rgba(var(--theme-rgb),0); }
+            0%,100%{ box-shadow:inset 0 0 0 2px rgba(0,0,0,0.12),0 0 0 0 rgba(var(--dusk-pink-rgb),0.55); }
+            50%{ box-shadow:inset 0 0 0 2px rgba(0,0,0,0.12),0 0 0 12px rgba(var(--dusk-pink-rgb),0); }
+        }
+
+        /* サンプラーのパッドが一瞬だけ、自分の色で明るく光ります */
+        @keyframes sync-sampler-flash{
+            0%{
+                background:var(--c);
+                box-shadow:0 0 10px var(--c),inset 0 1px 0 rgba(255,255,255,0.4);
+            }
         }
 
         /*
         スマホの設定で「動きを減らす」を選んでいる人には、回転や光の
         動きを止めます(乗り物酔いのような気分の悪さを感じる人がいるため)。
-        点が灯る・値が出るといった大事な知らせは、そのまま残ります。
+        ランプが灯る・値が出るといった大事な知らせは、そのまま残ります。
         */
         @media (prefers-reduced-motion:reduce){
 
             #sync-panel .sync-vinyl,
             #sync-panel .sync-record-label,
-            #sync-panel .sync-platter{
+            #sync-panel .sync-platter,
+            #sync-panel .sync-sampler-pad{
                 animation:none !important;
             }
 
-            #sync-panel .sync-tonearm-arm{
+            #sync-panel .sync-arm-rot{
                 transition:none;
             }
 
@@ -7257,34 +7831,79 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
             <div class="sync-step-body">
 
                 <!--
-                    ターンテーブル(竹弘の要望「DJのターンテーブル風にはしてくれないの?」)。
-                    全体が1つの大きなボタンで、どこを叩いても数えます。
+                    ターンテーブル(v222。竹弘の要望「DJのターンテーブル風にはしてくれないの?」)。
+                    v223で、竹弘の要望どおりDJ機材らしく作り込みました
+                    (「更に今風にカッコよく。ただし主張しすぎない控えめな感じで」)。
 
-                        .sync-vinyl        … 黒いレコード盤(測っている間だけ回る)
-                        .sync-cue          … 盤に貼った目印(DJが使う「キューシール」)
-                        .sync-sheen        … 盤の照り返し(回らない。光は動かないため)
-                        .sync-record-label … 真ん中の暁色のラベル。回数や値を出す
-                        .sync-dots         … 周りのストロボの点。叩いた数だけ灯る
-                        .sync-tonearm      … トーンアーム。測っている間だけ盤に降りる
+                    全体が1つの大きなボタンで、**どこを叩いても1回と数えます**
+                    (ノブやフェーダーの上を叩いても同じ。部品はすべて飾りです)。
+
+                        .sync-monitor      … 左上のモニタ。状態・回数・結果を出す(v223)
+                        .sync-knobs        … 右上の丸ノブ(EQ / FILTER / FX)。飾り(v223)
+                        .sync-pitch-fader  … 左のピッチフェーダー。飾り(v223)
+                        .sync-platter      … 厚みのある金属のプラッター(v223)
+                          .sync-dots       … プラッターの段差に並ぶ12個のランプ。
+                                             叩いた数だけ灯る
+                          .sync-vinyl      … 黒いレコード盤(測っている間だけ回る)
+                            (SVG)          … 盤に書いた「NoriRun」の文字。盤と一緒に回る(v223)
+                          .sync-sheen      … 盤の照り返し(回らない。光は動かないため)
+                          .sync-record-label … 真ん中のラベル。回数や値を出す
+                        .sync-tonearm      … 「く」の字のトーンアーム(v223。SVG)。
+                                             測っている間だけ盤に降りる
+                        .sync-sampler      … 左下のサンプラー。叩くたびに順に光る(v223)
+                        .sync-xfader       … 下のクロスフェーダー。飾り(v223)
 
                     姿の切り替えは data-phase(idle / measuring / done)を
                     js/sync.js が書き換えるだけで、動きはすべて CSS です。
 
+                    ⚠️ 中身の位置は、幅320px・高さ304pxの台(.sync-deck-stage)の
+                       上に px で決めています(トーンアームの先が盤に降りるかは、
+                       盤とアームの位置関係で決まるため)。狭い画面では、
+                       js/sync.js の fitSyncDeck() が台ごと縮めます。
+
                     ⚠️ ラベルの文字は、回らない層(.sync-record-label)に
                        置いています。盤と一緒に回ると読めなくなるためです。
 
-                    ⚠️ 1〜4個目の点(.sync-dot-warmup)は「ならし」なので、
-                       灯っても暁色にせず、控えめな白にしています。
+                    ⚠️ 1〜4個目のランプ(.sync-dot-warmup)は「ならし」なので、
+                       灯っても色を付けず、控えめな白にしています。
                 -->
-                <button type="button" id="sync-latency-pad" class="sync-deck" data-phase="idle">
+                <button type="button" id="sync-latency-pad" class="sync-deck" data-phase="idle" aria-label="タップしてBluetooth遅延を測る">
                     <span class="sync-deck-stage">
-                        <span class="sync-platter">
-                            <span class="sync-vinyl"><span class="sync-cue"></span></span>
-                            <span class="sync-sheen"></span>
-                            <span class="sync-record-label">
-                                <span class="sync-label-big" id="sync-pad-big">▶</span>
-                                <span class="sync-label-small" id="sync-pad-small">タップ</span>
+
+                        <!-- 左上のモニタ(js/sync.js が文字を書き換えます) -->
+                        <span class="sync-monitor">
+                            <span class="sync-monitor-row">
+                                <span id="sync-mon-status">READY</span>
+                                <span class="sync-monitor-bpm">BPM100</span>
                             </span>
+                            <span class="sync-monitor-big" id="sync-mon-big">00/12</span>
+                            <span class="sync-monitor-sub" id="sync-mon-sub">TAP TO START</span>
+                        </span>
+
+                        <!-- 右上の丸ノブ。--r は指標の向き(本物らしく、少しずつ違う角度に) -->
+                        <span class="sync-knobs">
+                            <span class="sync-knob-wrap">
+                                <span class="sync-knob" style="--r:-40deg"></span>
+                                <span class="sync-knob-label">EQ</span>
+                            </span>
+                            <span class="sync-knob-wrap">
+                                <span class="sync-knob" style="--r:30deg"></span>
+                                <span class="sync-knob-label">FILTER</span>
+                            </span>
+                            <span class="sync-knob-wrap">
+                                <span class="sync-knob" style="--r:-12deg"></span>
+                                <span class="sync-knob-label">FX</span>
+                            </span>
+                        </span>
+
+                        <!-- 左のピッチフェーダー -->
+                        <span class="sync-pitch-fader"><span class="sync-fader-cap"></span></span>
+                        <span class="sync-pitch-label">PITCH</span>
+
+                        <!-- 真ん中のプラッター -->
+                        <span class="sync-platter">
+
+                            <!-- プラッターの段差に並ぶ12個のランプ -->
                             <span class="sync-dots" id="sync-dots">
                                 <span class="sync-dot sync-dot-warmup" style="--i:0"></span>
                                 <span class="sync-dot sync-dot-warmup" style="--i:1"></span>
@@ -7299,8 +7918,88 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
                                 <span class="sync-dot" style="--i:10"></span>
                                 <span class="sync-dot" style="--i:11"></span>
                             </span>
+
+                            <!--
+                                レコード盤。中の SVG は「NoriRun」の文字で、盤と一緒に回ります。
+
+                                textPath は「文字を線に沿って並べる」SVG の書き方です。
+                                盤の中心から半径62の円(#sync-norirun-arc)に沿わせて、
+                                盤の外周に沿って曲がった文字にしています。
+                                startOffset="25%" は「円を1/4進んだ所 = 真上」、
+                                text-anchor="middle" は「そこを文字の真ん中にする」です。
+
+                                ⚠️ 色は style の var() で暁色の仲間から取ります
+                                   (色の数値を書き写さない決まり)。
+                            -->
+                            <span class="sync-vinyl">
+                                <svg class="sync-vinyl-art" viewBox="0 0 168 168" aria-hidden="true">
+                                    <defs>
+                                        <linearGradient id="sync-norirun-grad" x1="0" y1="0" x2="1" y2="0">
+                                            <stop offset="0%" style="stop-color:var(--theme-color)"/>
+                                            <stop offset="55%" style="stop-color:var(--dusk-pink)"/>
+                                            <stop offset="100%" style="stop-color:var(--dusk-peony)"/>
+                                        </linearGradient>
+                                        <path id="sync-norirun-arc" d="M 22,84 a 62,62 0 1,1 124,0 a 62,62 0 1,1 -124,0"/>
+                                    </defs>
+                                    <text class="sync-norirun-text">
+                                        <textPath href="#sync-norirun-arc" startOffset="25%" text-anchor="middle">NoriRun</textPath>
+                                    </text>
+                                </svg>
+                            </span>
+
+                            <span class="sync-sheen"></span>
+
+                            <span class="sync-record-label">
+                                <span class="sync-label-big" id="sync-pad-big">▶</span>
+                                <span class="sync-label-small" id="sync-pad-small">タップ</span>
+                            </span>
+
                         </span>
-                        <span class="sync-tonearm"><span class="sync-tonearm-arm"></span></span>
+
+                        <!--
+                            「く」の字のトーンアーム(v223。竹弘の要望)。
+
+                            SVG の中で、軸は (30,34) の位置です。台座(丸)は回らず、
+                            .sync-arm-rot の中(おもり・腕・ヘッドシェル)だけが
+                            軸を中心に回ります(CSS の transform-origin: 30px 34px)。
+
+                                腕 … 軸から下へまっすぐ伸びて、先の方で内側へ折れる
+                                      (折れ曲がった「く」の字。本物のS字・J字アームの見立て)
+                                ヘッドシェル … 腕の先の針が付いた部分。折れた向きに沿わせる
+                                おもり … 軸の後ろ(上)。針の重さと釣り合わせる部品
+                        -->
+                        <svg class="sync-tonearm" viewBox="0 0 60 180" aria-hidden="true">
+                            <!-- 台座(回らない) -->
+                            <circle cx="30" cy="34" r="13" class="sync-arm-base-outer"/>
+                            <circle cx="30" cy="34" r="8" class="sync-arm-base-inner"/>
+                            <!-- 回る部分 -->
+                            <g class="sync-arm-rot">
+                                <rect x="23" y="5" width="14" height="21" rx="3" class="sync-arm-weight"/>
+                                <line x1="30" y1="26" x2="30" y2="34" class="sync-arm-stub"/>
+                                <polyline points="30,34 31,110 18,146" class="sync-arm-tube"/>
+                                <polyline points="30,34 31,110 18,146" class="sync-arm-shine"/>
+                                <polygon points="22.7,147.7 13.3,144.3 7.2,161.2 16.6,164.6" class="sync-arm-head"/>
+                                <line x1="13.3" y1="144.3" x2="22.7" y2="147.7" class="sync-arm-accent"/>
+                                <line x1="22.7" y1="147.7" x2="28.5" y2="151.5" class="sync-arm-lift"/>
+                                <circle cx="30" cy="34" r="4" class="sync-arm-cap"/>
+                            </g>
+                        </svg>
+
+                        <!-- 左下のサンプラー(叩くたびに1つずつ順に光ります)。--c はそのパッドの色 -->
+                        <span class="sync-sampler">
+                            <span class="sync-sampler-pad" style="--c:var(--theme-color)"></span>
+                            <span class="sync-sampler-pad" style="--c:var(--dusk-coral)"></span>
+                            <span class="sync-sampler-pad" style="--c:var(--dusk-pink)"></span>
+                            <span class="sync-sampler-pad" style="--c:var(--dusk-peony)"></span>
+                        </span>
+
+                        <!-- 下のクロスフェーダー -->
+                        <span class="sync-xfader">
+                            <span class="sync-xfader-mark">A</span>
+                            <span class="sync-xfader-track"><span class="sync-fader-cap sync-xfader-cap"></span></span>
+                            <span class="sync-xfader-mark">B</span>
+                        </span>
+
                     </span>
                 </button>
 
