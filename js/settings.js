@@ -65,6 +65,35 @@ const SETTINGS_DEFINITIONS = [
         label: "ノリノリアシスト"
     },
     {
+        key: "sync",
+        /*
+        みんなで走る同期モード(v221。js/sync.js)。
+
+        竹弘の指定(2026-09-22):「みんなで走れるをイメージして3人の
+        ランナーの絵文字にして、1/2のサイズにしてうまく3人のランナーの
+        絵文字にして欲しい」
+
+                 🏃🏽
+               🏃‍♂️🏃‍♀️
+
+        ⚠️ **icon は下の renderSettingsMenu() で innerHTML として
+           そのまま差し込まれるので、HTMLを書けます。** 3人を上1人・
+           下2人に積むため、ここだけ文字ではなく入れ物ごと書いています。
+           大きさと並べ方は c014.html の .sync-runners にあります
+           (3人を合わせて、ふだんの絵文字1つぶんに収める作り)。
+
+        ⚠️ この HTML を js/sync.js の定数から借りないのは、**読み込み順**の
+           ためです。settings.js は sync.js より先に読まれるので、
+           ここで sync.js の名前を書くと、読み込んだ瞬間にエラーで
+           このファイルが丸ごと動かなくなります(v217で踏みかけた罠)。
+        */
+        icon: "<span class='sync-runners'>" +
+                  "<span>🏃🏽</span>" +
+                  "<span>🏃‍♂️🏃‍♀️</span>" +
+              "</span>",
+        label: "みんなで走る同期モード"
+    },
+    {
         key: "license",
         icon: "📜",
         label: "ライセンス"
@@ -242,6 +271,11 @@ function openSettingsItem(key){
 
     if(key === "metronome"){
         openMetronomePanel();
+    }
+
+    // みんなで走る同期モード(v221)。中身は js/sync.js にあります
+    if(key === "sync"){
+        openSyncPanel();
     }
 
     if(key === "license"){
