@@ -36,8 +36,8 @@
      段②(v222) … ②Bluetooth遅延の測定と保存
           (v223) … ターンテーブルの作り込み(モニタ・「く」の字アーム・
                     ノブ・フェーダー・サンプラー・暁色の仲間の色)と、
-                    前回と大きく違う時の一言 ← いまここ
-     段③        … ③時刻ボタンと、その時刻に拍を揃えたスタート
+                    前回と大きく違う時の一言
+     段③(v224) … ③時刻ボタンと、その時刻に拍を揃えたスタート ← いまここ
      段④        … ④薄暗いロック画面・イヤホン操作・時刻からの再開
 
 ----------------------------------------------------------------------
@@ -229,6 +229,67 @@ const SYNC_LATENCY_PREV_WARN_MS = 80;
 */
 const SYNC_DECK_STAGE_WIDTH = 320;
 
+/*
+---- ③ 曲開始時刻(v224) ----
+
+    SYNC_START_GRID_SEC   … 時刻ボタンの刻み(10秒)。2台に同じ時刻が
+                            並ぶので「40秒のやつ押そう」と声を掛け合える
+    SYNC_CLOCK_TIMER_MS   … 時計・ボタン・カウントダウンを書き換える間隔
+*/
+const SYNC_START_GRID_SEC = 10;
+const SYNC_CLOCK_TIMER_MS = 200;
+
+/*
+開始の何秒前から、曲を「音量0・消音」で先に鳴らしておくか。
+
+🎬頭出し接続と同じ考え方です。いきなり鳴らし始めると、鳴り出すまでの
+時間(数十ms、端末や曲で違う)が読めません。**先に鳴らして通り道を
+温めておき、その時刻には「位置を動かすだけ」にします。** 位置を動かす
+だけなら、かかる時間はほぼ決まっています(下の SYNC_SEEK_LEAD_MS)。
+*/
+const SYNC_WARMUP_SEC = 3;
+
+/*
+狙いの位置へ動かす命令(頭出し)を、何ms早く出すか。
+
+頭出しは命令してから終わるまでに時間がかかります。竹弘の実機で
+🎬頭出し接続の待ち時間を21回測った値(v203の🐛ログ)が 10〜16ms、
+平均14ms でした。その平均の分だけ早く命令して、ちょうどの時刻に
+終わるようにします。
+⚠️ 実際に何msで終わったかは、スタートのたびに🐛パネルへ出します。
+   端末によって違えば、この値を見直します。
+*/
+const SYNC_SEEK_LEAD_MS = 14;
+
+/*
+⚠️ v224の途中まで、ここに SYNC_SPIN_MS(最後の40msを「時計を見張って
+   待つ」)がありました。やめた理由は syncFire() の【遅れの打ち消し】。
+*/
+
+/*
+止めていた曲を「続きから」鳴らすのに、繋ぐ位置まで最低何秒ほしいか。
+
+続きの位置が繋ぐ位置(13拍目)に近すぎると、次の曲へ繋ぐ準備(助走は
+15秒前から)が間に合わず、繋がらずに曲が終わってしまいます。そうなると
+次の曲が拍と無関係に始まり、**同期がそこで切れます。** 足りない時は、
+その曲の頭から鳴らします。
+*/
+const SYNC_RESUME_MARGIN_SEC = 20;
+
+/*
+スタートした後に、曲の位置が予定どおりかを測る回数と間隔です。
+結果は🐛パネルに出します(実測で確かめるため)。
+*/
+const SYNC_MEASURE_COUNT = 10;
+const SYNC_MEASURE_INTERVAL_MS = 100;
+const SYNC_MEASURE_DELAY_MS = 300;
+
+/*
+開始時刻を過ぎても始まらなかった時に、諦めて知らせるまでの時間(ms)。
+画面が消えてタイマーが止められた時などの保険です。
+*/
+const SYNC_LATE_GIVEUP_MS = 2000;
+
 
 // ==========================================================
 // 2. 今の状態
@@ -289,9 +350,52 @@ const syncState = {
     latencyDecided: false,
 
     // 枠の中に一時的に出す知らせ(途中で止まった時など)。無ければ空
-    latencyNotice: ""
+    latencyNotice: "",
+
+    // ---- ③ 曲開始時刻(v224) ----
+
+    /*
+    ③の準備で、開いた時と**違う曲**を載せたか。
+
+    ✕で閉じた時は「開いた時に鳴っていた曲を続きから鳴らす」決まり
+    ですが、その曲をもう載せ替えてしまっていたら、鳴らし直すと
+    知らない曲が鳴り出します。その時は鳴らし直さないために覚えます。
+    */
+    trackChanged: false,
+
+    // 同期スタートした後か(段④の薄暗いロック画面で使います)
+    running: false,
+
+    // ③の下に出す知らせ(準備に失敗した時など)。無ければ空
+    startNotice: ""
 
 };
+
+// ---- ③ で使うもの(v224) ----
+
+// 時計・ボタン・カウントダウンを書き換える見回り係。止まっている間は0
+let syncClockTimerId = 0;
+
+/*
+カウントダウン中の約束ごと。カウントダウンしていない時は null。
+
+    token          … この約束の目印(「やめる」で別の約束になったか見分ける)
+    targetWallMs   … 開始時刻(時計のミリ秒。みんなの耳に届く時刻)
+    plan           … どの曲を、どの位置から鳴らすか(prepareSyncPlan の答え)
+    planText       … 画面に出す説明(曲名入り)
+    wPerfMs        … 狙いの位置が鳴り始める瞬間(performance.now の物差し)
+    warmStarted    … 音量0で先に鳴らし始めたか
+*/
+let syncCountdown = null;
+
+// カウントダウン中に予約した setTimeout の受付番号(やめる時に全部取り消す)
+let syncStartTimerIds = [];
+
+// 先に鳴らす間だけ消音にするので、元の消音の状態を覚えておきます
+let syncMutedBefore = false;
+
+// 画面を消さないための「お願い」(Wake Lock)。持っていない時は null
+let syncWakeLock = null;
 
 // ---- ② の測定中だけ使うもの ----
 
@@ -399,8 +503,21 @@ const syncLatencyDecideBtn = document.getElementById("sync-latency-decide-btn");
 const syncLatencyRedoBtn = document.getElementById("sync-latency-redo-btn");
 const syncLatencyGuideEl = document.getElementById("sync-latency-guide");
 
-// ③ 曲開始時刻(段③で中身を作ります。v222では見出しだけ)
+// ③ 曲開始時刻(v224)
 const syncStepStartEl = document.getElementById("sync-step-start");
+
+const syncStartChooseEl = document.getElementById("sync-start-choose");
+const syncStartCountdownEl = document.getElementById("sync-start-countdown");
+const syncClockTimeEl = document.getElementById("sync-clock-time");
+
+// 時刻ボタン(4つ)。どれも data-min-sec(最低何秒後か)を持っています
+const syncTimeBtnEls = document.querySelectorAll("#sync-step-start .sync-time-btn");
+
+const syncCountdownTargetEl = document.getElementById("sync-countdown-target");
+const syncCountdownRestEl = document.getElementById("sync-countdown-rest");
+const syncCountdownPlanEl = document.getElementById("sync-countdown-plan");
+const syncCountdownCancelBtn = document.getElementById("sync-countdown-cancel-btn");
+const syncStartGuideEl = document.getElementById("sync-start-guide");
 
 /*
 定規の部品(js/ruler.js)を、①の箱の中に組み立てます。
@@ -543,6 +660,11 @@ async function openSyncPanel(){
     syncState.latencyDecided = false;
     syncState.latencyNotice = "";
 
+    // ③ も毎回まっさらから(v224)
+    syncState.trackChanged = false;
+    syncState.running = false;
+    syncState.startNotice = "";
+
     refreshSyncPanel();
 
     syncPanelEl.style.display = "flex";
@@ -557,6 +679,9 @@ async function openSyncPanel(){
     隠れている間は幅が0と測られ、定規が描けません。
     */
     syncRuler.start();
+
+    // ③の時計とボタンの書き換えを始めます(v224。閉じる時に止めます)
+    startSyncClock();
 
     console.log(
         "みんなで走る同期モードを開きました :",
@@ -581,7 +706,23 @@ function closeSyncPanel(){
 
     syncRuler.stop();
 
+    /*
+    ③のカウントダウン中なら取りやめ、時計も止めます(v224)。
+    ✕は「やっぱりやめた」なので、スタートの予約も残しません。
+    */
+    cancelSyncCountdown("");
+
+    stopSyncClock();
+
     syncPanelEl.style.display = "none";
+
+    /*
+    ③の準備で別の曲を載せていたら、元の曲はもう鳴らし直せません
+    (syncState.trackChanged のコメント)。その時は何も鳴らさずに閉じます。
+    */
+    if(syncState.trackChanged){
+        syncState.wasPlaying = false;
+    }
 
     /*
     ---- 開いた時に鳴っていた曲は、続きから鳴らし直します ----
@@ -687,6 +828,9 @@ function resetSyncPitch(){
     if(syncState.latencyPhase === "measuring"){
         abortSyncMeasure("");
     }
+
+    // ③のカウントダウン中なら取りやめます(ピッチが変わるので約束が崩れる。v224)
+    cancelSyncCountdown("");
 
     refreshSyncPanel();
 
@@ -998,6 +1142,9 @@ function refreshSyncLatencyStep(){
     (隠れている間は幅が0と測られる)ので、ここで毎回合わせ直します。
     */
     if(visible){ fitSyncDeck(); }
+
+    // ③ の中身(選ぶ姿 / カウントダウンの姿)も合わせます(v224)
+    refreshSyncStartStep();
 
 }
 
@@ -1626,6 +1773,9 @@ function decideSyncLatency(){
  */
 function redoSyncLatency(){
 
+    // ③のカウントダウン中なら取りやめます(遅延が変わるので約束が崩れる。v224)
+    cancelSyncCountdown("");
+
     stopSyncMeasure();
 
     syncMeasureTaps = [];
@@ -1676,6 +1826,981 @@ function saveSyncLatency(latencyMs){
         console.error("同期モードの遅延の保存に失敗 :",error);
 
     });
+
+}
+
+
+// ==========================================================
+// 5-3. ③ 曲開始時刻(v224)
+// ==========================================================
+/*
+【何をするのか】
+
+みんなで同じ時刻のボタンを押すと、その時刻ちょうどに、それぞれの
+スマホで曲がスタートします。曲はそれぞれ好きな曲で構いません。
+**揃えるのは「拍」です。**
+
+    みんなの拍の格子 = 開始時刻T + 1拍の長さ × n
+
+同じマイピッチなので1拍の長さは全員同じ。あとは「時刻Tに拍が来る」
+ように各自が曲を始めれば、以後ずっと全員の拍が重なります
+(繋ぎ方は3つとも拍の格子を崩さないので、2曲目以降も揃ったまま)。
+
+【時計は何を使うのか】
+
+Date.now()(スマホの時計)です。竹弘が3台で測って、ズレは最大0.022秒
+でした(対策不要と合意)。ただし「ミリ秒単位でいつ動くか」を決めるのは
+performance.now()(ページを開いてからの経過時間)の方が確かなので、
+**時刻は Date.now() で決め、待つのは performance.now() で待ちます。**
+
+    狙いの瞬間(performance.now の物差し)
+        = いまの performance.now() + (狙いの時刻 − いまの Date.now())
+
+【Bluetoothの遅れ ―― 遠い人ほど早く家を出る】
+
+②で測った遅延(L)のぶん、**早く**鳴らします。
+
+    送り出す時刻 S = 開始時刻T − L
+    → イヤホンの遅れLを経て、耳に届くのはちょうどT
+
+【曲をどう始めるか(2通り)】
+
+    続きから … 止めていた曲(注入済み)を、止めた位置の**直後の拍**から。
+               その拍を、送り出す時刻Sに鳴らします
+    頭から   … 曲が無い時・止めていた曲が未注入の時は、一覧のトップの曲を。
+               🎬頭出し接続と同じく、0〜1拍未満の無音のあとに曲の頭が
+               来るよう、無音の長さで拍に合わせます(竹弘の案)
+
+【どうやって「ちょうど」に始めるか ―― 🎬頭出し接続と同じ手順】
+
+    ① 開始の3秒前から、曲を「消音・音量0」で先に鳴らしておく
+       (いきなり鳴らすと、鳴り出すまでの時間が読めないため)
+    ② その時刻の14ms前に、狙いの位置へ動かす(頭出し。実測で平均14msかかる)
+    ③ 頭出しが終わったら、消音を戻して30msで音量を上げる
+       (v202-v203で「ブチ」を消した手順そのもの)
+
+⚠️⚠️ **拍が揃うかどうかは「その時刻に曲がどの位置にあるか」だけで
+   決まります。** 音量を上げるのが数ms遅れても、拍の位置はずれません
+   (聞こえ始めが一瞬遅れるだけ)。だから大事なのは②の頭出しの時刻です。
+
+⚠️ 先に鳴らす間(①)は消音にしています。ノリノリアシストは消音中は
+   鳴らない決まり(v193)なので、**開始前にバラバラのカチッが鳴る**のも
+   これで防げます。
+*/
+
+/**
+ * 時刻を「19:52:07」の形にします(スマホの時計の、その土地の時刻)。
+ *
+ * @param  {number} ms - 時計のミリ秒(Date.now() の物差し)
+ * @return {string}
+ */
+function formatSyncClock(ms){
+
+    const d = new Date(ms);
+
+    // 1桁の数を「07」のように2桁にそろえます
+    const pad = function(n){ return (n < 10 ? "0" : "") + n; };
+
+    return pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
+
+}
+
+/**
+ * 「今から最低 minSec 秒後」以降で、いちばん近い10秒刻みの時刻を返します。
+ *
+ * Math.ceil は「切り上げ」です。10秒(10000ms)で割って切り上げてから
+ * 掛け戻すと、「その時刻以上で、いちばん近い10秒刻み」になります。
+ *
+ *     いま 19:52:05、minSec=10 → 19:52:15 以上で最初の10秒刻み = 19:52:20
+ *     (あと15秒。10秒を切った 19:52:10 には 19:52:30 に切り替わる)
+ *
+ * だから竹弘の指定「残り10秒になったら20秒後の時刻に切り替える」が、
+ * この1行で自然に成り立ちます。
+ *
+ * @param  {number} nowMs  - 今の時刻(Date.now())
+ * @param  {number} minSec - 最低何秒後か
+ * @return {number} 開始時刻(Date.now() の物差しのミリ秒)
+ */
+function getSyncStartTargetMs(nowMs,minSec){
+
+    const gridMs = SYNC_START_GRID_SEC * 1000;
+
+    return Math.ceil((nowMs + minSec * 1000) / gridMs) * gridMs;
+
+}
+
+/**
+ * 時計・ボタン・カウントダウンの書き換えを始めます(画面を開いた時)。
+ */
+function startSyncClock(){
+
+    if(syncClockTimerId){ return; }
+
+    syncClockTimerId = setInterval(tickSyncClock,SYNC_CLOCK_TIMER_MS);
+
+    tickSyncClock();
+
+}
+
+/**
+ * 書き換えを止めます(画面を閉じた時。裏で回り続けないように)。
+ */
+function stopSyncClock(){
+
+    if(!syncClockTimerId){ return; }
+
+    clearInterval(syncClockTimerId);
+
+    syncClockTimerId = 0;
+
+}
+
+/**
+ * 見回りのたび(0.2秒ごと)に、時計・ボタン・カウントダウンを書き換えます。
+ */
+function tickSyncClock(){
+
+    const nowMs = Date.now();
+
+    if(syncClockTimeEl){ syncClockTimeEl.textContent = formatSyncClock(nowMs); }
+
+    refreshSyncStartButtons(nowMs);
+
+    refreshSyncCountdown(nowMs);
+
+}
+
+/**
+ * 4つの時刻ボタンの時刻と「あと◯秒」を書き換えます。
+ *
+ * ⚠️ 押された時にどの時刻を使うかは、**画面に出ていた時刻**
+ *    (data-target-ms)です。押した瞬間に計算し直すと、切り替わりの
+ *    境目で「見ていた時刻と違う時刻」で始まってしまうためです。
+ *
+ * @param {number} nowMs - 今の時刻(Date.now())
+ */
+function refreshSyncStartButtons(nowMs){
+
+    syncTimeBtnEls.forEach(function(button){
+
+        const minSec = Number(button.dataset.minSec);
+
+        const targetMs = getSyncStartTargetMs(nowMs,minSec);
+
+        button.dataset.targetMs = String(targetMs);
+
+        const mainEl = button.querySelector(".sync-time-main");
+        const restEl = button.querySelector(".sync-time-rest");
+
+        if(mainEl){ mainEl.textContent = formatSyncClock(targetMs); }
+
+        if(restEl){ restEl.textContent = "あと" + Math.ceil((targetMs - nowMs) / 1000) + "秒"; }
+
+    });
+
+}
+
+/**
+ * カウントダウンの「あと◯秒」を書き換えます。
+ *
+ * 開始時刻を過ぎても始まらない時(画面が消えてタイマーが止められた等)は、
+ * 諦めて知らせます(いつまでも「あと0秒」のまま待たせないように)。
+ *
+ * @param {number} nowMs - 今の時刻(Date.now())
+ */
+function refreshSyncCountdown(nowMs){
+
+    if(!syncCountdown){ return; }
+
+    const restSec = Math.max(0,Math.ceil((syncCountdown.targetWallMs - nowMs) / 1000));
+
+    if(syncCountdownRestEl){ syncCountdownRestEl.textContent = String(restSec); }
+
+    if(nowMs > syncCountdown.targetWallMs + SYNC_LATE_GIVEUP_MS){
+
+        console.warn("同期モード ③ 開始時刻を過ぎても始まらなかったので取りやめました");
+
+        cancelSyncCountdown("⚠️ 時刻までに間に合いませんでした。<br>もう一度、時刻を選んでください");
+
+    }
+
+}
+
+/**
+ * ③ の見た目(選ぶ姿 / カウントダウンの姿)を、今の状態に合わせます。
+ */
+function refreshSyncStartStep(){
+
+    const counting = (syncCountdown !== null);
+
+    if(syncStartChooseEl){ syncStartChooseEl.style.display = counting ? "none" : ""; }
+    if(syncStartCountdownEl){ syncStartCountdownEl.style.display = counting ? "" : "none"; }
+
+    if(counting){
+
+        if(syncCountdownTargetEl){
+            syncCountdownTargetEl.textContent = formatSyncClock(syncCountdown.targetWallMs);
+        }
+
+        /*
+        どの曲を、どこから鳴らすか。曲名が入るので textContent で入れます
+        (曲名に < や > が入っていても、画面が壊れないように)。
+        */
+        if(syncCountdownPlanEl){
+            syncCountdownPlanEl.textContent = syncCountdown.planText || "曲を準備しています…";
+        }
+
+        refreshSyncCountdown(Date.now());
+
+    }
+
+    if(syncStartGuideEl){
+
+        syncStartGuideEl.innerHTML = counting
+            ? "やめると、時刻を選び直せます"
+            : (syncState.startNotice || "押した時刻に、みんなの曲が<br>一斉にスタートします");
+
+    }
+
+}
+
+/**
+ * 時刻ボタンが押された時の処理です。
+ *
+ * @param {HTMLButtonElement} button - 押されたボタン
+ */
+function handleSyncTimeButton(button){
+
+    // すでにカウントダウン中なら何もしません(二重に予約しない)
+    if(syncCountdown){ return; }
+
+    // ①②が決まっていなければ、ここには来ないはずですが念のため
+    if(!syncState.pitchDecided || !syncState.latencyDecided || syncState.latencyMs === null){ return; }
+
+    const targetWallMs = Number(button.dataset.targetMs);
+
+    if(!isFinite(targetWallMs)){ return; }
+
+    scheduleSyncStart(targetWallMs);
+
+}
+
+/**
+ * 開始時刻に曲がスタートするよう、準備と予約をします。
+ *
+ * ⚠️ **ボタンを押した瞬間(人の操作の中)に呼ぶのが要です。**
+ *    画面を消さないお願い(Wake Lock)や、曲を載せる時のファイルの
+ *    権限確認は、人の操作の中でないと断られることがあるためです。
+ *
+ * @param {number} targetWallMs - 開始時刻(Date.now() の物差し)
+ */
+async function scheduleSyncStart(targetWallMs){
+
+    /*
+    この約束の目印です。準備の途中で「やめる」が押されると syncCountdown が
+    別物(または null)になるので、await から戻るたびに「まだ自分の約束か」を
+    確かめます。確かめないと、やめたはずのスタートが後から動き出します。
+    */
+    const token = {};
+
+    syncCountdown = {
+        token:token,
+        targetWallMs:targetWallMs,
+        plan:null,
+        planText:"",
+        wPerfMs:0,
+        warmStarted:false
+    };
+
+    syncState.startNotice = "";
+
+    refreshSyncStartStep();
+
+    // 画面を消さないようにお願いします(待っている間に消えると、タイマーが止められるため)
+    requestSyncWakeLock();
+
+    // 音の出口を用意して、眠っていたら起こします(人の操作の中で)
+    ensureDeckAudioGraph();
+    resumeDeckAudio();
+
+    // ---- ① 🕺ノリノリRun再生に入り、みんなのピッチにします ----
+
+    if(!isNoriRunMode){
+
+        await enterNoriRunMode();
+
+        if(!syncCountdown || syncCountdown.token !== token){ return; }
+
+        if(!isNoriRunMode){
+
+            cancelSyncCountdown("⚠️ 🕺ノリノリRun再生に入れませんでした");
+
+            return;
+
+        }
+
+    }
+
+    applySyncPitch();
+
+    // ---- ② どの曲を、どの位置から鳴らすか ----
+
+    const plan = await prepareSyncPlan();
+
+    if(!syncCountdown || syncCountdown.token !== token){
+
+        /*
+        準備の間に「やめる」が押されていました。曲を音量0で載せていたら
+        1に戻しておきます(でないと、次に▶を押した時に無音のまま鳴ります)。
+        */
+        if(plan){ setDeckVolume(audioPlayer,1); }
+
+        return;
+
+    }
+
+    if(!plan){
+
+        cancelSyncCountdown("⚠️ 曲を用意できませんでした。<br>もう一度、時刻を選んでください");
+
+        return;
+
+    }
+
+    // ---- ③ いつ動くかを決めます ----
+
+    // 送り出す時刻 = 開始時刻 − 自分の遅延(遠い人ほど早く家を出る)
+    const sendWallMs = targetWallMs - syncState.latencyMs;
+
+    // 頭から鳴らす時は、無音のぶんだけ後ろで曲の頭が来ます
+    const wWallMs = sendWallMs + plan.silenceMs;
+
+    // 時計の時刻を、performance.now() の物差しに直します(上の説明)
+    const wPerfMs = performance.now() + (wWallMs - Date.now());
+
+    syncCountdown.plan = plan;
+    syncCountdown.planText = plan.text;
+    syncCountdown.wPerfMs = wPerfMs;
+
+    // 先に鳴らし始める予約(3秒前)。もう3秒を切っていたら、すぐに
+    const warmDelayMs = Math.max(0,wPerfMs - SYNC_WARMUP_SEC * 1000 - performance.now());
+
+    syncStartTimerIds.push(setTimeout(syncWarmup,warmDelayMs));
+
+    /*
+    頭出しの予約。命令を出すべき瞬間 = 狙いの瞬間の14ms前(頭出しに
+    かかる時間)。setTimeout が遅れた分は、syncFire() が狙う位置を
+    先へずらして打ち消します(syncFire の【遅れの打ち消し】)。
+    */
+    const fireDelayMs = Math.max(0,wPerfMs - SYNC_SEEK_LEAD_MS - performance.now());
+
+    syncStartTimerIds.push(setTimeout(syncFire,fireDelayMs));
+
+    refreshSyncStartStep();
+
+    console.log(
+        "同期モード ③ スタートを予約しました : 開始 " + formatSyncClock(targetWallMs),
+        "/ 遅延 " + syncState.latencyMs + "ms ぶん早く送り出す",
+        "/ " + plan.text,
+        (plan.silenceMs > 0 ? "/ 頭の前の無音 " + plan.silenceMs.toFixed(0) + "ms" : ""),
+        "/ ピッチ " + syncState.pitch,
+        "/ あと " + ((wPerfMs - performance.now()) / 1000).toFixed(1) + "秒"
+    );
+
+}
+
+/**
+ * ①で決めたピッチを、今回だけ🕺ノリノリRunのマイピッチにします。
+ *
+ * ⚠️ DB には書きません(竹弘と合意「このピッチは今回だけ」)。
+ *    js/norirun.js の2つの変数を、その場で書き換えるだけです。
+ *
+ *    noriRunMyPitch   … いま鳴らすテンポ
+ *    noriRunBasePitch … 「マイピッチ」ボタンで戻る先
+ *
+ *    両方をみんなのピッチにしておくので、走行中にうっかり「マイピッチ」
+ *    ボタンを押しても、みんなのピッチのままです。ノリノリRunを出て
+ *    入り直すと、js/norirun.js がDBからいつものピッチを読み直すので、
+ *    **いつものマイピッチは何も変わりません。**
+ */
+function applySyncPitch(){
+
+    noriRunMyPitch = syncState.pitch;
+    noriRunBasePitch = syncState.pitch;
+
+    updateNoriRunPitchDisplay();
+
+    applyNoriRunPitch();
+
+}
+
+/**
+ * どの曲を、どの位置から鳴らすかを決めます。必要なら曲を載せます。
+ *
+ * 竹弘の条件:
+ *     (1)(2) 止めていた曲 … 止めた位置の直後の拍から
+ *     (3)    曲が無い時   … 一覧のトップの曲から(拍を合わせて)
+ *
+ * @return {Promise<Object|null>} 決めた内容。用意できなければ null
+ *         trackId   … 鳴らす曲
+ *         targetSec … 狙いの位置(曲の何秒目)
+ *         silenceMs … 送り出す時刻から、狙いの位置が鳴るまでの無音(ms)
+ *         text      … 画面に出す説明
+ */
+async function prepareSyncPlan(){
+
+    const current = libraryMap[currentTrackId];
+
+    /*
+    ---- 止めていた曲を「続きから」鳴らせるか ----
+
+    ・今のデッキに本当にその曲が載っている(getDeckTrack で確かめる)
+    ・ノリ注入済み(拍の位置が分かる)で、除外されていない
+    */
+    if(current &&
+       audioPlayer.src &&
+       getDeckTrack(audioPlayer) === current &&
+       hasSavedTapResult(current) &&
+       !isExcluded(current)){
+
+        const resumePlan = buildSyncResumePlan(current,audioPlayer.currentTime);
+
+        if(resumePlan){ return resumePlan; }
+
+        /*
+        繋ぐ位置に近すぎて続きからは鳴らせない時は、同じ曲を頭から鳴らします
+        (SYNC_RESUME_MARGIN_SEC のコメント)。曲はもう載っているので、
+        載せ直しは要りません。
+        */
+        console.log("同期モード ③ 繋ぐ位置に近いので、この曲を頭から鳴らします :",current.file_name);
+
+        return buildSyncHeadPlan(current);
+
+    }
+
+    // ---- 一覧のトップの曲を「頭から」 ----
+
+    const topId = findSyncTopTrackId();
+
+    if(!topId){ return null; }
+
+    const loaded = await loadSyncTrackSilently(topId);
+
+    if(!loaded){ return null; }
+
+    syncState.trackChanged = true;
+
+    return buildSyncHeadPlan(libraryMap[topId]);
+
+}
+
+/**
+ * 「続きから」鳴らす時の内容を作ります。
+ *
+ * 止めた位置の**直後の拍**を狙いの位置にし、それを送り出す時刻に
+ * 鳴らします(無音は無し)。
+ *
+ * 【直後の拍の求め方】
+ *
+ * その曲の拍は「0拍目 + 1拍の長さ × k」の位置にあります(曲の中の秒)。
+ * 止めた位置から見て、それ以上で最初の拍を切り上げで求めます。
+ *
+ * @param  {Object} track   - 止めていた曲
+ * @param  {number} pausedSec - 止めた位置(曲の何秒目)
+ * @return {Object|null} 繋ぐ位置に近すぎる時は null
+ */
+function buildSyncResumePlan(track,pausedSec){
+
+    // 曲の中での1拍の長さ(元テンポの1拍。再生速度で伸び縮みする前)
+    const beatSongSec = 60 / getEffectiveBaseBpm(track);
+
+    const beat0Sec = getBeat0AtSec(track);
+
+    if(!isFinite(beatSongSec) || beatSongSec <= 0){ return null; }
+
+    /*
+    - 0.000001 は計算の誤差よけです。止めた位置がちょうど拍の上だった時、
+    誤差で「次の拍」まで1拍飛ばされないようにします。
+    */
+    const k = Math.ceil((pausedSec - beat0Sec) / beatSongSec - 0.000001);
+
+    const targetSec = beat0Sec + k * beatSongSec;
+
+    // 繋ぐ位置まで、実時間で20秒以上残っているか
+    const rate = getTrackRate(track);
+
+    if(targetSec < 0 || targetSec + SYNC_RESUME_MARGIN_SEC * rate > track.endTS){ return null; }
+
+    return {
+        trackId:currentTrackId,
+        targetSec:targetSec,
+        silenceMs:0,
+        text:"▶ 『" + buildTitleText(track) + "』を続きから(止めた位置の直後の拍から)"
+    };
+
+}
+
+/**
+ * 「頭から」鳴らす時の内容を作ります。
+ *
+ * 曲の頭(0秒)を狙いの位置にし、送り出す時刻から「無音」のぶんだけ
+ * 後ろで鳴らします。無音の長さは、曲の拍がみんなの拍の格子に乗るよう
+ * 0〜1拍未満で決めます(🎬頭出し接続と同じ考え方。竹弘の案)。
+ *
+ * 【無音の長さの求め方】
+ *
+ *     曲の中で、0秒以上の最初の拍 … gFirst(曲の秒)
+ *     それが鳴るのは、曲の頭から gFirst ÷ 再生速度 秒後(実秒)
+ *
+ *     送り出す時刻 + 無音 + gFirst ÷ 再生速度 が、拍の格子に乗ればよい
+ *     → 無音 = 「−gFirst ÷ 再生速度」を1拍で割った余り(0〜1拍未満)
+ *
+ * ⚠️ ちょうど1拍の無音ではありません。曲の頭が拍の上にあるとは
+ *    限らないので、無音の長さで合わせます(竹弘と確認済み)。
+ *
+ * @param  {Object} track - 頭から鳴らす曲(もうデッキに載っている)
+ * @return {Object}
+ */
+function buildSyncHeadPlan(track){
+
+    const beatSongSec = 60 / getEffectiveBaseBpm(track);
+
+    const beat0Sec = getBeat0AtSec(track);
+
+    const rate = getTrackRate(track);
+
+    // 0秒以上で最初の拍(曲の秒)
+    const gFirstSec = beat0Sec - Math.floor(beat0Sec / beatSongSec) * beatSongSec;
+
+    // 1拍の長さ(実秒)
+    const beatRealSec = beatSongSec / rate;
+
+    // 余りを「必ず0以上」で求めます(JavaScript の % は負の数だと負を返すため)
+    const silenceSec = (((-gFirstSec / rate) % beatRealSec) + beatRealSec) % beatRealSec;
+
+    return {
+        trackId:currentTrackId,
+        targetSec:0,
+        silenceMs:silenceSec * 1000,
+        text:"▶ 『" + buildTitleText(track) + "』を頭から"
+    };
+
+}
+
+/**
+ * 🕺ノリノリRunの一覧で、いちばん上の「鳴らせる曲」を探します。
+ *
+ * ノリノリRunの一覧は、並び順(currentOrderList)のうちノリ注入済みの
+ * 曲だけを並べたものです(js/norirun.js の refreshNoriRunList)。
+ * 除外されている(再生できない)曲は飛ばします。
+ *
+ * @return {string|null} 曲の track_id。無ければ null
+ */
+function findSyncTopTrackId(){
+
+    for(const trackId of currentOrderList){
+
+        const track = libraryMap[trackId];
+
+        if(track && hasSavedTapResult(track) && !isExcluded(track)){ return trackId; }
+
+    }
+
+    return null;
+
+}
+
+/**
+ * 曲を、音を出さずにデッキへ載せます(頭から鳴らす時の準備)。
+ *
+ * 【なぜ playTrack を借りるのか】
+ *
+ * 曲を載せる手順(権限の確認・ファイルの取得・デッキの交代・画面の
+ * 曲名・ロック画面の曲名・再生回数…)は js/player.js の playTrack() に
+ * まとまっています。**同じ手順を書き写すと、片方だけ直す事故が起きる**
+ * ので、そのまま借ります。
+ *
+ * ただし playTrack() はすぐに鳴らし始めるので、その前に**消音**にして
+ * おき、鳴った直後に止めて音量を0にします。消音なので何も聞こえません。
+ * 消音は元の状態に戻します(竹弘が🔈で消音していたら、消音のまま)。
+ *
+ * @param  {string} trackId
+ * @return {Promise<boolean>} 載せられたら true
+ */
+async function loadSyncTrackSilently(trackId){
+
+    const mutedBefore = audioPlayer.muted;
+
+    setBothDecksMuted(true);
+
+    let loaded = false;
+
+    try{
+
+        loaded = await playTrack(trackId);
+
+    }
+    catch(error){
+
+        console.error("同期モード ③ 曲を載せられませんでした :",error);
+
+    }
+
+    if(loaded){
+
+        // 開始まで止めておき、音量も0にしておきます(スタートの時に上げます)
+        audioPlayer.pause();
+
+        setDeckVolume(audioPlayer,0);
+
+    }
+
+    setBothDecksMuted(mutedBefore);
+
+    return loaded;
+
+}
+
+/**
+ * 開始の3秒前:曲を「消音・音量0」で先に鳴らし始めます。
+ *
+ * 狙いの位置の3秒手前から鳴らしておくと、頭出し(②)の時に動かす距離が
+ * 短くて済みます(頭から鳴らす時は、曲の頭から)。
+ */
+function syncWarmup(){
+
+    if(!syncCountdown || !syncCountdown.plan || syncCountdown.warmStarted){ return; }
+
+    const plan = syncCountdown.plan;
+
+    syncCountdown.warmStarted = true;
+
+    // 竹弘の消音の状態を覚えてから、消音にします(スタートの時に戻します)
+    syncMutedBefore = audioPlayer.muted;
+
+    setBothDecksMuted(true);
+
+    setDeckVolume(audioPlayer,0);
+
+    const rate = audioPlayer.playbackRate || 1;
+
+    audioPlayer.currentTime = Math.max(0,plan.targetSec - SYNC_WARMUP_SEC * rate);
+
+    const playing = audioPlayer.play();
+
+    if(playing && typeof playing.catch === "function"){
+
+        playing.catch(function(error){
+
+            console.error("同期モード ③ 先に鳴らし始められませんでした :",error.name,error.message);
+
+        });
+
+    }
+
+    console.log("同期モード ③ 開始の" + SYNC_WARMUP_SEC + "秒前 : 消音・音量0で先に鳴らし始めました");
+
+}
+
+/**
+ * その瞬間:狙いの位置へ頭出しし、終わったら音量を上げます。
+ *
+ * 🎬頭出し接続の raiseHeadConnectVolume()(js/connect.js)と同じ3つの入口で
+ * 待ちます(もう終わっていた / seeked が届いた / 0.1秒で時間切れ)。
+ * 時間切れが無いと、万一 seeked が来なかった時に**永久に無音**になります。
+ *
+ * ------------------------------------------------------------
+ * 【遅れの打ち消し】
+ *
+ * setTimeout は、スマホが忙しいと数ms〜十数ms遅れて起きます。
+ * その遅れのぶん**頭出しの命令が遅れ**、そのままでは拍もそのぶん遅れます。
+ *
+ * そこで、遅れたぶんだけ**狙う位置を先へずらします。**
+ *
+ *     予定どおりなら … 狙いの位置 X へ頭出し
+ *     10ms遅れたら   … X + 10ms × 再生速度 の位置へ頭出し
+ *                      (本来その瞬間に鳴っているはずの位置)
+ *
+ * 拍が揃うかどうかは「その時刻に曲がどの位置にあるか」だけで決まるので、
+ * これで遅れは丸ごと打ち消されます。聞こえ始めがそのぶん遅れるだけです。
+ *
+ * ⚠️ v224の途中までは、最後の40msを「時計を見張って待つ」書き方でした。
+ *    その間は画面が固まるうえ、検証に使う見えないChromeでは時計が
+ *    止まるため**永久に終わらない**ことが分かりました。位置をずらす方が
+ *    画面を固めず、遅れがどれだけ大きくても効くので、こちらにしました。
+ *
+ *    ただし頭から鳴らす時は、ずらしたぶん曲の頭がわずかに欠けます
+ *    (10ms遅れなら頭の10ms)。耳では分からない長さです。
+ */
+function syncFire(){
+
+    if(!syncCountdown || !syncCountdown.plan){ return; }
+
+    const countdown = syncCountdown;
+    const plan = countdown.plan;
+    const deck = audioPlayer;
+
+    // 万一、先に鳴らし始めるのが間に合っていなかったら、ここで
+    if(!countdown.warmStarted){ syncWarmup(); }
+
+    const issuedAtMs = performance.now();
+
+    // 本来の命令の瞬間(狙いの14ms前)から、どれだけ遅れたか
+    const lateMs = issuedAtMs - (countdown.wPerfMs - SYNC_SEEK_LEAD_MS);
+
+    const rate = deck.playbackRate || 1;
+
+    /*
+    遅れたぶん、狙う位置を先へずらします(上の【遅れの打ち消し】)。
+    万一早く起きた(マイナス)時も同じ式で手前へずらせますが、曲の頭より
+    前(0秒未満)には行けないので、0で止めます。
+    */
+    const seekToSec = Math.max(0,plan.targetSec + lateMs / 1000 * rate);
+
+    deck.currentTime = seekToSec;
+
+    let raised = false;
+
+    const raise = function(why){
+
+        if(raised){ return; }
+
+        raised = true;
+
+        deck.removeEventListener("seeked",onSeeked);
+
+        const doneAtMs = performance.now();
+
+        // 消音を元に戻して、30msで音量を上げます(🎬と同じ上げ方)
+        setBothDecksMuted(syncMutedBefore);
+
+        startFade(deck,0,1,CONNECT_HEAD_FADE_SEC);
+
+        // 何かの理由で止められていた時の保険
+        if(deck.paused){
+
+            deck.play().catch(function(error){
+
+                console.error("同期モード ③ 再生に失敗 :",error.name,error.message);
+
+            });
+
+        }
+
+        console.log(
+            "同期モード ③ スタートしました : 頭出しの待ち " + (doneAtMs - issuedAtMs).toFixed(0) + "ms(" + why + ")",
+            "/ 命令の遅れ " + formatSyncSignedMs(lateMs) + "(位置をずらして打ち消し済み)"
+        );
+
+        finishSyncStart();
+
+        measureSyncAlignment(deck,plan.targetSec,countdown.wPerfMs);
+
+    };
+
+    const onSeeked = function(){ raise("頭出し完了"); };
+
+    if(!deck.seeking){
+
+        raise("待ち不要");
+
+        return;
+
+    }
+
+    deck.addEventListener("seeked",onSeeked);
+
+    setTimeout(function(){ raise("時間切れ"); },CONNECT_HEAD_SEEK_WAIT_MAX_SEC * 1000);
+
+}
+
+/**
+ * スタートした後の片付けです。同期モードの画面を閉じて、🕺ノリノリRunの
+ * 画面を見せます(竹弘の指定「曲が再生開始されたら『ノリノリRun』
+ * 再生画面を表示」)。
+ *
+ * ⚠️ closeSyncPanel() は使いません。あちらは「やっぱりやめた」時の
+ *    閉じ方で、開いた時に鳴っていた曲を鳴らし直してしまうためです。
+ */
+function finishSyncStart(){
+
+    syncStartTimerIds.forEach(function(id){ clearTimeout(id); });
+    syncStartTimerIds = [];
+
+    syncCountdown = null;
+
+    releaseSyncWakeLock();
+
+    stopSyncClock();
+    stopSyncTempoSound();
+    stopSyncMeasure();
+
+    syncRuler.stop();
+
+    if(syncPanelEl){ syncPanelEl.style.display = "none"; }
+
+    syncState.wasPlaying = false;
+    syncState.running = true;
+
+    refreshSyncStartStep();
+
+}
+
+/**
+ * スタート後、曲の位置が予定どおりかを10回測って🐛パネルに出します。
+ *
+ * 予定の位置 = 狙いの位置 + (今 − 狙いの瞬間) × 再生速度
+ * ずれ(ms)  = (実際の位置 − 予定の位置) ÷ 再生速度
+ *             プラス … 予定より早い / マイナス … 予定より遅い
+ *
+ * ⚠️ これは「このスマホの中で、予定どおりに始められたか」の確かめです。
+ *    2台の拍が本当に揃っているかは、耳で確かめます(ノリノリアシストの
+ *    カチッが1つに重なって聞こえるか)。
+ *
+ * @param {HTMLAudioElement} deck      - 鳴らし始めたデッキ
+ * @param {number}           targetSec - 狙いの位置(曲の何秒目)
+ * @param {number}           wPerfMs   - 狙いの瞬間(performance.now の物差し)
+ */
+function measureSyncAlignment(deck,targetSec,wPerfMs){
+
+    const rate = deck.playbackRate || 1;
+
+    const errors = [];
+
+    const sample = function(){
+
+        // 途中で曲が変わった・止まった時は、そこまでで打ち切ります
+        if(deck !== audioPlayer || deck.paused){
+
+            report("途中で曲が変わったか止まったため " + errors.length + "回で打ち切り");
+
+            return;
+
+        }
+
+        const expectedSec = targetSec + (performance.now() - wPerfMs) / 1000 * rate;
+
+        errors.push((deck.currentTime - expectedSec) / rate * 1000);
+
+        if(errors.length < SYNC_MEASURE_COUNT){
+
+            setTimeout(sample,SYNC_MEASURE_INTERVAL_MS);
+
+        }
+        else{
+
+            report(SYNC_MEASURE_COUNT + "回");
+
+        }
+
+    };
+
+    const report = function(note){
+
+        if(errors.length === 0){ return; }
+
+        const mean = errors.reduce(function(a,b){ return a + b; },0) / errors.length;
+
+        console.log(
+            "同期モード ③ スタート位置の実測 : 予定とのずれ 平均 " + formatSyncSignedMs(mean),
+            "(最小 " + formatSyncSignedMs(Math.min.apply(null,errors)) +
+            " / 最大 " + formatSyncSignedMs(Math.max.apply(null,errors)) + " / " + note + ")",
+            "※プラスは予定より早い、マイナスは遅い"
+        );
+
+    };
+
+    setTimeout(sample,SYNC_MEASURE_DELAY_MS);
+
+}
+
+/**
+ * ミリ秒を「+12ms」「-3ms」の形にします(ログ用)。
+ */
+function formatSyncSignedMs(ms){
+
+    const rounded = Math.round(ms);
+
+    return (rounded >= 0 ? "+" : "") + rounded + "ms";
+
+}
+
+/**
+ * カウントダウンを取りやめます(「やめる」・✕・①②の選び直し・時間切れ)。
+ *
+ * 先に鳴らし始めていたら止め、消音と音量を元に戻します。
+ * ⚠️ 音量を1に戻し忘れると、次に▶を押した時に**無音のまま鳴ります。**
+ *
+ * @param {string} notice - ③の下に出す知らせ(空なら出さない)
+ */
+function cancelSyncCountdown(notice){
+
+    if(!syncCountdown){ return; }
+
+    const countdown = syncCountdown;
+
+    syncCountdown = null;
+
+    syncStartTimerIds.forEach(function(id){ clearTimeout(id); });
+    syncStartTimerIds = [];
+
+    if(countdown.warmStarted){
+
+        audioPlayer.pause();
+
+        setBothDecksMuted(syncMutedBefore);
+
+    }
+
+    if(countdown.plan){ setDeckVolume(audioPlayer,1); }
+
+    releaseSyncWakeLock();
+
+    syncState.startNotice = notice || "";
+
+    refreshSyncStartStep();
+
+    console.log("同期モード ③ カウントダウンを取りやめました");
+
+}
+
+/**
+ * 画面を消さないようにお願いします(Screen Wake Lock)。
+ *
+ * 待っている間に画面が消えると、スマホがタイマーを止めてしまい、
+ * 時刻に間に合わなくなるためです。使えないブラウザでは何もしません。
+ */
+async function requestSyncWakeLock(){
+
+    try{
+
+        if(navigator.wakeLock && !syncWakeLock){
+
+            syncWakeLock = await navigator.wakeLock.request("screen");
+
+        }
+
+    }
+    catch(error){
+
+        console.warn("同期モード ③ 画面を消さないお願いができませんでした :",error.name,error.message);
+
+    }
+
+}
+
+/**
+ * 画面を消さないお願いを取り下げます(スタートした後・やめた時)。
+ */
+function releaseSyncWakeLock(){
+
+    if(!syncWakeLock){ return; }
+
+    const lock = syncWakeLock;
+
+    syncWakeLock = null;
+
+    lock.release().catch(function(){ /* すでに外れていても構いません */ });
 
 }
 
@@ -1901,5 +3026,18 @@ function stopSyncTempoSound(){
     window.addEventListener("resize",function(){
         fitSyncDeck();
     });
+
+    // ③ 時刻ボタン(4つ)と「やめる」(v224)
+    syncTimeBtnEls.forEach(function(button){
+        button.addEventListener("click",function(){
+            handleSyncTimeButton(button);
+        });
+    });
+
+    if(syncCountdownCancelBtn){
+        syncCountdownCancelBtn.addEventListener("click",function(){
+            cancelSyncCountdown("");
+        });
+    }
 
 })();
