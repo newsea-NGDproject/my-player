@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v223)ノリRun
+        (v224)ノリRun
         メインメニュー
 
     </title>
@@ -5427,6 +5427,164 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             text-align:center;
         }
 
+        /* ======================================================
+           同期モード ③ 曲開始時刻(v224)
+        ====================================================== */
+        /*
+        時計とカウントダウンは、②のターンテーブルのモニタと同じ
+        「液晶」の見た目にそろえています(同じ画面の中で、時刻や数字を
+        出す場所は全部この見た目、と決めておくと迷いません)。
+
+        時刻ボタンは、①②の「決定」と同じく暁色の縁の白いボタンです。
+        4つとも同じ幅・同じ高さで縦に並べ、左端と右端の縦の線を
+        ターンテーブル・定規とそろえています(竹弘の「縦のラインを揃える」)。
+        */
+        #sync-panel .sync-clock,
+        #sync-panel .sync-countdown{
+            border-radius:12px;
+
+            background:linear-gradient(180deg,#1d1622 0%,#120e16 100%);
+
+            box-shadow:
+                inset 0 0 0 1px rgba(255,255,255,0.07),
+                inset 0 2px 8px rgba(0,0,0,0.8);
+
+            font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,"Roboto Mono",monospace;
+        }
+
+        /* 現在時刻 */
+        #sync-panel .sync-clock{
+            display:flex;
+            align-items:baseline;
+            justify-content:center;
+            gap:12px;
+
+            margin:10px 0 12px 0;
+            padding:10px 14px;
+        }
+
+        #sync-panel .sync-clock-label,
+        #sync-panel .sync-countdown-label{
+            font-size:0.7rem;
+            font-weight:bold;
+            letter-spacing:1px;
+
+            color:var(--dusk-pink);
+            text-shadow:0 0 4px rgba(var(--dusk-pink-rgb),0.6);
+        }
+
+        #sync-panel .sync-clock-time{
+            font-size:1.7rem;
+            font-weight:bold;
+            letter-spacing:2px;
+            line-height:1;
+
+            color:var(--dusk-gold);
+            text-shadow:0 0 8px rgba(var(--theme-rgb),0.7);
+
+            /* 数字の幅を揃えて、秒が進むたびに左右にぶれないようにします */
+            font-variant-numeric:tabular-nums;
+        }
+
+        /* 時刻ボタン(縦に4つ) */
+        #sync-panel .sync-time-list{
+            display:grid;
+            gap:10px;
+        }
+
+        #sync-panel .sync-time-btn{
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+
+            width:100%;
+            min-height:52px;
+            box-sizing:border-box;
+
+            padding:10px 16px;
+
+            border-radius:12px;
+            border:2px solid var(--theme-color);
+
+            background:var(--card-bg);
+
+            font:inherit;
+
+            cursor:pointer;
+        }
+
+        #sync-panel .sync-time-btn:active{
+            filter:brightness(0.9);
+        }
+
+        #sync-panel .sync-time-main{
+            font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,"Roboto Mono",monospace;
+            font-size:1.35rem;
+            font-weight:bold;
+            letter-spacing:1px;
+
+            color:var(--theme-color);
+
+            font-variant-numeric:tabular-nums;
+        }
+
+        #sync-panel .sync-time-rest{
+            font-size:0.8rem;
+
+            color:var(--text-sub);
+
+            font-variant-numeric:tabular-nums;
+        }
+
+        /* カウントダウン */
+        #sync-panel .sync-countdown{
+            display:flex;
+            flex-direction:column;
+            align-items:center;
+            gap:6px;
+
+            margin:10px 0 8px 0;
+            padding:14px 14px 16px 14px;
+        }
+
+        #sync-panel .sync-countdown-label span{
+            color:var(--dusk-gold);
+            text-shadow:none;
+        }
+
+        #sync-panel .sync-countdown-rest{
+            display:flex;
+            align-items:baseline;
+            gap:6px;
+
+            color:var(--dusk-gold);
+            text-shadow:0 0 10px rgba(var(--theme-rgb),0.75);
+        }
+
+        #sync-panel .sync-countdown-ato,
+        #sync-panel .sync-countdown-byo{
+            font-size:1rem;
+            font-weight:bold;
+        }
+
+        #sync-panel #sync-countdown-rest{
+            font-size:3rem;
+            font-weight:bold;
+            line-height:1;
+
+            font-variant-numeric:tabular-nums;
+        }
+
+        #sync-panel .sync-countdown-plan{
+            text-align:center;
+        }
+
+        /* 「やめる」は横いっぱい(上の液晶と縦の線を揃えます) */
+        #sync-panel .sync-countdown-cancel{
+            width:100%;
+            margin-top:6px;
+        }
+
         /* 見出し。flex-shrink:0 で、本文が長くても縮ませません */
         .license-header{
             flex-shrink:0;
@@ -7750,7 +7908,8 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
        ① を「決定」するまで ② は display:none のまま隠れています。
        どの段を見せるかは js/sync.js の refreshSyncPanel() が決めます。
 
-    ⚠️ v221(段①)で ① を、v222(段②)で ② を作りました。③ は見出しだけです。
+    ⚠️ v221(段①)で ①、v222(段②)で ②、v224(段③)で ③ を作りました。
+       ④ 薄暗いロック画面は段④で作ります。
 -->
 <div id="sync-panel" style="display:none;">
 
@@ -8025,14 +8184,75 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
 
         </section>
 
-        <!-- ③ 曲開始時刻(段③で作ります。v222では見出しだけ) -->
+        <!--
+            ③ 曲開始時刻(v224)。
+
+            竹弘の指定:上から「現在時刻(秒まで)」と「曲開始時刻ボタン」4つ。
+            ボタンの時刻は10秒刻みで、残りが下限を切ったら次の時刻へ
+            切り替わります(js/sync.js の refreshSyncStartButtons)。
+
+            押すと「選ぶ姿」が隠れて「カウントダウンの姿」になります。
+
+            ⚠️ data-min-sec が「現在時刻から最低何秒後か」です
+               (10なら10〜20秒後の時刻を出す)。ボタンを足す時は
+               この形の <button> を1つ足すだけで、JSは直さずに済みます。
+        -->
         <section class="sync-step" id="sync-step-start" style="display:none;">
 
             <p class="connect-heading">③ 曲開始時刻</p>
 
             <p class="connect-note">
-                (準備中。次の版で作ります)
+                みんなで同じ時刻のボタンを押してください。<br>
+                その時刻ちょうどに、曲がスタートします。<br>
+                待っている間は、画面を消さないでください。
             </p>
+
+            <!-- 時刻を選ぶ姿 -->
+            <div id="sync-start-choose">
+
+                <div class="sync-clock">
+                    <span class="sync-clock-label">NOW</span>
+                    <span class="sync-clock-time" id="sync-clock-time">--:--:--</span>
+                </div>
+
+                <div class="sync-time-list">
+                    <button type="button" class="sync-time-btn" data-min-sec="10">
+                        <span class="sync-time-main">--:--:--</span>
+                        <span class="sync-time-rest">あと--秒</span>
+                    </button>
+                    <button type="button" class="sync-time-btn" data-min-sec="20">
+                        <span class="sync-time-main">--:--:--</span>
+                        <span class="sync-time-rest">あと--秒</span>
+                    </button>
+                    <button type="button" class="sync-time-btn" data-min-sec="30">
+                        <span class="sync-time-main">--:--:--</span>
+                        <span class="sync-time-rest">あと--秒</span>
+                    </button>
+                    <button type="button" class="sync-time-btn" data-min-sec="60">
+                        <span class="sync-time-main">--:--:--</span>
+                        <span class="sync-time-rest">あと--秒</span>
+                    </button>
+                </div>
+
+            </div>
+
+            <!-- カウントダウンの姿(ボタンを押した後) -->
+            <div id="sync-start-countdown" style="display:none;">
+
+                <div class="sync-countdown">
+                    <span class="sync-countdown-label">START <span id="sync-countdown-target">--:--:--</span></span>
+                    <span class="sync-countdown-rest"><span class="sync-countdown-ato">あと</span><span id="sync-countdown-rest">--</span><span class="sync-countdown-byo">秒</span></span>
+                </div>
+
+                <!-- どの曲を、どこから鳴らすか(曲名は js/sync.js が textContent で入れます) -->
+                <p class="connect-note sync-countdown-plan"><span id="sync-countdown-plan"></span></p>
+
+                <button type="button" id="sync-countdown-cancel-btn" class="sync-btn sync-countdown-cancel">やめる</button>
+
+            </div>
+
+            <!-- ひとこと(js/sync.js が書き換えます) -->
+            <p class="connect-note sync-guide" id="sync-start-guide"></p>
 
         </section>
 
