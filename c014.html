@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v224)ノリRun
+        (v225)ノリRun
         メインメニュー
 
     </title>
@@ -4324,6 +4324,25 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         #sync-panel .sync-guide{
             margin-top:8px;
             text-align:center;
+        }
+
+        /*
+        役割ボタン(🏃 音を出す / 👥 合わせる)の2行目(v225)。
+        1行目より小さく、控えめな色にして、押す言葉を邪魔しないようにします。
+        */
+        #sync-panel .sync-btn-sub{
+            display:block;
+            margin-top:2px;
+
+            font-size:0.68rem;
+            font-weight:normal;
+            opacity:0.75;
+        }
+
+        /* ④に出す「基準はいつ合わせたか」の行(v225) */
+        #sync-panel .sync-anchor-line{
+            text-align:center;
+            margin-bottom:10px;
         }
 
         /* ======================================================
@@ -8185,7 +8204,170 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
         </section>
 
         <!--
-            ③ 曲開始時刻(v224)。
+            ③ みんなの時計を合わせる「音合わせ」(v225)。
+
+            ⚠️⚠️ **スマホの時計は信用できないことが実機で分かった**(2026-09-23)。
+               竹弘の再測定で、2台の時計が44msずれていた(1拍の1/8)。しかも
+               電波の状況で勝手に合わせ直されるので、昨日の測定は当てにならない。
+
+            → 竹弘の案:**みんなで同じ音を聴いて、各自が自分のスマホを叩き、
+              それをノリRun独自の基準にする。** これで「スマホの時計のズレ」
+              「画面が指を感じる遅れ」「イヤホンの遅れ」がまとめて打ち消せる。
+
+            ⚠️⚠️ **聴き合わせる音の速さは「マイピッチ ÷ 2」。固定の85BPMでは
+               いけない。** 全部同じ音なので「今叩いたのが何個目か」は原理的に
+               分からず、基準は音1個ぶんずれて記録されることがある。その1個が
+               ちょうど2拍なら害は無いが(右足/左足の違いと同じ)、2.12拍のように
+               半端だと端数ぶん(数十ms)ずっとずれる。
+               📘 図解: docs/sync-shared-beat.html
+
+            ターンテーブルは②と同じ見た目のものをもう1台置いている
+            (DJブースに2台並ぶ形)。CSSはすべて共有で、idだけ別。
+        -->
+        <section class="sync-step" id="sync-step-clock" style="display:none;">
+
+            <p class="connect-heading">③ みんなの時計を合わせる</p>
+
+            <p class="connect-note">
+                リードランナーが1人だけ「音を出す」を押します。<br>
+                全員がその音に合わせて12回タップしてください。<br>
+                イヤホンは、この10秒だけ外します。
+            </p>
+
+            <div class="sync-step-body">
+
+                <!-- 役割。リードランナーのスマホだけがスピーカーから鳴らします -->
+                <div class="sync-btn-row">
+                    <button type="button" id="sync-role-lead-btn" class="sync-btn sync-btn-primary">
+                        🏃 音を出す
+                        <span class="sync-btn-sub">リードランナー</span>
+                    </button>
+                    <button type="button" id="sync-role-follow-btn" class="sync-btn">
+                        👥 合わせる
+                        <span class="sync-btn-sub">それ以外の人</span>
+                    </button>
+                </div>
+
+                <!-- ②と同じターンテーブル(idだけ別) -->
+                <button type="button" id="sync-clock-pad" class="sync-deck" data-phase="idle" aria-label="タップしてみんなの時計を合わせる">
+                    <span class="sync-deck-stage">
+
+                        <span class="sync-monitor">
+                            <span class="sync-monitor-row">
+                                <span id="sync-clock-mon-status">READY</span>
+                                <span class="sync-monitor-bpm" id="sync-clock-mon-bpm">BPM---</span>
+                            </span>
+                            <span class="sync-monitor-big" id="sync-clock-mon-big">00/12</span>
+                            <span class="sync-monitor-sub" id="sync-clock-mon-sub">SELECT ROLE</span>
+                        </span>
+
+                        <span class="sync-knobs">
+                            <span class="sync-knob-wrap">
+                                <span class="sync-knob" style="--r:20deg"></span>
+                                <span class="sync-knob-label">EQ</span>
+                            </span>
+                            <span class="sync-knob-wrap">
+                                <span class="sync-knob" style="--r:-30deg"></span>
+                                <span class="sync-knob-label">FILTER</span>
+                            </span>
+                            <span class="sync-knob-wrap">
+                                <span class="sync-knob" style="--r:8deg"></span>
+                                <span class="sync-knob-label">FX</span>
+                            </span>
+                        </span>
+
+                        <span class="sync-pitch-fader"><span class="sync-fader-cap"></span></span>
+                        <span class="sync-pitch-label">PITCH</span>
+
+                        <span class="sync-platter">
+
+                            <span class="sync-dots" id="sync-clock-dots">
+                                <span class="sync-dot sync-dot-warmup" style="--i:0"></span>
+                                <span class="sync-dot sync-dot-warmup" style="--i:1"></span>
+                                <span class="sync-dot sync-dot-warmup" style="--i:2"></span>
+                                <span class="sync-dot sync-dot-warmup" style="--i:3"></span>
+                                <span class="sync-dot" style="--i:4"></span>
+                                <span class="sync-dot" style="--i:5"></span>
+                                <span class="sync-dot" style="--i:6"></span>
+                                <span class="sync-dot" style="--i:7"></span>
+                                <span class="sync-dot" style="--i:8"></span>
+                                <span class="sync-dot" style="--i:9"></span>
+                                <span class="sync-dot" style="--i:10"></span>
+                                <span class="sync-dot" style="--i:11"></span>
+                            </span>
+
+                            <span class="sync-vinyl">
+                                <svg class="sync-vinyl-art" viewBox="0 0 168 168" aria-hidden="true">
+                                    <defs>
+                                        <linearGradient id="sync-norirun-grad2" x1="0" y1="0" x2="1" y2="0">
+                                            <stop offset="0%" style="stop-color:var(--theme-color)"/>
+                                            <stop offset="55%" style="stop-color:var(--dusk-pink)"/>
+                                            <stop offset="100%" style="stop-color:var(--dusk-peony)"/>
+                                        </linearGradient>
+                                        <path id="sync-norirun-arc2" d="M 22,84 a 62,62 0 1,1 124,0 a 62,62 0 1,1 -124,0"/>
+                                    </defs>
+                                    <text class="sync-norirun-text" style="fill:url(#sync-norirun-grad2)">
+                                        <textPath href="#sync-norirun-arc2" startOffset="25%" text-anchor="middle">NoriRun</textPath>
+                                    </text>
+                                </svg>
+                            </span>
+
+                            <span class="sync-sheen"></span>
+
+                            <span class="sync-record-label">
+                                <span class="sync-label-big" id="sync-clock-big">▶</span>
+                                <span class="sync-label-small" id="sync-clock-small">タップ</span>
+                            </span>
+
+                        </span>
+
+                        <svg class="sync-tonearm" viewBox="0 0 60 180" aria-hidden="true">
+                            <circle cx="30" cy="34" r="13" class="sync-arm-base-outer"/>
+                            <circle cx="30" cy="34" r="8" class="sync-arm-base-inner"/>
+                            <g class="sync-arm-rot">
+                                <rect x="23" y="5" width="14" height="21" rx="3" class="sync-arm-weight"/>
+                                <line x1="30" y1="26" x2="30" y2="34" class="sync-arm-stub"/>
+                                <polyline points="30,34 31,110 18,146" class="sync-arm-tube"/>
+                                <polyline points="30,34 31,110 18,146" class="sync-arm-shine"/>
+                                <polygon points="22.7,147.7 13.3,144.3 7.2,161.2 16.6,164.6" class="sync-arm-head"/>
+                                <line x1="13.3" y1="144.3" x2="22.7" y2="147.7" class="sync-arm-accent"/>
+                                <line x1="22.7" y1="147.7" x2="28.5" y2="151.5" class="sync-arm-lift"/>
+                                <circle cx="30" cy="34" r="4" class="sync-arm-cap"/>
+                            </g>
+                        </svg>
+
+                        <span class="sync-sampler">
+                            <span class="sync-sampler-pad" style="--c:var(--theme-color)"></span>
+                            <span class="sync-sampler-pad" style="--c:var(--dusk-coral)"></span>
+                            <span class="sync-sampler-pad" style="--c:var(--dusk-pink)"></span>
+                            <span class="sync-sampler-pad" style="--c:var(--dusk-peony)"></span>
+                        </span>
+
+                        <span class="sync-xfader">
+                            <span class="sync-xfader-mark">A</span>
+                            <span class="sync-xfader-track"><span class="sync-fader-cap sync-xfader-cap"></span></span>
+                            <span class="sync-xfader-mark">B</span>
+                        </span>
+
+                    </span>
+                </button>
+
+                <p class="sync-deck-caption"><span id="sync-clock-caption"></span></p>
+                <p class="connect-note sync-deck-sub"><span id="sync-clock-sub"></span></p>
+
+            </div>
+
+            <div class="sync-btn-row">
+                <button type="button" id="sync-clock-decide-btn" class="sync-btn sync-btn-primary">決定</button>
+                <button type="button" id="sync-clock-redo-btn" class="sync-btn">合わせ直す</button>
+            </div>
+
+            <p class="connect-note sync-guide" id="sync-clock-guide"></p>
+
+        </section>
+
+        <!--
+            ④ 曲開始時刻(v224で ③ として作り、v225で ④ に繰り下げ)。
 
             竹弘の指定:上から「現在時刻(秒まで)」と「曲開始時刻ボタン」4つ。
             ボタンの時刻は10秒刻みで、残りが下限を切ったら次の時刻へ
@@ -8199,12 +8381,17 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
         -->
         <section class="sync-step" id="sync-step-start" style="display:none;">
 
-            <p class="connect-heading">③ 曲開始時刻</p>
+            <p class="connect-heading">④ 曲開始時刻</p>
 
             <p class="connect-note">
                 みんなで同じ時刻のボタンを押してください。<br>
                 その時刻ちょうどに、曲がスタートします。<br>
                 待っている間は、画面を消さないでください。
+            </p>
+
+            <!-- ③で合わせた基準の状態(js/sync.js が書き換えます) -->
+            <p class="connect-note sync-anchor-line">
+                <span id="sync-anchor-state"></span>
             </p>
 
             <!-- 時刻を選ぶ姿 -->
