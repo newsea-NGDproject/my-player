@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v225)ノリRun
+        (v226)ノリRun
         メインメニュー
 
     </title>
@@ -4520,13 +4520,31 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             font:inherit;
             color:#ffffff;
 
-            cursor:pointer;
-
             /*
-            叩いている最中に画面がスクロールしたり、長押しで文字が選ばれたり、
-            押した所が青く光ったりしないようにします(叩くことに集中できるように)。
+            ⚠️ v226で、叩いて数える場所を**プラッター(丸い盤)だけ**にしました。
+               台のほかの所は、ふつうの画面と同じく縦にスクロールできます。
+
+            竹弘の実機報告(2026-09-27):
+                「ターンテーブルが横幅いっぱいかつ、縦幅も画面半分を占めて
+                  いる為、タップしたい位置への画面スクロールの際、ターン
+                  テーブル以外の箇所を触らないと画面スクロールしない」
+
+            v225までは台全体が touch-action:none(指の動きを全部アプリが
+            受け取る)だったので、台の上から指を滑らせても画面が動きません
+            でした。
+
+                touch-action:pan-y … 「縦のスクロールだけはブラウザに任せる」
+                                     台の上から指を滑らせれば画面が動きます
+                .sync-platter の touch-action:none … 盤の上だけは今までどおり
+                                     アプリが受け取ります(下の .sync-platter)
+
+            touch-action は親と子の「両方が許したものだけ」が効く決まりなので、
+            盤の上では none、それ以外では pan-y になります。
+
+            長押しで文字が選ばれたり、押した所が青く光ったりしないようにする
+            指定は、台全体にそのまま残しています。
             */
-            touch-action:none;
+            touch-action:pan-y;
             -webkit-tap-highlight-color:transparent;
             user-select:none;
             -webkit-user-select:none;
@@ -4981,6 +4999,17 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             (z-index:-1 が台の後ろまで抜けてしまわないように)。
             */
             isolation:isolate;
+
+            /*
+            叩いて数えるのは、この盤の上だけです(v226)。
+            盤の上では画面がスクロールしないようにして、叩くことに集中
+            できるようにします(台のほかの所は pan-y。上の .sync-deck)。
+
+            ⚠️ 盤は丸いので、四角の角の部分は盤の外として扱われます
+               (ブラウザは border-radius の丸みどおりに当たりを判定します)。
+            */
+            touch-action:none;
+            cursor:pointer;
         }
 
         /* ① 側面(厚み)と、その下の光 */
@@ -5251,6 +5280,15 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             overflow:visible;
 
             filter:drop-shadow(0 3px 3px rgba(0,0,0,0.55));
+
+            /*
+            トーンアームは指を受け付けません(v226)。
+
+            測っている間、アームの先は盤の上に降りています。アームが指を
+            受け取ると、**盤の上を叩いたのに数えられない**所ができてしまう
+            ので、指はアームを素通りして下の盤(または台)に届くようにします。
+            */
+            pointer-events:none;
         }
 
         #sync-panel .sync-arm-base-outer{
@@ -5337,6 +5375,26 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         }
 
         #sync-panel .sync-deck[data-phase="measuring"] .sync-arm-rot{
+            transform:rotate(24deg);
+        }
+
+        /*
+        ③ リードランナーのスマホが音を出し続けている間も、盤を回して
+        アームを降ろしたままにします(v226)。
+
+        v226から、リードランナーは自分が12回叩き終わっても、「決定」を
+        押すまで音を鳴らし続けます(竹弘の要望。ほかの人がまだ叩いて
+        いるため)。値が出た姿(done)でも**音が鳴っている間はレコードが
+        回っている**方が、本物のターンテーブルと同じで分かりやすいためです。
+
+        data-playing は js/sync.js の refreshSyncClockStep() が付け外しします
+        (③の台だけ。②では付きません)。
+        */
+        #sync-panel .sync-deck[data-playing="1"] .sync-vinyl{
+            animation-play-state:running;
+        }
+
+        #sync-panel .sync-deck[data-playing="1"] .sync-arm-rot{
             transform:rotate(24deg);
         }
 
@@ -5455,8 +5513,14 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         出す場所は全部この見た目、と決めておくと迷いません)。
 
         時刻ボタンは、①②の「決定」と同じく暁色の縁の白いボタンです。
-        4つとも同じ幅・同じ高さで縦に並べ、左端と右端の縦の線を
-        ターンテーブル・定規とそろえています(竹弘の「縦のラインを揃える」)。
+        左端と右端の縦の線をターンテーブル・定規とそろえています
+        (竹弘の「縦のラインを揃える」)。
+
+        ⚠️ v226で、ボタンを4つから1つ(10〜20秒後)に減らしました。
+           竹弘の実機での判断(2026-09-27):「開始ボタンを押すまでは
+           始まらないので、開始タイミングを十分調整ができる。逆に、
+           メンバーの誰かが間違ったボタンを押す可能性もある為不要」。
+           並べ方(.sync-time-list)は、また増やす時のためにそのままです。
         */
         #sync-panel .sync-clock,
         #sync-panel .sync-countdown{
@@ -5505,7 +5569,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             font-variant-numeric:tabular-nums;
         }
 
-        /* 時刻ボタン(縦に4つ) */
+        /* 時刻ボタン(v226から1つ。増やす時は縦に並びます) */
         #sync-panel .sync-time-list{
             display:grid;
             gap:10px;
@@ -5602,6 +5666,93 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         #sync-panel .sync-countdown-cancel{
             width:100%;
             margin-top:6px;
+        }
+
+        /* ======================================================
+           同期モードの確認ポップ(v226)
+        ====================================================== */
+        /*
+        竹弘の要望(2026-09-27):
+
+            「『音を出す』『合わせる』ボタンを押したら、ポップを出して
+              『イヤホンを外しましたか?準備はいいですか?』とワンクッション」
+            「『決定』ボタンを押したら、ポップを出して
+              『イヤホンを装着してください。』とワンクッション」
+
+        画面全体に薄い黒を重ね、真ん中に白いカードを出します。見た目は
+        「再生できませんでした」のパネル(.exclude-box)と同じ形にそろえ、
+        ボタンだけこの画面の「決定」と同じ暁色のボタン(.sync-btn)を
+        使っています。
+
+        ⚠️ ブラウザ標準の confirm() / alert() は使いません。押されるまで
+           JavaScriptが丸ごと止まり、リードランナーの音の予約まで止まって
+           しまうためです(このアプリ全体の方針)。
+
+        ⚠️ #sync-panel の**中**に置いています。外に置くと暁色
+           (--theme-color の上書き)と --dusk-… の色が届かないためです。
+           #sync-panel は z-index:2000 の箱なので、この中の z-index:10 で
+           画面の見出し(✕)ごと覆えます。
+        */
+        #sync-dialog{
+            position:fixed;
+            inset:0;
+            z-index:10;
+
+            display:flex;
+            align-items:center;
+            justify-content:center;
+
+            padding:20px;
+            box-sizing:border-box;
+
+            background:rgba(0,0,0,0.45);
+        }
+
+        #sync-panel .sync-dialog-box{
+            width:100%;
+            max-width:320px;
+            box-sizing:border-box;
+            padding:22px 20px 20px 20px;
+
+            background:var(--card-bg);
+            border-radius:18px;
+
+            /* 上の縁に細い暁色の線(この画面の機能だと分かるように) */
+            border-top:3px solid var(--theme-color);
+
+            box-shadow:0 8px 24px rgba(0,0,0,0.25);
+
+            text-align:center;
+        }
+
+        #sync-panel .sync-dialog-icon{
+            margin:0 0 8px 0;
+
+            font-size:2.2rem;
+            line-height:1;
+        }
+
+        #sync-panel .sync-dialog-title{
+            margin:0 0 10px 0;
+
+            font-size:1.05rem;
+            font-weight:bold;
+            line-height:1.55;
+
+            color:var(--text-main);
+        }
+
+        #sync-panel .sync-dialog-message{
+            margin:0;
+            line-height:1.6;
+        }
+
+        /*
+        ボタンが1つだけの時(「イヤホンを装着してください。」)は、
+        横いっぱいに1つ置きます。2つの時と左右の端がそろいます。
+        */
+        #sync-panel .sync-btn-row.sync-btn-row-single{
+            grid-template-columns:minmax(0,1fr);
         }
 
         /* 見出し。flex-shrink:0 で、本文が長くても縮ませません */
@@ -8013,8 +8164,15 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
                     v223で、竹弘の要望どおりDJ機材らしく作り込みました
                     (「更に今風にカッコよく。ただし主張しすぎない控えめな感じで」)。
 
-                    全体が1つの大きなボタンで、**どこを叩いても1回と数えます**
-                    (ノブやフェーダーの上を叩いても同じ。部品はすべて飾りです)。
+                    全体が1つの大きなボタンですが、**数えるのはプラッター(丸い盤)
+                    の上を叩いた時だけ**です(v226。それまでは台のどこでも数えて
+                    いました)。台のほかの所は、指を滑らせると画面がスクロール
+                    します。ノブやフェーダーはすべて飾りです。
+
+                    ⚠️ v226の理由(竹弘の実機報告):台が画面の横いっぱい・縦半分を
+                       占めるので、台の外を探さないとスクロールできなかった。
+                       判定は js/sync.js の isSyncPlatterHit()、スクロールの許可は
+                       CSS の .sync-deck / .sync-platter の touch-action。
 
                         .sync-monitor      … 左上のモニタ。状態・回数・結果を出す(v223)
                         .sync-knobs        … 右上の丸ノブ(EQ / FILTER / FX)。飾り(v223)
@@ -8230,8 +8388,9 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
 
             <p class="connect-note">
                 リードランナーが1人だけ「音を出す」を押します。<br>
-                全員がその音に合わせて12回タップしてください。<br>
-                イヤホンは、この10秒だけ外します。
+                全員がその音に合わせて、レコードを<br>
+                12回タップしてください。<br>
+                イヤホンは、合わせる間だけ外します。
             </p>
 
             <div class="sync-step-body">
@@ -8369,11 +8528,17 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
         <!--
             ④ 曲開始時刻(v224で ③ として作り、v225で ④ に繰り下げ)。
 
-            竹弘の指定:上から「現在時刻(秒まで)」と「曲開始時刻ボタン」4つ。
+            竹弘の指定:上から「現在時刻(秒まで)」と「曲開始時刻ボタン」。
             ボタンの時刻は10秒刻みで、残りが下限を切ったら次の時刻へ
             切り替わります(js/sync.js の refreshSyncStartButtons)。
 
             押すと「選ぶ姿」が隠れて「カウントダウンの姿」になります。
+
+            ⚠️ v226で、ボタンを4つ(10/20/30/60秒後)から1つ(10〜20秒後)に
+               減らしました。竹弘の実機での判断(2026-09-27):
+                   「開始ボタンを押すまでは始まらないので、開始タイミングを
+                     十分調整ができる。逆に、メンバーの誰かが間違ったボタンを
+                     押す可能性もある為不要でした」
 
             ⚠️ data-min-sec が「現在時刻から最低何秒後か」です
                (10なら10〜20秒後の時刻を出す)。ボタンを足す時は
@@ -8407,18 +8572,6 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
                         <span class="sync-time-main">--:--:--</span>
                         <span class="sync-time-rest">あと--秒</span>
                     </button>
-                    <button type="button" class="sync-time-btn" data-min-sec="20">
-                        <span class="sync-time-main">--:--:--</span>
-                        <span class="sync-time-rest">あと--秒</span>
-                    </button>
-                    <button type="button" class="sync-time-btn" data-min-sec="30">
-                        <span class="sync-time-main">--:--:--</span>
-                        <span class="sync-time-rest">あと--秒</span>
-                    </button>
-                    <button type="button" class="sync-time-btn" data-min-sec="60">
-                        <span class="sync-time-main">--:--:--</span>
-                        <span class="sync-time-rest">あと--秒</span>
-                    </button>
                 </div>
 
             </div>
@@ -8442,6 +8595,36 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
             <p class="connect-note sync-guide" id="sync-start-guide"></p>
 
         </section>
+
+    </div>
+
+    <!--
+        確認のポップ(v226。竹弘の要望「ワンクッション欲しい」)。
+
+        ③の「音を出す」「合わせる」を押した時と、③の「決定」を押した時に
+        出します。中の文字とボタンの数は js/sync.js の openSyncDialog() が
+        その都度書き換えます(ポップは1つだけ用意して使い回す)。
+
+        ⚠️ #sync-panel の**中**に置くこと(外だと暁色が届かない)。
+           .license-body の外に置いているのは、中だと本文と一緒に
+           スクロールで流れてしまうためです。
+    -->
+    <div id="sync-dialog" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="sync-dialog-title">
+
+        <div class="sync-dialog-box">
+
+            <p class="sync-dialog-icon" id="sync-dialog-icon"></p>
+
+            <p class="sync-dialog-title" id="sync-dialog-title"></p>
+
+            <p class="connect-note sync-dialog-message" id="sync-dialog-message"></p>
+
+            <div class="sync-btn-row" id="sync-dialog-buttons">
+                <button type="button" id="sync-dialog-ok" class="sync-btn sync-btn-primary">はい</button>
+                <button type="button" id="sync-dialog-cancel" class="sync-btn">まだ</button>
+            </div>
+
+        </div>
 
     </div>
 
