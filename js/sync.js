@@ -28,7 +28,8 @@
      ① みんなで走るピッチ … 定規で決める。「決定」で灰色にロック
      ② Bluetooth遅延     … ピッに合わせて12回タップして測る
      ③ みんなの時計を合わせる … みんなで同じ音を聴いて12回タップ(v225)
-     ④ 曲開始時刻ボタン   … 10秒刻みの時刻を4つ並べる
+     ④ 曲開始時刻ボタン   … 10〜20秒後の時刻(10秒刻み)を1つ出す
+                            (v225までは4つ。v226で1つに)
      ⑤ 薄暗いロック画面   … 音量ボタン以外の操作を止める
 
  1機能ずつ実機で確かめる決まりに合わせて、4段に分けて作ります。
@@ -39,9 +40,16 @@
                     ノブ・フェーダー・サンプラー・暁色の仲間の色)と、
                     前回と大きく違う時の一言
      段③(v224) … 時刻ボタンと、その時刻に拍を揃えたスタート
-     段⑤(v225) … ③みんなの時計を合わせる「音合わせ」 ← いまここ
+     段⑤(v225) … ③みんなの時計を合わせる「音合わせ」
                     ⚠️ スマホの時計は信用できないと実機で判明したため、
                        時計を使う設計をやめた(下の「なぜ2台が揃うのか」)
+          (v226) … 2台での試験をしやすくするブラッシュアップ ← いまここ
+                    ・叩いて数えるのはプラッター(丸い盤)の上だけ
+                      (台のほかの所ではスクロールできる)
+                    ・③のリードランナーの音は「決定」まで鳴らし続ける
+                    ・③の音を「ピッ」から「カチッ」に(外の騒音に負けない)
+                    ・③の役割ボタンと「決定」の後に、確認のポップ
+                    ・④の時刻ボタンを4つから1つに
      段④        … 薄暗いロック画面・走行タイマー・イヤホン操作・時刻からの再開
 
 ----------------------------------------------------------------------
@@ -309,12 +317,29 @@ const SYNC_LATE_GIVEUP_MS = 2000;
     SYNC_CLOCK_TAPS   … 叩いてもらう回数(②と同じ12回)
     SYNC_CLOCK_WARMUP … 最初の何回を「ならし」として捨てるか(②と同じ4回)
     SYNC_CLOCK_LEAD_SEC … 「音を出す」を押してから最初の音までの間
-    SYNC_CLOCK_MAX_BEEPS … 鳴らし続ける上限(叩き終わらない時の保険)
+    SYNC_CLOCK_MAX_SEC  … 音を鳴らし続ける上限(秒。止め忘れた時の保険)
+
+【SYNC_CLOCK_MAX_SEC を「回数」から「秒」に変えた理由(v226)】
+
+v225までは「60回鳴らしたら止める」(SYNC_CLOCK_MAX_BEEPS)で、
+リードランナーが12回叩き終わった時点でも音を止めていました。
+
+竹弘の実機報告(2026-09-27):
+
+    「リードランナーが合わせるみんなより早くタップを終えてしまうと
+      メトロノームの音が止まってしまい、その他の『合わせる』メンバーが
+      音が聴けなくなってしまう」
+
+→ v226から、リードランナーの音は**「決定」を押すまで**鳴り続けます。
+  ほかの人が叩き直すこともあるので、どれくらい鳴らすかは決められません。
+  そこで上限は「止め忘れた時の保険」だけにして、長めの3分にしました。
+  回数ではなく秒にしたのは、聴き合わせる音の速さ(70〜139BPM)によって
+  60回が29秒にも51秒にもなり、長さが読めないためです。
 */
 const SYNC_CLOCK_TAPS = 12;
 const SYNC_CLOCK_WARMUP = 4;
 const SYNC_CLOCK_LEAD_SEC = 1.0;
-const SYNC_CLOCK_MAX_BEEPS = 60;
+const SYNC_CLOCK_MAX_SEC = 180;
 
 /*
 聴き合わせる音を「マイピッチの半分」にする境目(BPM)。
@@ -464,10 +489,28 @@ let syncAnchorTakenAtMs = 0;
 // 叩いた時刻の並び
 let syncClockTaps = [];
 
-// リードランナーが鳴らす音の見回り係と、次に鳴らす時刻・鳴らした数
+/*
+リードランナーが鳴らす音の見回り係と、次に鳴らす時刻・鳴らすのをやめる時刻
+(deckAudioCtx の時計で何秒か)。
+
+⚠️ v226で「鳴らした数」(syncClockBeepCount)を「やめる時刻」
+   (syncClockBeepEndSec)に置き換えました(SYNC_CLOCK_MAX_SEC のコメント)。
+
+⚠️ 見回り係が動いている(0でない)= **いま音を鳴らしている**、という
+   意味でも使います(ターンテーブルを回したままにする data-playing)。
+*/
 let syncClockBeepTimerId = 0;
 let syncClockBeepNextSec = 0;
-let syncClockBeepCount = 0;
+let syncClockBeepEndSec = 0;
+
+/*
+③の「カチッ」専用の音量つまみです(v226)。
+
+②のピッ(syncBeepGainNode)や、①の定規のカチッ(syncTempoGainNode)とは
+別に持ちます。あちらは🔇消音中に鳴らさない / 鳴らすの決まりが違い、
+音量を変えた時に互いに影響しないようにするためです。
+*/
+let syncClockGainNode = null;
 
 // ---- ③ で使うもの(v224) ----
 
@@ -629,6 +672,7 @@ const syncClockGuideEl = document.getElementById("sync-clock-guide");
 // ④ 曲開始時刻(v224。v225で③→④に繰り下げ)
 const syncStepStartEl = document.getElementById("sync-step-start");
 
+
 // ④の上に出す「基準はいつ合わせたか」の行(v225)
 const syncAnchorStateEl = document.getElementById("sync-anchor-state");
 
@@ -636,7 +680,11 @@ const syncStartChooseEl = document.getElementById("sync-start-choose");
 const syncStartCountdownEl = document.getElementById("sync-start-countdown");
 const syncClockTimeEl = document.getElementById("sync-clock-time");
 
-// 時刻ボタン(4つ)。どれも data-min-sec(最低何秒後か)を持っています
+/*
+時刻ボタン。どれも data-min-sec(最低何秒後か)を持っています。
+v226で4つから1つに減らしましたが(c014.html の④の説明)、HTMLに
+並んでいる数だけ扱う書き方のままにしてあります(増やす時にJSを直さずに済む)。
+*/
 const syncTimeBtnEls = document.querySelectorAll("#sync-step-start .sync-time-btn");
 
 const syncCountdownTargetEl = document.getElementById("sync-countdown-target");
@@ -644,6 +692,22 @@ const syncCountdownRestEl = document.getElementById("sync-countdown-rest");
 const syncCountdownPlanEl = document.getElementById("sync-countdown-plan");
 const syncCountdownCancelBtn = document.getElementById("sync-countdown-cancel-btn");
 const syncStartGuideEl = document.getElementById("sync-start-guide");
+
+// ---- 確認のポップ(v226) ----
+
+const syncDialogEl = document.getElementById("sync-dialog");
+const syncDialogIconEl = document.getElementById("sync-dialog-icon");
+const syncDialogTitleEl = document.getElementById("sync-dialog-title");
+const syncDialogMessageEl = document.getElementById("sync-dialog-message");
+const syncDialogButtonsEl = document.getElementById("sync-dialog-buttons");
+const syncDialogOkBtn = document.getElementById("sync-dialog-ok");
+const syncDialogCancelBtn = document.getElementById("sync-dialog-cancel");
+
+/*
+ポップの「はい」「OK」が押された時にすることです。出すたびに入れ替えます。
+ポップを閉じた時は null に戻します(古い約束が後から動かないように)。
+*/
+let syncDialogOnOk = null;
 
 /*
 定規の部品(js/ruler.js)を、①の箱の中に組み立てます。
@@ -863,6 +927,9 @@ function closeSyncPanel(){
     stopSyncClockBeeps();
 
     syncRuler.stop();
+
+    // 確認のポップが出ていたら閉じます(次に開いた時に残らないように。v226)
+    closeSyncDialog();
 
     /*
     ③のカウントダウン中なら取りやめ、時計も止めます(v224)。
@@ -1430,6 +1497,36 @@ function fitSyncDeck(){
 }
 
 /**
+ * 指が触れたのが、プラッター(丸い盤)の上かどうかを調べます(v226)。
+ *
+ * ②③のターンテーブルは台全体が1つのボタンですが、叩いて数えるのは
+ * 盤の上だけにしました(竹弘の要望。台のほかの所はスクロール用)。
+ *
+ * 【closest とは】
+ *
+ * event.target は「指が触れた一番奥の部品」です(盤の上なら、盤に書いた
+ * NoriRun の文字やラベルの字であることもあります)。closest(".sync-platter")
+ * は、そこから親・祖父…と外側へたどって、最初に見つかった .sync-platter を
+ * 返します。見つからなければ null です。**盤の中のどの部品を触っても
+ * 「盤の上」と分かる**ので、中の部品が増えてもこの判定は直さずに済みます。
+ *
+ * ⚠️ トーンアームは CSS で指を受け付けない(pointer-events:none)ように
+ *    してあるので、盤の上に降りたアームの上を叩いても、ちゃんと盤に届きます。
+ *
+ * @param  {PointerEvent} event
+ * @return {boolean}
+ */
+function isSyncPlatterHit(event){
+
+    const target = event.target;
+
+    if(!target || typeof target.closest !== "function"){ return false; }
+
+    return target.closest(".sync-platter") !== null;
+
+}
+
+/**
  * ターンテーブルが押された時の処理です。
  *
  * 止まっている時 … 測りはじめます(この1回は数えません)
@@ -1437,9 +1534,14 @@ function fitSyncDeck(){
  * 値が出ている時 … 何もしません(うっかり触って値が消えないように。
  *                   測り直す時は「測り直す」ボタン)
  *
+ * ⚠️ v226から、盤(プラッター)の上を押した時だけ反応します。
+ *    台のほかの所は、画面をスクロールするための場所です。
+ *
  * @param {PointerEvent} event
  */
 function handleSyncPadPress(event){
+
+    if(!isSyncPlatterHit(event)){ return; }
 
     if(syncState.latencyDecided){ return; }
 
@@ -1959,6 +2061,26 @@ function redoSyncLatency(){
     syncState.latencyPhase = "idle";
     syncState.latencyNotice = "";
 
+    /*
+    ③は②が決まるまで隠れるので、③の音(リードランナーのカチッ)が
+    鳴っていたら止めます(v226)。
+
+    v226から、リードランナーの音は③の「決定」まで鳴り続けます。止めないと、
+    ③が隠れて止めるボタンが見えないまま、音だけが鳴り続けてしまいます
+    (①の「再設定」で②のピッを止めているのと同じ考え方)。
+    叩いている途中だった時は、叩いた分を捨てます(前に合わせた基準が
+    あればその姿に、無ければ役割を選ぶ前の姿に戻します)。
+    */
+    stopSyncClockBeeps();
+
+    if(syncState.clockPhase === "measuring"){
+
+        syncClockTaps = [];
+
+        syncState.clockPhase = (syncAnchorPerfMs !== null) ? "done" : "idle";
+
+    }
+
     refreshSyncLatencyStep();
 
     console.log("同期モード ② 遅延を測り直します");
@@ -2074,7 +2196,42 @@ function getSyncSharedPeriodMs(){
 }
 
 /**
- * 役割のボタン(🏃 音を出す / 👥 合わせる)が押された時。
+ * 役割のボタン(🏃 音を出す / 👥 合わせる)が押された時(v226)。
+ *
+ * すぐには始めず、確認のポップを出します。竹弘の要望(2026-09-27):
+ *
+ *     「『音を出す』『合わせる』ボタンを押したら、ポップを出して、
+ *       『イヤホンを外しましたか?準備はいいですか?』とワンクッション欲しい」
+ *
+ * ③はイヤホンを外し、リードランナーのスマホのスピーカーから出る音を
+ * みんなで聴いて合わせます。イヤホンを付けたままだと、リードランナーは
+ * 自分だけイヤホンで聴いてしまい、ほかの人は何も聞こえません。
+ *
+ * 「はい」で startSyncClockRole() に進みます。
+ * ⚠️ 「はい」を押した瞬間も「人の操作の中」なので、音の出口を起こす
+ *    (resumeDeckAudio)処理はそのまま効きます。
+ *
+ * @param {string} role - "lead"(音を出す) / "follow"(合わせる)
+ */
+function askSyncClockRole(role){
+
+    if(syncState.clockDecided){ return; }
+
+    openSyncDialog({
+        icon: "🔊",
+        title: "イヤホンを外しましたか?<br>準備はいいですか?",
+        message: (role === "lead")
+            ? "「はい」を押すと、このスマホの<br>スピーカーからカチッが鳴り始めます"
+            : "リードランナーのカチッに合わせて<br>レコードを12回タップします",
+        okText: "はい",
+        cancelText: "まだ",
+        onOk: function(){ startSyncClockRole(role); }
+    });
+
+}
+
+/**
+ * 役割を決めて、音合わせを始めます(ポップの「はい」から呼ばれます)。
  *
  * どちらの役割でも「12回叩く」のは同じです。違うのは**自分のスマホから
  * 音を出すかどうか**だけ。
@@ -2115,6 +2272,37 @@ function startSyncClockRole(role){
 
         }
 
+        /*
+        ③の音は「カチッ」です(v226。v225までは②と同じ「ピッ」)。
+
+        竹弘の要望(2026-09-27):
+            「メトロノーム音も電子音の『ピッ』だと外だと音が騒音に
+              かき消される場合がある為、『カチッ』にしたいです」
+
+        ②のBluetooth遅延は、イヤホンで聴くので「ピッ」のままです
+        (竹弘の判断)。
+
+        音源は①の定規・ノリノリアシストと同じ click.wav です。読み込みは
+        js/metronome.js に任せます(同じファイルを2回読まないため)。
+        すでに読み込み済みなら、この1行は何もしません。
+        */
+        loadMetronomeClick();
+
+        if(!syncClockGainNode){
+
+            syncClockGainNode = deckAudioCtx.createGain();
+
+            // 大きさはノリノリアシストのカチッと同じにします
+            syncClockGainNode.gain.value = METRONOME_GAIN_CLICK;
+
+            syncClockGainNode.connect(deckAudioCtx.destination);
+
+        }
+
+        /*
+        ⚠️ 読み込めなかった時の保険に「ピッ」も使えるようにしておきます
+           (playSyncClockClick のコメント)。
+        */
         if(!syncBeepGainNode){
 
             syncBeepGainNode = deckAudioCtx.createGain();
@@ -2124,7 +2312,7 @@ function startSyncClockRole(role){
         }
 
         syncClockBeepNextSec = deckAudioCtx.currentTime + SYNC_CLOCK_LEAD_SEC;
-        syncClockBeepCount = 0;
+        syncClockBeepEndSec = syncClockBeepNextSec + SYNC_CLOCK_MAX_SEC;
 
         syncClockBeepTimerId = setInterval(scheduleSyncClockBeeps,SYNC_TEMPO_TIMER_MS);
 
@@ -2149,16 +2337,42 @@ function startSyncClockRole(role){
  *
  * ⚠️ 🔇消音中でも鳴らします。竹弘が自分で「音を出す」と決めて押した音で、
  *    みんなに聴こえなければ意味がないためです(②のピッと同じ考え方)。
+ *
+ * ⚠️ v226から、リードランナーが12回叩き終わっても止めません。止めるのは
+ *    「決定」「合わせ直す」「✕」、または3分たった時(SYNC_CLOCK_MAX_SEC)です。
  */
 function scheduleSyncClockBeeps(){
 
     if(!deckAudioCtx){ return; }
 
-    if(syncClockBeepCount >= SYNC_CLOCK_MAX_BEEPS){
+    /*
+    止め忘れの保険(3分)。
+
+    叩いている途中なら、叩いた分を捨てて最初の姿に戻し、もう一度
+    押してもらいます(②で途中で止まった時と同じ)。叩き終わっていれば、
+    基準はもう出ているので、音だけ止めてそのことを知らせます。
+    */
+    if(syncClockBeepNextSec >= syncClockBeepEndSec){
 
         stopSyncClockBeeps();
 
-        console.log("同期モード ③ 音を出し続けて上限になったので止めました");
+        if(syncState.clockPhase === "measuring"){
+
+            syncClockTaps = [];
+
+            syncState.clockPhase = "idle";
+            syncState.clockNotice = "途中で止まりました。<br>もう一度「音を出す」を押してください";
+
+        }
+        else{
+
+            syncState.clockNotice = "🔇 " + (SYNC_CLOCK_MAX_SEC / 60) + "分たったので、音を止めました";
+
+        }
+
+        refreshSyncClockStep();
+
+        console.log("同期モード ③ 音を" + SYNC_CLOCK_MAX_SEC + "秒鳴らし続けたので止めました");
 
         return;
 
@@ -2168,17 +2382,57 @@ function scheduleSyncClockBeeps(){
 
     const periodSec = getSyncSharedPeriodMs() / 1000;
 
-    while(syncClockBeepNextSec < horizon && syncClockBeepCount < SYNC_CLOCK_MAX_BEEPS){
+    while(syncClockBeepNextSec < horizon && syncClockBeepNextSec < syncClockBeepEndSec){
 
         if(syncClockBeepNextSec >= deckAudioCtx.currentTime){
-            playSyncBeep(syncClockBeepNextSec);
+            playSyncClockClick(syncClockBeepNextSec);
         }
 
         syncClockBeepNextSec += periodSec;
 
-        syncClockBeepCount++;
+    }
+
+}
+
+/**
+ * ③の「カチッ」を1つ予約します(v226)。
+ *
+ * ①の定規の playSyncTempoClick() と同じ鳴らし方ですが、2つだけ違います。
+ *
+ *   ・🔇消音中でも鳴らします(scheduleSyncClockBeeps のコメント)。
+ *     定規の方は触っただけで鳴り出す音なので、消音を守っています
+ *   ・click.wav がまだ読めていない時は、代わりに「ピッ」を鳴らします。
+ *     定規の方は1拍くらい抜けても困りませんが、こちらは**音が無いと
+ *     みんなが叩けません。** 万一読み込みに失敗しても、音合わせだけは
+ *     できるようにしておきます(ふつうは起動時に読み終わっています)
+ *
+ * start() の2つ目の数字で、click.wav の頭の無音(約190ms)を読み飛ばします
+ * (METRONOME_CLICK_OFFSET_SEC。js/metronome.js)。読み飛ばさないと、
+ * 予約した時刻より190ms遅れて聞こえます。
+ *
+ * ⚠️ 読み飛ばした後の「カチッ」の立ち上がりは、予約した時刻から4ms足らず
+ *    です。みんなが同じ1台の音を聴いて叩くので、この4msは全員に同じだけ
+ *    入り、基準の揃い方には影響しません。
+ *
+ * @param {number} atCtxSec - いつ鳴らすか(deckAudioCtx の時計で何秒か)
+ */
+function playSyncClockClick(atCtxSec){
+
+    if(!metronomeClickBuffer || !syncClockGainNode){
+
+        playSyncBeep(atCtxSec);
+
+        return;
 
     }
+
+    const source = deckAudioCtx.createBufferSource();
+
+    source.buffer = metronomeClickBuffer;
+
+    source.connect(syncClockGainNode);
+
+    source.start(atCtxSec,METRONOME_CLICK_OFFSET_SEC);
 
 }
 
@@ -2204,14 +2458,27 @@ function stopSyncClockBeeps(){
  */
 function handleSyncClockPad(event){
 
+    // 盤(プラッター)の上を押した時だけ反応します(v226。②と同じ)
+    if(!isSyncPlatterHit(event)){ return; }
+
     if(syncState.clockDecided){ return; }
 
     if(syncState.clockPhase !== "measuring"){
 
-        // 役割を選ぶ前に叩かれた時は、何をすればよいかだけ伝えます
-        syncState.clockNotice = "先に、上のどちらかのボタンを押してください";
+        /*
+        役割を選ぶ前に叩かれた時は、何をすればよいかだけ伝えます。
 
-        refreshSyncClockStep();
+        ⚠️ 値が出た後(done)は何もしません(v226)。v226からは done の姿でも
+           知らせの欄を「音を止めました」に使うので、ここで上書きすると
+           その知らせが消えてしまいます。
+        */
+        if(syncState.clockPhase === "idle"){
+
+            syncState.clockNotice = "先に、上のどちらかのボタンを押してください";
+
+            refreshSyncClockStep();
+
+        }
 
         return;
 
@@ -2252,10 +2519,13 @@ function handleSyncClockPad(event){
  * ⚠️ 覚えるのは performance.now() の物差し(ページを開いてからのミリ秒)
  *    です。**スマホの時計(Date.now)は使いません。** あちらは電波で
  *    勝手に直されることがあり、直された瞬間に基準が飛ぶためです。
+ *
+ * ⚠️⚠️ **ここでは音を止めません**(v226)。v225まではここで止めていて、
+ *    リードランナーが先に叩き終わると、まだ叩いている人の音が消えて
+ *    しまいました(竹弘の実機報告)。音は「決定」で止めます
+ *    (decideSyncClock)。
  */
 function finishSyncClockMeasure(){
-
-    stopSyncClockBeeps();
 
     const periodMs = getSyncSharedPeriodMs();
 
@@ -2291,6 +2561,18 @@ function finishSyncClockMeasure(){
 
 /**
  * 「決定」ボタン。③をロックして、④(曲開始時刻)を表示します。
+ *
+ * リードランナーの音は、ここで止めます(v226。叩き終わった時には
+ * 止めない。finishSyncClockMeasure のコメント)。
+ *
+ * 決めた後に、イヤホンを付け直すよう確認のポップを出します(v226)。
+ * 竹弘の要望(2026-09-27):
+ *
+ *     「『決定』ボタンを押したら、ポップを出して、
+ *       『イヤホンを装着してください。』とワンクッション欲しい」
+ *
+ * ③の間はイヤホンを外しているので、付け忘れたまま④の時刻ボタンを
+ * 押すと、スタートした曲がスピーカーから鳴ってしまいます。
  */
 function decideSyncClock(){
 
@@ -2300,7 +2582,19 @@ function decideSyncClock(){
 
     syncState.clockDecided = true;
 
+    // 「音を止めました」などの知らせは、決定したら役目を終えます
+    syncState.clockNotice = "";
+
     refreshSyncClockStep();
+
+    openSyncDialog({
+        icon: "🎧",
+        title: "イヤホンを装着してください。",
+        message: "付けたら、④で開始時刻を選びます",
+        okText: "装着しました",
+        cancelText: "",
+        onOk: null
+    });
 
     console.log("同期モード ③ 基準を決定しました :",formatSyncClock(syncAnchorTakenAtMs) + " に合わせた基準");
 
@@ -2384,11 +2678,23 @@ function refreshSyncClockStep(){
     const phase = syncState.clockPhase;
     const decided = syncState.clockDecided;
 
+    /*
+    いま、このスマホがみんなに聴かせる音を鳴らしているか(v226)。
+    リードランナーは、叩き終わった後(done)も「決定」まで鳴らし続けます。
+    */
+    const playing = (syncClockBeepTimerId !== 0);
+
     syncStepClockEl.classList.toggle("sync-step-locked",decided);
 
     if(syncClockPadEl){
 
         syncClockPadEl.dataset.phase = phase;
+
+        /*
+        音が鳴っている間は、値が出た後でもレコードを回し、アームを
+        降ろしたままにします(CSS の .sync-deck[data-playing="1"])。
+        */
+        syncClockPadEl.dataset.playing = playing ? "1" : "0";
 
         if(phase !== "measuring"){
             syncClockPadEl.classList.remove("sync-deck-hit");
@@ -2448,6 +2754,19 @@ function refreshSyncClockStep(){
 
         caption = "みんなの基準を合わせました";
 
+        /*
+        リードランナーの音がまだ鳴っている時は、そのことを2行目に
+        添えます(v226)。ほかの人がまだ叩いているので、ここで止めずに
+        「決定」まで鳴らし続けるためです。
+        音を止めた知らせ(3分の保険)があれば、そちらを出します。
+        */
+        if(playing){
+            caption += "<br>🔊 「決定」まで鳴らし続けます";
+        }
+        else if(syncState.clockNotice){
+            caption += "<br>" + syncState.clockNotice;
+        }
+
         if(syncState.clockSpreadMs === null){
 
             // 前に合わせた基準が残っている状態(画面を開き直した時)
@@ -2483,8 +2802,13 @@ function refreshSyncClockStep(){
 
     if(syncClockMonStatusEl){
 
+        /*
+        「▶ PLAY」は、叩き終わった後も音を鳴らし続けている間です(v226。
+        リードランナーだけ)。
+        */
         syncClockMonStatusEl.textContent = decided ? "SET ✓"
             : (phase === "measuring") ? "● SYNC"
+            : (phase === "done" && playing) ? "▶ PLAY"
             : (phase === "done") ? "DONE"
             : "READY";
 
@@ -2541,7 +2865,19 @@ function refreshSyncClockStep(){
             guide = "リードランナーは「音を出す」、<br>それ以外の人は「合わせる」";
         }
         else if(phase === "measuring"){
-            guide = SYNC_CLOCK_TAPS + "回叩くと、自動で止まります";
+
+            /*
+            v226から、リードランナーの音は12回叩いても止まりません。
+            「自動で止まります」と書くと音まで止まると思われるので、
+            リードランナーには音のことを分けて伝えます。
+            */
+            guide = (syncState.clockRole === "lead")
+                ? SYNC_CLOCK_TAPS + "回叩くと、数えるのが止まります<br>(音は「決定」まで鳴り続けます)"
+                : SYNC_CLOCK_TAPS + "回叩くと、自動で止まります";
+
+        }
+        else if(playing){
+            guide = "全員が叩き終わってから<br>「決定」を押すと、音が止まります";
         }
         else{
             guide = "この基準でよければ<br>「決定」を押してください";
@@ -2733,7 +3069,7 @@ function tickSyncClock(){
 }
 
 /**
- * 4つの時刻ボタンの時刻と「あと◯秒」を書き換えます。
+ * 時刻ボタンの時刻と「あと◯秒」を書き換えます(v226からボタンは1つ)。
  *
  * ⚠️ 押された時にどの時刻を使うかは、**画面に出ていた時刻**
  *    (data-target-ms)です。押した瞬間に計算し直すと、切り替わりの
@@ -3614,6 +3950,102 @@ function releaseSyncWakeLock(){
 
 
 // ==========================================================
+// 5-4. 確認のポップ(v226)
+// ==========================================================
+/*
+竹弘の要望(2026-09-27)で、③の役割ボタンと「決定」の後に
+「ワンクッション」を入れるためのポップです。
+
+ポップは c014.html に1つだけ用意してあり、出すたびに中の文字と
+ボタンの数を書き換えて使い回します(同じ形のものを2つ作らない)。
+
+⚠️ ブラウザ標準の confirm() / alert() は使いません。押されるまで
+   JavaScriptが丸ごと止まり、リードランナーの音の予約(setInterval)まで
+   止まってしまうためです。このポップなら、出している間も音は鳴り続けます。
+*/
+
+/**
+ * 確認のポップを出します。
+ *
+ * ⚠️ title と message は innerHTML で入れます(<br> で改行位置を決めるため。
+ *    日本語は放っておくと文字の途中で折り返すため)。**この関数に渡すのは、
+ *    このファイルの中で決めた決まり文句だけ**にすること。曲名など外から
+ *    来る文字を渡してはいけません。
+ *
+ * @param {Object}        options
+ * @param {string}        options.icon       - 上の大きな絵文字
+ * @param {string}        options.title      - 太字の問いかけ
+ * @param {string}        options.message    - 下の小さな説明
+ * @param {string}        options.okText     - 主役のボタンの文字
+ * @param {string}        options.cancelText - もう1つのボタンの文字(空ならボタン1つ)
+ * @param {Function|null} options.onOk       - 主役のボタンが押された時にすること
+ */
+function openSyncDialog(options){
+
+    if(!syncDialogEl){
+
+        // 万一ポップが見つからない時は、確認を飛ばして先へ進めます(止まらないように)
+        if(typeof options.onOk === "function"){ options.onOk(); }
+
+        return;
+
+    }
+
+    if(syncDialogIconEl){ syncDialogIconEl.textContent = options.icon || ""; }
+    if(syncDialogTitleEl){ syncDialogTitleEl.innerHTML = options.title || ""; }
+    if(syncDialogMessageEl){ syncDialogMessageEl.innerHTML = options.message || ""; }
+
+    if(syncDialogOkBtn){ syncDialogOkBtn.textContent = options.okText || "OK"; }
+
+    const hasCancel = !!options.cancelText;
+
+    if(syncDialogCancelBtn){
+
+        syncDialogCancelBtn.textContent = options.cancelText || "";
+        syncDialogCancelBtn.style.display = hasCancel ? "" : "none";
+
+    }
+
+    // ボタンが1つの時は横いっぱいに(CSS の .sync-btn-row-single)
+    if(syncDialogButtonsEl){
+        syncDialogButtonsEl.classList.toggle("sync-btn-row-single",!hasCancel);
+    }
+
+    syncDialogOnOk = (typeof options.onOk === "function") ? options.onOk : null;
+
+    syncDialogEl.style.display = "flex";
+
+}
+
+/**
+ * 確認のポップを閉じます(「まだ」・✕で画面を閉じた時など)。
+ */
+function closeSyncDialog(){
+
+    if(syncDialogEl){ syncDialogEl.style.display = "none"; }
+
+    syncDialogOnOk = null;
+
+}
+
+/**
+ * ポップの主役のボタン(「はい」「装着しました」)が押された時。
+ *
+ * 先にポップを閉じてから、頼まれていたことをします。順番を逆にすると、
+ * 頼まれていたことの中で別のポップを出した時に、それをすぐ閉じてしまうためです。
+ */
+function acceptSyncDialog(){
+
+    const onOk = syncDialogOnOk;
+
+    closeSyncDialog();
+
+    if(onOk){ onOk(); }
+
+}
+
+
+// ==========================================================
 // 6. テンポの音(定規を触った時のカチッ)
 // ==========================================================
 /*
@@ -3840,16 +4272,19 @@ function stopSyncTempoSound(){
 
     ⚠️ ターンテーブルは②と同じく pointerdown で受けます(叩いた瞬間を
        知りたいので、指を離した時に起きる click では遅すぎます)。
+
+    ⚠️ v226から、役割ボタンはすぐに始めず、確認のポップを出します
+       (askSyncClockRole → 「はい」で startSyncClockRole)。
     */
     if(syncRoleLeadBtn){
         syncRoleLeadBtn.addEventListener("click",function(){
-            startSyncClockRole("lead");
+            askSyncClockRole("lead");
         });
     }
 
     if(syncRoleFollowBtn){
         syncRoleFollowBtn.addEventListener("click",function(){
-            startSyncClockRole("follow");
+            askSyncClockRole("follow");
         });
     }
 
@@ -3871,7 +4306,7 @@ function stopSyncTempoSound(){
         });
     }
 
-    // ④ 時刻ボタン(4つ)と「やめる」(v224)
+    // ④ 時刻ボタン(v226から1つ)と「やめる」(v224)
     syncTimeBtnEls.forEach(function(button){
         button.addEventListener("click",function(){
             handleSyncTimeButton(button);
@@ -3881,6 +4316,19 @@ function stopSyncTempoSound(){
     if(syncCountdownCancelBtn){
         syncCountdownCancelBtn.addEventListener("click",function(){
             cancelSyncCountdown("");
+        });
+    }
+
+    // 確認のポップ(v226)
+    if(syncDialogOkBtn){
+        syncDialogOkBtn.addEventListener("click",function(){
+            acceptSyncDialog();
+        });
+    }
+
+    if(syncDialogCancelBtn){
+        syncDialogCancelBtn.addEventListener("click",function(){
+            closeSyncDialog();
         });
     }
 
