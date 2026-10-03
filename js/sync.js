@@ -43,13 +43,15 @@
      段⑤(v225) … ③みんなの時計を合わせる「音合わせ」
                     ⚠️ スマホの時計は信用できないと実機で判明したため、
                        時計を使う設計をやめた(下の「なぜ2台が揃うのか」)
-          (v226) … 2台での試験をしやすくするブラッシュアップ ← いまここ
+          (v226) … 2台での試験をしやすくするブラッシュアップ
                     ・叩いて数えるのはプラッター(丸い盤)の上だけ
                       (台のほかの所ではスクロールできる)
                     ・③のリードランナーの音は「決定」まで鳴らし続ける
                     ・③の音を「ピッ」から「カチッ」に(外の騒音に負けない)
                     ・③の役割ボタンと「決定」の後に、確認のポップ
                     ・④の時刻ボタンを4つから1つに
+          (v227) … ④の時計を「みんなの時計」に ← いまここ
+                    (下の「みんなの時計」の説明)
      段④        … 薄暗いロック画面・走行タイマー・イヤホン操作・時刻からの再開
 
 ----------------------------------------------------------------------
@@ -77,6 +79,59 @@
    ・Bluetoothの遅れ … 各スマホが自分の遅れぶん早く出すので消える
                         (遠い人ほど早く家を出る ―― 竹弘と合意した考え方)
    ・残るのは「その人の早めに踏む癖」だけ(人による差 10〜30ms)
+
+----------------------------------------------------------------------
+
+【みんなの時計(v227)】
+
+ v226までの④は、時計に**各スマホの時計**(Date.now)をそのまま出して
+ いました。曲のスタートは③の基準で揃うので問題なかったのですが、
+ 画面の時計は2台で食い違って見えました。竹弘の実機報告(2026-10-04):
+
+     「リードランナーとその他のnowの同期時計が合って見えないのが、
+       『みんなの時計を合わせる』がうまくいっていないものと間違えて
+       しまい混乱を招いてしまうのを改善したい」
+
+ 食い違って見えた理由は2つでした。
+
+     ・2台の時計そのものが約40msずれている(9/23の44msと同じ)
+     ・書き換えが0.2秒ごとで、各スマホがばらばらの瞬間に書き換えるので、
+       秒がめくれる瞬間が最大0.25秒ほど食い違って見える
+
+ そこで v227 から、④には**リードランナーの時計を、全員のスマホで
+ 同じ瞬間にめくって**出します。それが「みんなの時計」です。
+
+ 【どうやってリードランナーの時計を配るのか ―― 音に乗せる】
+
+ ③の基準は「拍の瞬間」を全員が±20ms以内で共有していますが、
+ 「今が何時何秒か」は持っていません(全部同じ音なので何個目か分からない)。
+
+ そこで、**リードランナーのカチッを、リードランナーの時計の目盛り
+ ぴったりに鳴らし始めます**(目盛り = 聴き合わせる音の間隔 P の倍数。
+ P はピッチから決まるので全員が同じ値を知っています)。
+
+     リードの時計   …|-------|-------|-------|  ← カチッは目盛りの上
+     自分の時計     …  |-------|-------|------    (約40msずれている)
+     自分の基準     …|  ← 叩いた結果。リードの目盛りの上にある
+
+ 自分の基準は「リードの時計の目盛りの上」にあるので、自分の時計で
+ 測った基準の時刻を、**いちばん近い目盛りに丸めれば**、リードの時計で
+ 何時何分何秒かが分かります。直すのは端数(P の半分=0.2〜0.3秒未満)
+ だけで、大まかな時刻は自分の時計で足ります(差はたった0.04秒)。
+
+     みんなの時計 ＝ 基準を目盛りに丸めた時刻 ＋ (今 − 基準)
+
+ これで、全員が「リードの時計」を表示し、**同じ瞬間に秒がめくれます。**
+ 時刻ボタンもこの時計で選ぶので、どのスマホでも必ず同じ拍で走り出します。
+
+ ⚠️ 限界:時計の自動設定を切っているなどで、リードと P の半分以上
+    ずれたスマホは、目盛り1つぶん(140〜250なら2拍)ずれて見えます。
+    それでも足は揃います(何拍目かが違うだけ=右足/左足の違いと同じ)。
+
+ 📘 QRコードとカメラで時計を配る案は、カメラの遅れ(0.05〜0.15秒・
+    機種や明るさで違う)が消せず精度が落ちるので採らなかった
+    (竹弘と合意、2026-10-04)。叩く方式には「②と③を同じ人が同じ癖で
+    叩くので、早めに叩く癖が打ち消し合う」という長所もあります。
 ================================================================
 */
 
@@ -255,10 +310,54 @@ const SYNC_DECK_STAGE_WIDTH = 320;
 
     SYNC_START_GRID_SEC   … 時刻ボタンの刻み(10秒)。2台に同じ時刻が
                             並ぶので「40秒のやつ押そう」と声を掛け合える
-    SYNC_CLOCK_TIMER_MS   … 時計・ボタン・カウントダウンを書き換える間隔
 */
 const SYNC_START_GRID_SEC = 10;
-const SYNC_CLOCK_TIMER_MS = 200;
+
+/*
+時計を書き換えるのを、秒の境目から何ms遅らせるか(v227)。
+
+⚠️ v226までは「0.2秒ごと」(SYNC_CLOCK_TIMER_MS)に書き換えていました。
+   各スマホがばらばらの瞬間に書き換えるので、秒がめくれる瞬間が最大
+   0.25秒ほど食い違って見え、「時計が合っていない」と見える原因の1つ
+   でした(冒頭の【みんなの時計】)。
+
+v227からは、**みんなの時計の秒の境目に合わせて**書き換えます。全員が
+同じ瞬間に秒をめくります。
+
+境目ちょうどを狙うと、タイマーがわずかに早く起きた時に前の秒のまま
+書いてしまうおそれがあるので、15msだけ後ろにずらします。全員が同じ
+だけずらすので、揃い方には影響しません(目では分からない長さです)。
+*/
+const SYNC_CLOCK_TICK_MARGIN_MS = 15;
+
+/*
+どの拍で走り出すかを選ぶ時の「計算の誤差よけ」(拍の何分の1か。v227)。
+
+開始時刻(10秒刻み)が、ちょうど拍の上に来ることがあります
+(例:ピッチ140なら1拍は3/7秒なので、30秒ごとに拍とぴったり重なる)。
+その時、小数の計算のわずかな誤差で、あるスマホは「その拍」、別の
+スマホは「次の拍」を選ぶ、ということが起きないようにします。
+0.001拍 = 0.5ms足らず。計算の誤差(1万分の1ms程度)より十分大きく、
+人には分からない小ささです。
+*/
+const SYNC_START_STEP_EPSILON = 0.001;
+
+/*
+「スマホが眠った」などで、みんなの時計が狂ったとみなす境目(ms。v227)。
+
+みんなの時計は、③の基準からの経過を performance.now()(ページを開いて
+からの時計)で数えています。この時計は、**スマホが深く眠っている間は
+止まる端末がある**と言われています。止まると、その間に進んだ時間だけ
+基準がずれ、拍が合わなくなります。
+
+そこで、スマホの時計(Date.now)との差を、基準を決めた時と見比べます。
+ふつうはこの2つは一緒に進むので、差はほぼ0のままです。差が開いたら
+「眠った」か「スマホの時計が合わせ直された」かのどちらかなので、
+③の合わせ直しを勧めます。
+
+⚠️ 100ms は理屈から決めた目安です。実機で「点検」のログを見て見直すこと。
+*/
+const SYNC_SHARED_DRIFT_WARN_MS = 100;
 
 /*
 開始の何秒前から、曲を「音量0・消音」で先に鳴らしておくか。
@@ -486,6 +585,28 @@ let syncAnchorPerfMs = null;
 let syncAnchorPeriodMs = 0;
 let syncAnchorTakenAtMs = 0;
 
+/*
+基準の瞬間が、**みんなの時計(リードランナーの時計)で何時何分何秒か**
+(ミリ秒。Date.now と同じ数え方)。v227。
+
+自分の時計で測った基準の時刻を、聴き合わせる音の間隔の倍数に丸めた
+値です(冒頭の【みんなの時計】)。基準が無い時は null。
+
+    みんなの時計の今 ＝ syncAnchorLabelMs ＋ (performance.now() − syncAnchorPerfMs)
+*/
+let syncAnchorLabelMs = null;
+
+/*
+基準を決めた時の「スマホの時計 − 指の時計」(ms。v227)。
+
+あとで同じ差を測り直し、開いていたら「眠った」などで基準が狂ったと
+分かります(SYNC_SHARED_DRIFT_WARN_MS のコメント)。
+*/
+let syncAnchorWallOffsetMs = 0;
+
+// 「狂ったかも」を🐛パネルに1回だけ出すための印(毎秒出さないように)
+let syncDriftLogged = false;
+
 // 叩いた時刻の並び
 let syncClockTaps = [];
 
@@ -514,14 +635,21 @@ let syncClockGainNode = null;
 
 // ---- ③ で使うもの(v224) ----
 
-// 時計・ボタン・カウントダウンを書き換える見回り係。止まっている間は0
+/*
+時計・ボタン・カウントダウンを書き換える見回り係(setTimeout の受付番号)。
+止まっている間は0。
+
+v227から setInterval ではなく、**次の秒の境目に1回だけ起きる** setTimeout を
+毎回かけ直しています(SYNC_CLOCK_TICK_MARGIN_MS のコメント)。
+*/
 let syncClockTimerId = 0;
 
 /*
 カウントダウン中の約束ごと。カウントダウンしていない時は null。
 
     token          … この約束の目印(「やめる」で別の約束になったか見分ける)
-    targetWallMs   … 開始時刻(時計のミリ秒。みんなの耳に届く時刻)
+    targetSharedMs … 開始時刻(みんなの時計のミリ秒。みんなの耳に届く時刻)
+                     ⚠️ v226までは targetWallMs(各スマホの時計)でした
     plan           … どの曲を、どの位置から鳴らすか(prepareSyncPlan の答え)
     planText       … 画面に出す説明(曲名入り)
     wPerfMs        … 狙いの位置が鳴り始める瞬間(performance.now の物差し)
@@ -2311,7 +2439,12 @@ function startSyncClockRole(role){
 
         }
 
-        syncClockBeepNextSec = deckAudioCtx.currentTime + SYNC_CLOCK_LEAD_SEC;
+        /*
+        最初のカチッは、リードランナーの時計の目盛りぴったりに鳴らします
+        (v227。findSyncLeadFirstClickSec のコメント)。2つ目からは音の間隔
+        ごとに足していくので、全部のカチッが目盛りの上に乗ります。
+        */
+        syncClockBeepNextSec = findSyncLeadFirstClickSec();
         syncClockBeepEndSec = syncClockBeepNextSec + SYNC_CLOCK_MAX_SEC;
 
         syncClockBeepTimerId = setInterval(scheduleSyncClockBeeps,SYNC_TEMPO_TIMER_MS);
@@ -2329,6 +2462,60 @@ function startSyncClockRole(role){
         "(マイピッチ " + syncState.pitch + " の" +
         (syncState.pitch >= SYNC_CLOCK_HALF_LIMIT ? "半分 = 2拍ごと" : "まま = 1拍ごと") + ")"
     );
+
+}
+
+/**
+ * リードランナーの最初のカチッを、いつ鳴らすかを決めます(v227)。
+ *
+ * 「音を出す」を押してから SYNC_CLOCK_LEAD_SEC(1秒)たった後で、
+ * **リードランナーの時計がちょうど「音の間隔の倍数」になる瞬間**を探します。
+ * これで、カチッにリードランナーの時計の目盛りが乗ります(冒頭の
+ * 【みんなの時計】)。ほかの人はそのカチッを叩くので、自分の基準を
+ * 目盛りに丸めるだけで、リードランナーの時計が分かります。
+ *
+ * 【3つの時計を行き来する】
+ *
+ *     音の時計   … deckAudioCtx.currentTime(秒)。カチッはこれで予約する
+ *     指の時計   … performance.now()(ms)
+ *     スマホの時計 … Date.now()(ms)。目盛りはこれで数える
+ *
+ * 音の時計 → 指の時計は sampleSyncClockOffset()(②③と同じ物差し)、
+ * 指の時計 → スマホの時計は「Date.now() − performance.now()」で直します。
+ *
+ * ⚠️ スピーカーの遅れや、人が早めに叩く癖のぶん、叩いた位置は目盛りから
+ *    数十msずれます。でも丸める幅は「音の間隔の半分」(0.2〜0.3秒)あるので、
+ *    丸め先が変わることはありません。竹弘の実測でもスピーカーでの差は
+ *    -58〜-8ms でした(②をスピーカーで測った値)。
+ *
+ * @return {number} 最初のカチッを鳴らす時刻(deckAudioCtx の時計で何秒か)
+ */
+function findSyncLeadFirstClickSec(){
+
+    const periodMs = getSyncSharedPeriodMs();
+
+    // 音の時計 − 指の時計(秒)
+    const ctxMinusPerfSec = sampleSyncClockOffset();
+
+    // スマホの時計 − 指の時計(ms)
+    const wallMinusPerfMs = Date.now() - performance.now();
+
+    // 早くてもこの時刻(音の時計)より後に鳴らします
+    const earliestCtxSec = deckAudioCtx.currentTime + SYNC_CLOCK_LEAD_SEC;
+
+    // それが、スマホの時計で何ミリ秒か
+    const earliestWallMs = (earliestCtxSec - ctxMinusPerfSec) * 1000 + wallMinusPerfMs;
+
+    /*
+    それ以降で、最初の目盛り(音の間隔の倍数)。
+
+    Date.now() は「1970年1月1日から何ミリ秒か」という大きな数なので、
+    目盛りもそこから数えます。ピッチが同じなら音の間隔も同じなので、
+    **全員のスマホで同じ場所に目盛りが並びます。**
+    */
+    const firstWallMs = Math.ceil(earliestWallMs / periodMs) * periodMs;
+
+    return earliestCtxSec + (firstWallMs - earliestWallMs) / 1000;
 
 }
 
@@ -2542,11 +2729,32 @@ function finishSyncClockMeasure(){
     syncAnchorPeriodMs = periodMs;
     syncAnchorTakenAtMs = Date.now();
 
+    /*
+    ---- みんなの時計を決めます(v227) ----
+
+    基準の瞬間を自分の時計で測り、いちばん近い目盛り(音の間隔の倍数)に
+    丸めます。リードランナーはカチッを目盛りぴったりに鳴らしているので
+    (findSyncLeadFirstClickSec)、丸めた先が「リードランナーの時計で
+    何時何分何秒か」になります。
+
+    Math.round は「いちばん近い整数」(四捨五入)です。
+    */
+    syncAnchorWallOffsetMs = Date.now() - performance.now();
+
+    const anchorWallMs = syncAnchorPerfMs + syncAnchorWallOffsetMs;
+
+    syncAnchorLabelMs = Math.round(anchorWallMs / periodMs) * periodMs;
+
+    syncDriftLogged = false;
+
     syncState.clockSpreadMs = Math.round(result.spreadMs);
     syncState.clockPhase = "done";
     syncState.clockNotice = "";
 
     refreshSyncClockStep();
+
+    // 時計の書き換えを、新しいみんなの時計の秒の境目に合わせ直します
+    restartSyncClock();
 
     console.log(
         "同期モード ③ みんなの基準を合わせました :",
@@ -2555,6 +2763,19 @@ function finishSyncClockMeasure(){
         "/ 音の間隔 " + periodMs.toFixed(1) + "ms",
         "/ 1拍 " + (60000 / syncState.pitch).toFixed(1) + "ms",
         "/ 音1個 = " + (periodMs / (60000 / syncState.pitch)).toFixed(2) + "拍"
+    );
+
+    /*
+    自分の時計を、どれだけ動かすとみんなの時計になるか(v227)。
+
+    リードランナーは「スピーカーの遅れ − 早めに叩く癖」のぶん(数十ms)、
+    ほかの人はそれに「リードランナーの時計との差」が加わります。
+    2台の値を比べると、2台の時計がどれだけずれていたかが分かります。
+    */
+    console.log(
+        "同期モード ③ みんなの時計 : このスマホの時計に " +
+        formatSyncSignedMs(syncAnchorLabelMs - anchorWallMs) + " 足した時刻",
+        "(" + formatSyncClock(syncAnchorLabelMs) + " の目盛りに合わせました)"
     );
 
 }
@@ -2596,7 +2817,8 @@ function decideSyncClock(){
         onOk: null
     });
 
-    console.log("同期モード ③ 基準を決定しました :",formatSyncClock(syncAnchorTakenAtMs) + " に合わせた基準");
+    // 決定した時刻を、みんなの時計で出します(v227。2台のログを見比べやすいように)
+    console.log("同期モード ③ 基準を決定しました : みんなの時計 " + formatSyncClock(getSyncDisplayNowMs()));
 
 }
 
@@ -2618,6 +2840,11 @@ function redoSyncClock(){
     syncAnchorPeriodMs = 0;
     syncAnchorTakenAtMs = 0;
 
+    // みんなの時計も捨てます(v227)
+    syncAnchorLabelMs = null;
+    syncAnchorWallOffsetMs = 0;
+    syncDriftLogged = false;
+
     syncState.clockRole = "";
     syncState.clockPhase = "idle";
     syncState.clockDecided = false;
@@ -2633,7 +2860,13 @@ function redoSyncClock(){
 /**
  * 基準を合わせてから、どれくらい経ったかの文を作ります。
  *
- * @return {string} 例:「20:10 に合わせ済み(30分前)」
+ * ⚠️ v227から**時刻(20:10など)は出しません。** v226までは「00:21:30 に
+ *    合わせ済み」と出していましたが、これは各自が叩き終えた時刻なので、
+ *    2台で14秒も違って見えました(竹弘の実機ログ:00:21:30 と 00:21:44)。
+ *    みんなの時計を揃えて見せる v227 で、ここだけ食い違って見えると
+ *    また「合っていない」と誤解されるので、経った時間だけにしました。
+ *
+ * @return {string} 例:「30分前に合わせました」
  */
 function buildSyncAnchorAgeText(){
 
@@ -2642,10 +2875,85 @@ function buildSyncAnchorAgeText(){
     const minutes = Math.floor((Date.now() - syncAnchorTakenAtMs) / 60000);
 
     const ago = (minutes < 1) ? "たった今"
-              : (minutes < 60) ? (minutes + "分前")
-              : (Math.floor(minutes / 60) + "時間" + (minutes % 60) + "分前");
+              : (minutes < 60) ? (minutes + "分前に")
+              : (Math.floor(minutes / 60) + "時間" + (minutes % 60) + "分前に");
 
-    return formatSyncClock(syncAnchorTakenAtMs) + " に合わせ済み(" + ago + ")";
+    return ago + "合わせました";
+
+}
+
+/**
+ * 今が、みんなの時計で何時何分何秒か(ミリ秒。Date.now と同じ数え方)。v227。
+ *
+ * 基準からの経過は performance.now() で数えます(スマホの時計は、
+ * 電波で勝手に直されて飛ぶことがあるため。基準と同じ考え方)。
+ *
+ * @return {number|null} 基準がまだ無ければ null
+ */
+function getSyncSharedNowMs(){
+
+    if(syncAnchorPerfMs === null || syncAnchorLabelMs === null){ return null; }
+
+    return syncAnchorLabelMs + (performance.now() - syncAnchorPerfMs);
+
+}
+
+/**
+ * 画面の時計に出す「今」(v227)。
+ *
+ * 基準があればみんなの時計、無ければスマホの時計です。
+ * (④は基準が決まるまで隠れているので、ふつうはみんなの時計しか見えません)
+ */
+function getSyncDisplayNowMs(){
+
+    const sharedMs = getSyncSharedNowMs();
+
+    return (sharedMs !== null) ? sharedMs : Date.now();
+
+}
+
+/**
+ * スマホの時計と指の時計の差が、基準を決めた時からどれだけ動いたか(ms)。v227。
+ *
+ * ふつうは2つの時計は一緒に進むので、ほぼ0のままです。開いていたら、
+ * 「スマホが眠って指の時計が止まった」か「スマホの時計が合わせ直された」
+ * かのどちらかです(SYNC_SHARED_DRIFT_WARN_MS のコメント)。
+ *
+ * @return {number} 動いた量(ms)。基準が無ければ 0
+ */
+function getSyncAnchorDriftMs(){
+
+    if(syncAnchorPerfMs === null){ return 0; }
+
+    return (Date.now() - performance.now()) - syncAnchorWallOffsetMs;
+
+}
+
+/**
+ * みんなの時計が狂ったおそれがあるか(v227)。
+ *
+ * 初めて境目を超えた時に、🐛パネルへ1回だけ記録します
+ * (毎秒の見回りから呼ばれるので、毎回出すと流れてしまうため)。
+ */
+function isSyncAnchorDrifted(){
+
+    const driftMs = getSyncAnchorDriftMs();
+
+    const drifted = Math.abs(driftMs) > SYNC_SHARED_DRIFT_WARN_MS;
+
+    if(drifted && !syncDriftLogged){
+
+        syncDriftLogged = true;
+
+        console.warn(
+            "同期モード ③ みんなの時計が狂ったおそれがあります :",
+            "スマホの時計と指の時計の差が " + formatSyncSignedMs(driftMs) + " 動きました",
+            "(スマホが眠った / 時計が合わせ直された)"
+        );
+
+    }
+
+    return drifted;
 
 }
 
@@ -2767,7 +3075,19 @@ function refreshSyncClockStep(){
             caption += "<br>" + syncState.clockNotice;
         }
 
-        if(syncState.clockSpreadMs === null){
+        if(syncState.clockSpreadMs === null && isSyncAnchorDrifted()){
+
+            /*
+            前の基準が残っているが、その後スマホが眠るなどして狂ったおそれが
+            ある時(v227。SYNC_SHARED_DRIFT_WARN_MS のコメント)。
+            このまま使うと、拍が合わないまま走り出してしまいます。
+            */
+            sub = "⚠️ スマホが眠った等で、<br>" +
+                  "時計が狂ったおそれがあります。<br>" +
+                  "「合わせ直す」を押してください";
+
+        }
+        else if(syncState.clockSpreadMs === null){
 
             // 前に合わせた基準が残っている状態(画面を開き直した時)
             sub = buildSyncAnchorAgeText() + "<br>" +
@@ -2987,9 +3307,12 @@ performance.now()(ページを開いてからの経過時間)の方が確かな�
 */
 
 /**
- * 時刻を「19:52:07」の形にします(スマホの時計の、その土地の時刻)。
+ * 時刻を「19:52:07」の形にします(その土地の時刻)。
  *
- * @param  {number} ms - 時計のミリ秒(Date.now() の物差し)
+ * みんなの時計(v227)も Date.now() と同じ数え方のミリ秒なので、
+ * そのまま渡せます。
+ *
+ * @param  {number} ms - 時計のミリ秒(Date.now() と同じ数え方)
  * @return {string}
  */
 function formatSyncClock(ms){
@@ -3015,9 +3338,12 @@ function formatSyncClock(ms){
  * だから竹弘の指定「残り10秒になったら20秒後の時刻に切り替える」が、
  * この1行で自然に成り立ちます。
  *
- * @param  {number} nowMs  - 今の時刻(Date.now())
+ * ⚠️ v227から、今の時刻には**みんなの時計**を渡します。全員が同じ時計で
+ *    計算するので、ボタンの時刻が切り替わる瞬間も全員で揃います。
+ *
+ * @param  {number} nowMs  - 今の時刻(みんなの時計)
  * @param  {number} minSec - 最低何秒後か
- * @return {number} 開始時刻(Date.now() の物差しのミリ秒)
+ * @return {number} 開始時刻(みんなの時計のミリ秒)
  */
 function getSyncStartTargetMs(nowMs,minSec){
 
@@ -3034,8 +3360,6 @@ function startSyncClock(){
 
     if(syncClockTimerId){ return; }
 
-    syncClockTimerId = setInterval(tickSyncClock,SYNC_CLOCK_TIMER_MS);
-
     tickSyncClock();
 
 }
@@ -3047,24 +3371,78 @@ function stopSyncClock(){
 
     if(!syncClockTimerId){ return; }
 
-    clearInterval(syncClockTimerId);
+    clearTimeout(syncClockTimerId);
 
     syncClockTimerId = 0;
 
 }
 
 /**
- * 見回りのたび(0.2秒ごと)に、時計・ボタン・カウントダウンを書き換えます。
+ * 書き換えの予定を、今の時計の秒の境目に合わせ直します(v227)。
+ *
+ * みんなの時計が決まった(または変わった)直後に呼びます。書き換えは
+ * 「次の秒の境目」に予約してあるので、時計そのものが変わると、
+ * 予約がずれた境目を指したままになるためです。
+ * 書き換えが止まっている時(画面を閉じている時)は何もしません。
+ */
+function restartSyncClock(){
+
+    if(!syncClockTimerId){ return; }
+
+    tickSyncClock();
+
+}
+
+/**
+ * 時計・ボタン・カウントダウンを書き換え、次の秒の境目に自分を予約し直します。
+ *
+ * ⚠️ v226までは setInterval で0.2秒ごとに書き換えていました。それだと
+ *    各スマホがばらばらの瞬間に書き換えるので、秒がめくれる瞬間が
+ *    最大0.25秒ほど食い違って見えました(冒頭の【みんなの時計】)。
+ *
+ * 【次の境目までの待ち時間の求め方】
+ *
+ *     今が 12:00:05.300 なら、1秒の中の位置は 300ms
+ *     → 次の境目(12:00:06.000)まで 1000 − 300 = 700ms
+ *     → それに SYNC_CLOCK_TICK_MARGIN_MS(15ms)を足して予約
+ *
+ * 待ち時間は毎回「今の時刻」から計算し直すので、タイマーが少し遅れて
+ * 起きても、遅れが積み重なることはありません。
  */
 function tickSyncClock(){
 
-    const nowMs = Date.now();
+    const nowMs = getSyncDisplayNowMs();
+
+    /*
+    先に次の予約を入れてから、書き換えます。
+
+    書き換えの中から、将来 stopSyncClock()(見回りを止める)を呼ぶ処理が
+    増えた時の用心です。予約を後から入れる順番だと、止めたはずの見回りが
+    その直後に復活してしまいます。今の書き換え(時刻ボタン・カウントダウン・
+    基準の行)は、どれも見回りを止めません。
+
+    clearTimeout は、もう動き終わった予約に使っても何も起きません。
+    restartSyncClock() から呼ばれた時に、前の予約を二重に残さないための
+    1行です。
+    */
+    clearTimeout(syncClockTimerId);
+
+    // 1秒の中の位置(0〜999ms)。% は負の数で負を返すので、0以上に直します
+    const inSecondMs = ((nowMs % 1000) + 1000) % 1000;
+
+    syncClockTimerId = setTimeout(tickSyncClock,1000 - inSecondMs + SYNC_CLOCK_TICK_MARGIN_MS);
 
     if(syncClockTimeEl){ syncClockTimeEl.textContent = formatSyncClock(nowMs); }
 
     refreshSyncStartButtons(nowMs);
 
     refreshSyncCountdown(nowMs);
+
+    /*
+    「◯分前に合わせました」と、時計が狂っていないかの点検も、
+    ここで書き直します(v227。開いたままでも古い表示が残らないように)。
+    */
+    refreshSyncAnchorLine();
 
 }
 
@@ -3075,7 +3453,7 @@ function tickSyncClock(){
  *    (data-target-ms)です。押した瞬間に計算し直すと、切り替わりの
  *    境目で「見ていた時刻と違う時刻」で始まってしまうためです。
  *
- * @param {number} nowMs - 今の時刻(Date.now())
+ * @param {number} nowMs - 今の時刻(みんなの時計。v227)
  */
 function refreshSyncStartButtons(nowMs){
 
@@ -3104,17 +3482,17 @@ function refreshSyncStartButtons(nowMs){
  * 開始時刻を過ぎても始まらない時(画面が消えてタイマーが止められた等)は、
  * 諦めて知らせます(いつまでも「あと0秒」のまま待たせないように)。
  *
- * @param {number} nowMs - 今の時刻(Date.now())
+ * @param {number} nowMs - 今の時刻(みんなの時計。v227)
  */
 function refreshSyncCountdown(nowMs){
 
     if(!syncCountdown){ return; }
 
-    const restSec = Math.max(0,Math.ceil((syncCountdown.targetWallMs - nowMs) / 1000));
+    const restSec = Math.max(0,Math.ceil((syncCountdown.targetSharedMs - nowMs) / 1000));
 
     if(syncCountdownRestEl){ syncCountdownRestEl.textContent = String(restSec); }
 
-    if(nowMs > syncCountdown.targetWallMs + SYNC_LATE_GIVEUP_MS){
+    if(nowMs > syncCountdown.targetSharedMs + SYNC_LATE_GIVEUP_MS){
 
         console.warn("同期モード ③ 開始時刻を過ぎても始まらなかったので取りやめました");
 
@@ -3144,13 +3522,7 @@ function refreshSyncStartStep(){
     }
 
     // 「基準はいつ合わせたか」を、④の上にいつも出しておきます(v225)
-    if(syncAnchorStateEl){
-
-        syncAnchorStateEl.innerHTML = isSyncAnchorStale()
-            ? ("⚠️ 基準 : " + buildSyncAnchorAgeText() + "<br>そろそろ ③ で合わせ直すと確実です")
-            : ("基準 : " + buildSyncAnchorAgeText());
-
-    }
+    refreshSyncAnchorLine();
 
     const counting = (syncCountdown !== null);
 
@@ -3160,7 +3532,7 @@ function refreshSyncStartStep(){
     if(counting){
 
         if(syncCountdownTargetEl){
-            syncCountdownTargetEl.textContent = formatSyncClock(syncCountdown.targetWallMs);
+            syncCountdownTargetEl.textContent = formatSyncClock(syncCountdown.targetSharedMs);
         }
 
         /*
@@ -3171,7 +3543,7 @@ function refreshSyncStartStep(){
             syncCountdownPlanEl.textContent = syncCountdown.planText || "曲を準備しています…";
         }
 
-        refreshSyncCountdown(Date.now());
+        refreshSyncCountdown(getSyncDisplayNowMs());
 
     }
 
@@ -3180,6 +3552,55 @@ function refreshSyncStartStep(){
         syncStartGuideEl.innerHTML = counting
             ? "やめると、時刻を選び直せます"
             : (syncState.startNotice || "押した時刻に、みんなの曲が<br>一斉にスタートします");
+
+    }
+
+}
+
+/**
+ * ④の上の「みんなの時計 : ◯分前に合わせました」の行を書き換えます。
+ *
+ * v227で refreshSyncStartStep() から切り出しました。秒ごとの見回り
+ * (tickSyncClock)からも呼んで、「◯分前」と「時計が狂っていないか」を
+ * 画面を開いたままでも新しくしておくためです。
+ *
+ * 出し分け(上ほど優先):
+ *
+ *     狂ったおそれ … スマホが眠った等(isSyncAnchorDrifted)。拍が合わなく
+ *                    なるので、いちばん強く合わせ直しを勧めます
+ *     古い         … 合わせてから2時間以上(isSyncAnchorStale)
+ *     ふつう       … いつ合わせたかだけ
+ */
+function refreshSyncAnchorLine(){
+
+    if(!syncAnchorStateEl){ return; }
+
+    if(syncAnchorPerfMs === null){
+
+        syncAnchorStateEl.innerHTML = "";
+
+        return;
+
+    }
+
+    if(isSyncAnchorDrifted()){
+
+        syncAnchorStateEl.innerHTML =
+            "⚠️ スマホが眠った等で、<br>" +
+            "みんなの時計が狂ったおそれがあります。<br>" +
+            "③の「合わせ直す」を押してください";
+
+    }
+    else if(isSyncAnchorStale()){
+
+        syncAnchorStateEl.innerHTML =
+            "⚠️ みんなの時計 : " + buildSyncAnchorAgeText() +
+            "<br>そろそろ ③ で合わせ直すと確実です";
+
+    }
+    else{
+
+        syncAnchorStateEl.innerHTML = "みんなの時計 : " + buildSyncAnchorAgeText();
 
     }
 
@@ -3198,13 +3619,14 @@ function handleSyncTimeButton(button){
     // ①②③が決まっていなければ、ここには来ないはずですが念のため
     if(!syncState.pitchDecided || !syncState.latencyDecided || syncState.latencyMs === null){ return; }
 
-    if(!syncState.clockDecided || syncAnchorPerfMs === null){ return; }
+    if(!syncState.clockDecided || syncAnchorPerfMs === null || syncAnchorLabelMs === null){ return; }
 
-    const targetWallMs = Number(button.dataset.targetMs);
+    // ボタンに書いてある開始時刻(みんなの時計。refreshSyncStartButtons)
+    const targetSharedMs = Number(button.dataset.targetMs);
 
-    if(!isFinite(targetWallMs)){ return; }
+    if(!isFinite(targetSharedMs)){ return; }
 
-    scheduleSyncStart(targetWallMs);
+    scheduleSyncStart(targetSharedMs);
 
 }
 
@@ -3215,9 +3637,9 @@ function handleSyncTimeButton(button){
  *    画面を消さないお願い(Wake Lock)や、曲を載せる時のファイルの
  *    権限確認は、人の操作の中でないと断られることがあるためです。
  *
- * @param {number} targetWallMs - 開始時刻(Date.now() の物差し)
+ * @param {number} targetSharedMs - 開始時刻(みんなの時計。v227)
  */
-async function scheduleSyncStart(targetWallMs){
+async function scheduleSyncStart(targetSharedMs){
 
     /*
     この約束の目印です。準備の途中で「やめる」が押されると syncCountdown が
@@ -3228,7 +3650,7 @@ async function scheduleSyncStart(targetWallMs){
 
     syncCountdown = {
         token:token,
-        targetWallMs:targetWallMs,
+        targetSharedMs:targetSharedMs,
         plan:null,
         planText:"",
         wPerfMs:0,
@@ -3293,24 +3715,37 @@ async function scheduleSyncStart(targetWallMs){
     // ---- ③ いつ動くかを決めます ----
 
     /*
-    ⚠️⚠️ **スマホの時計は「どの拍で走り出すか」を選ぶのにしか使いません**
-       (v225でここを作り替えました)。
-
-    実際に合わせる先は、③で合わせた**みんなの基準**です。
+    実際に合わせる先は、③で合わせた**みんなの基準**です(v225)。
 
         みんなの拍 ＝ 基準 ＋ 1拍 × n
 
-    押された時刻に近い拍を1つ選び、その瞬間に合わせます。**2台の時計が
-    数十msずれていても、選ぶ拍が1つ違うだけ**で、拍そのものは同じ瞬間に
-    来るので足は揃います(何拍目かは、右足か左足かの違いと同じで無害)。
+    開始時刻以降で最初の拍を1つ選び、その瞬間に合わせます。
+
+    ⚠️ v226までは、開始時刻を**各スマホの時計**で測っていました。2台の
+       時計が数十msずれていても、選ぶ拍が1つ違うだけで足は揃いましたが、
+       v227からは**みんなの時計**で測ります。
+
+    【みんなの時計なら、全員が必ず同じ拍を選ぶ】
+
+    みんなの時計では、基準の瞬間がちょうど「音の間隔の倍数」に来るよう
+    丸めてあります(finishSyncClockMeasure)。音の間隔は1拍か2拍
+    ちょうどなので、**拍はすべて「1拍の倍数」の時刻に並びます。**
+    開始時刻(10秒刻み)以降で最初の「1拍の倍数」は、どのスマホで
+    計算しても同じ瞬間です。
     */
     const beatMs = 60000 / syncState.pitch;
 
-    // 押された時刻を、performance.now() の物差しに直します
-    const targetPerfMs = performance.now() + (targetWallMs - Date.now());
+    // 開始時刻を、performance.now() の物差しに直します
+    const targetPerfMs = syncAnchorPerfMs + (targetSharedMs - syncAnchorLabelMs);
 
-    // その時刻以降で最初の「みんなの拍」
-    const stepCount = Math.ceil((targetPerfMs - syncAnchorPerfMs) / beatMs);
+    /*
+    その時刻以降で最初の「みんなの拍」(基準から何拍目か)。
+
+    開始時刻がちょうど拍の上に来た時に、小数の誤差でスマホごとに選ぶ拍が
+    分かれないよう、ほんのわずか(0.001拍)手前に寄せてから切り上げます
+    (SYNC_START_STEP_EPSILON のコメント)。
+    */
+    const stepCount = Math.ceil((targetSharedMs - syncAnchorLabelMs) / beatMs - SYNC_START_STEP_EPSILON);
 
     const gridPerfMs = syncAnchorPerfMs + stepCount * beatMs;
 
@@ -3340,15 +3775,31 @@ async function scheduleSyncStart(targetWallMs){
 
     refreshSyncStartStep();
 
+    /*
+    ⚠️ 「開始時刻との差」は v227 から**全員のスマホで同じ値**になるはずです
+       (上の【みんなの時計なら、全員が必ず同じ拍を選ぶ】)。2台のログで
+       食い違っていたら、みんなの時計が揃っていない合図です。
+       「基準から何拍目」は、各自が叩いた音が違うので食い違って当然です。
+    */
     console.log(
-        "同期モード ③ スタートを予約しました : 開始 " + formatSyncClock(targetWallMs),
+        "同期モード ③ スタートを予約しました : 開始 " + formatSyncClock(targetSharedMs) + "(みんなの時計)",
         "/ 遅延 " + syncState.latencyMs + "ms ぶん早く送り出す",
         "/ " + plan.text,
         (plan.silenceMs > 0 ? "/ 頭の前の無音 " + plan.silenceMs.toFixed(0) + "ms" : ""),
         "/ ピッチ " + syncState.pitch,
-        "/ みんなの拍に合わせる(基準から " + stepCount + "拍目 / 押された時刻との差 " +
+        "/ みんなの拍に合わせる(基準から " + stepCount + "拍目 / 開始時刻との差 " +
         formatSyncSignedMs(gridPerfMs - targetPerfMs) + ")",
         "/ あと " + ((wPerfMs - performance.now()) / 1000).toFixed(1) + "秒"
+    );
+
+    /*
+    時計が狂っていないかの点検(v227)。実機で「スマホが眠ると指の時計が
+    止まるのか」を確かめるため、スタートのたびに必ず出します。
+    */
+    console.log(
+        "同期モード ③ 時計の点検 : スマホの時計と指の時計の差の動き " +
+        formatSyncSignedMs(getSyncAnchorDriftMs()) +
+        "(±" + SYNC_SHARED_DRIFT_WARN_MS + "ms を超えたら狂ったおそれ)"
     );
 
 }
