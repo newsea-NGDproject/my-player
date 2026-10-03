@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v226)ノリRun
+        (v227)ノリRun
         メインメニュー
 
     </title>
@@ -8543,6 +8543,13 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
             ⚠️ data-min-sec が「現在時刻から最低何秒後か」です
                (10なら10〜20秒後の時刻を出す)。ボタンを足す時は
                この形の <button> を1つ足すだけで、JSは直さずに済みます。
+
+            ⚠️ v227から、時計は各スマホの時計ではなく「みんなの時計」
+               (③で合わせた、リードランナーの時計)です。全員のスマホで
+               同じ時刻が出て、同じ瞬間に秒がめくれます。竹弘の実機報告
+               (2026-10-04)「nowの時計が合って見えないと、③がうまく
+               いっていないと間違えて混乱を招く」への対策です。
+               仕組みは js/sync.js 冒頭の【みんなの時計】。
         -->
         <section class="sync-step" id="sync-step-start" style="display:none;">
 
@@ -8554,6 +8561,11 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
                 待っている間は、画面を消さないでください。
             </p>
 
+            <p class="connect-note">
+                時計は ③で合わせた「みんなの時計」です。<br>
+                全員のスマホで、同じ瞬間に秒が進みます。
+            </p>
+
             <!-- ③で合わせた基準の状態(js/sync.js が書き換えます) -->
             <p class="connect-note sync-anchor-line">
                 <span id="sync-anchor-state"></span>
@@ -8562,8 +8574,9 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
             <!-- 時刻を選ぶ姿 -->
             <div id="sync-start-choose">
 
+                <!-- v227で「NOW」から「みんなの時計」に(各スマホの時計ではないことを示すため) -->
                 <div class="sync-clock">
-                    <span class="sync-clock-label">NOW</span>
+                    <span class="sync-clock-label">みんなの時計</span>
                     <span class="sync-clock-time" id="sync-clock-time">--:--:--</span>
                 </div>
 
