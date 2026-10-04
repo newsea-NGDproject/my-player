@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v228)ノリRun
+        (v229)ノリRun
         メインメニュー
 
     </title>
@@ -5669,64 +5669,356 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         }
 
         /* ======================================================
-           同期モード ④ みんなの拍ランプ・もう一度カチッを鳴らす(v228)
+           同期モード ④ 拍合わせ画面(v229)
         ====================================================== */
         /*
-        ランプは、③で合わせた拍ごとに1回光ります(js/sync.js の
-        flashSyncBeatLamp が .sync-beat-on を付け直す)。全員のスマホを
-        並べて、リードランナーと一緒に光るかを目で確かめるためのものです。
+        竹弘の要望(2026-10-04):
 
-        ⚠️ 強弱は付けません(竹弘の判断。毎拍、同じ光り方)。
-        ⚠️ 光っている長さ(animation の 140ms)は js/sync.js の
-           SYNC_LAMP_FLASH_MS と同じ値にすること。
+            「スマホ画面の縁を少し太めのラインで光らせるようにして見やすくする」
+            「デザインは、DJ風の大きいモニタとパッドボタンのみのテーブル」
 
-        消えている時もうっすら丸が見えるようにしています(どこが光るのか、
-        光る前から分かるように)。並べて見比べやすいよう、大きめの丸です。
+        ④の「👀 みんなの拍を見比べる」で開く全画面です。v228の小さな
+        「みんなの拍ランプ」を、この画面に置き換えました。
+
+        【作りの要点】
+          ・背景はDJブースのような暗い色。②③のターンテーブルの台と同じ系統
+          ・画面の縁(.sync-beat-frame)が、③と同じ間隔で光る。強弱は付けない
+          ・モニタは②③の液晶と同じ見た目(時刻や数字を出す場所は全部この見た目)
+          ・パッドは②③のサンプラーと同じ「ゴムのパッド」。早めるはコーラル、
+            遅らせるは牡丹色で、画面の中央を芯に左右対称(左手操作の反転に備える)
+
+        ⚠️ 縁の光る長さ(animation の 160ms)は js/sync.js の SYNC_LAMP_FLASH_MS と
+           同じ値にすること。
+        ⚠️ z-index はポップ(#sync-dialog の10)より1つ下の5。この画面から
+           「もう一度カチッを鳴らす」を押した時のポップが手前に出るように。
         */
-        #sync-panel .sync-beat-row{
+        #sync-beat-screen{
+            position:fixed;
+            inset:0;
+            z-index:5;
+
             display:flex;
-            align-items:center;
-            justify-content:center;
-            gap:12px;
+            flex-direction:column;
 
-            margin:4px 0 6px 0;
+            background:linear-gradient(180deg,#1d1622 0%,#120e16 100%);
+            color:#f6edf2;
         }
 
-        #sync-panel .sync-beat-lamp{
-            width:34px;
-            height:34px;
-            border-radius:50%;
+        /*
+        光る縁。画面いっぱいの枠で、ふだんは薄い暁色の線、光った瞬間だけ
+        太く明るくなります。pointer-events:none で、指は下の中身に通します
+        (枠の上を押してもパッドが押せるように)。
+        */
+        #sync-panel .sync-beat-frame{
+            position:absolute;
+            inset:0;
+            z-index:2;
 
-            background:rgba(var(--theme-rgb),0.15);
-            box-shadow:inset 0 0 0 2px rgba(var(--theme-rgb),0.35);
+            pointer-events:none;
+
+            box-shadow:inset 0 0 0 14px rgba(var(--theme-rgb),0.14);
         }
 
-        #sync-panel .sync-beat-lamp.sync-beat-on{
-            animation:sync-beat-flash 140ms ease-out;
+        #sync-panel .sync-beat-frame.sync-beat-on{
+            animation:sync-beat-flash 160ms ease-out;
         }
 
         /*
         @keyframes は「アニメーションの途中の姿」を決める書き方です。
-        0% が光った瞬間、100% が消え終わった姿(ふだんの薄い丸)です。
+        0% が光った瞬間、100% が消え終わった姿(ふだんの薄い枠)です。
+        内側への影(inset)を2重にして、縁の線と、内側へにじむ光を出します。
         */
         @keyframes sync-beat-flash{
             0%{
-                background:var(--theme-color);
                 box-shadow:
-                    0 0 18px rgba(var(--theme-rgb),0.9),
-                    inset 0 0 0 2px var(--theme-color);
+                    inset 0 0 0 14px var(--theme-color),
+                    inset 0 0 48px 14px rgba(var(--theme-rgb),0.75);
             }
             100%{
-                background:rgba(var(--theme-rgb),0.15);
-                box-shadow:inset 0 0 0 2px rgba(var(--theme-rgb),0.35);
+                box-shadow:inset 0 0 0 14px rgba(var(--theme-rgb),0.14);
             }
         }
 
-        #sync-panel .sync-beat-label{
-            font-size:0.9rem;
-            font-weight:bold;
+        /*
+        中身。縁(14px)にかからないよう内側を空け、小さな画面では縦に
+        スクロールできるようにします。
+        */
+        #sync-panel .sync-beat-inner{
+            position:relative;
+            z-index:1;
 
-            color:var(--theme-color);
+            flex:1;
+            overflow-y:auto;
+
+            display:flex;
+            flex-direction:column;
+            gap:12px;
+
+            padding:28px 26px 26px 26px;
+            box-sizing:border-box;
+        }
+
+        #sync-panel .sync-beat-title{
+            margin:0;
+
+            font-size:1.15rem;
+            font-weight:bold;
+            text-align:center;
+
+            color:#ffffff;
+        }
+
+        #sync-panel .sync-beat-lead,
+        #sync-panel .sync-beat-hint{
+            margin:0;
+
+            font-size:0.85rem;
+            line-height:1.6;
+            text-align:center;
+
+            color:rgba(255,255,255,0.72);
+        }
+
+        /* DJ風の大きなモニタ(②③のモニタ・④の時計と同じ「液晶」の見た目) */
+        #sync-panel .sync-beat-monitor{
+            border-radius:14px;
+            padding:12px 14px 14px 14px;
+
+            background:linear-gradient(180deg,#0f0b12 0%,#07050a 100%);
+
+            box-shadow:
+                inset 0 0 0 1px rgba(255,255,255,0.08),
+                inset 0 2px 10px rgba(0,0,0,0.9),
+                0 0 0 1px rgba(var(--theme-rgb),0.25);
+
+            font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,"Roboto Mono",monospace;
+        }
+
+        #sync-panel .sync-beat-mon-row{
+            display:flex;
+            justify-content:space-between;
+            align-items:baseline;
+
+            font-size:0.7rem;
+            font-weight:bold;
+            letter-spacing:1px;
+        }
+
+        #sync-panel .sync-beat-mon-label{
+            color:var(--dusk-pink);
+            text-shadow:0 0 4px rgba(var(--dusk-pink-rgb),0.6);
+        }
+
+        #sync-panel .sync-beat-mon-bpm{
+            color:var(--dusk-gold);
+        }
+
+        /* 拍の印が流れる canvas。幅いっぱい・高さは固定 */
+        #sync-panel .sync-beat-flow{
+            display:block;
+
+            width:100%;
+            height:84px;
+
+            margin:8px 0 10px 0;
+        }
+
+        /*
+        メーター。真ん中の縦線が「③で叩いた位置」、丸い印が「今の位置」。
+        印の left は js/sync.js の refreshSyncBeatScreen が % で書き換えます
+        (50% が真ん中)。
+        */
+        #sync-panel .sync-nudge-meter{
+            position:relative;
+            height:22px;
+        }
+
+        #sync-panel .sync-nudge-track{
+            position:absolute;
+            left:0;
+            right:0;
+            top:50%;
+
+            height:4px;
+            margin-top:-2px;
+            border-radius:2px;
+
+            background:linear-gradient(90deg,
+                rgba(255,122,92,0.45) 0%,
+                rgba(255,255,255,0.12) 50%,
+                rgba(231,96,158,0.45) 100%);
+        }
+
+        #sync-panel .sync-nudge-zero{
+            position:absolute;
+            left:50%;
+            top:0;
+            bottom:0;
+
+            width:2px;
+            margin-left:-1px;
+
+            background:rgba(255,255,255,0.55);
+        }
+
+        #sync-panel .sync-nudge-mark{
+            position:absolute;
+            left:50%;
+            top:50%;
+
+            width:16px;
+            height:16px;
+            margin:-8px 0 0 -8px;
+            border-radius:50%;
+
+            background:var(--dusk-gold);
+            box-shadow:0 0 10px rgba(255,196,107,0.8);
+
+            transition:left 120ms ease-out;
+        }
+
+        #sync-panel .sync-nudge-ends{
+            display:flex;
+            justify-content:space-between;
+
+            margin-top:4px;
+
+            font-size:0.7rem;
+
+            color:rgba(255,255,255,0.6);
+        }
+
+        #sync-panel .sync-nudge-value{
+            margin:6px 0 0 0;
+
+            font-size:1.9rem;
+            font-weight:bold;
+            line-height:1.1;
+            text-align:center;
+
+            color:var(--dusk-gold);
+            text-shadow:0 0 8px rgba(var(--theme-rgb),0.6);
+
+            /* 数字の幅を揃えて、押すたびに左右にぶれないようにします */
+            font-variant-numeric:tabular-nums;
+        }
+
+        #sync-panel .sync-nudge-caption{
+            margin:2px 0 0 0;
+
+            font-family:system-ui,sans-serif;
+            font-size:0.8rem;
+            text-align:center;
+
+            color:rgba(255,255,255,0.7);
+        }
+
+        /* パッドの枠と、その中の並び */
+        #sync-panel #sync-nudge-box,
+        #sync-panel #sync-beat-lead-box{
+            display:flex;
+            flex-direction:column;
+            gap:10px;
+        }
+
+        /* 4つを横一列。画面の中央を芯に左右対称(早めるが左、遅らせるが右) */
+        #sync-panel .sync-nudge-pads{
+            display:grid;
+            grid-template-columns:repeat(4,minmax(0,1fr));
+            gap:8px;
+        }
+
+        /*
+        パッド。②③のサンプラーと同じ「ゴムのパッド」。--pad に色を入れると、
+        縁取りと押した時の光がその色になります(早める=コーラル、遅らせる=牡丹色)。
+        指で確実に押せるよう、高さは 72px(Material の48dpより大きめ)。
+        */
+        #sync-panel .sync-nudge-pad{
+            --pad:var(--dusk-coral);
+
+            min-height:72px;
+            padding:6px 2px;
+
+            display:flex;
+            flex-direction:column;
+            align-items:center;
+            justify-content:center;
+            gap:1px;
+
+            border:0;
+            border-radius:12px;
+
+            background:linear-gradient(180deg,#2a2230 0%,#1a141f 100%);
+            box-shadow:
+                inset 0 0 0 2px var(--pad),
+                0 3px 0 #0a070c;
+
+            color:#ffffff;
+            font:inherit;
+
+            cursor:pointer;
+        }
+
+        #sync-panel .sync-nudge-late{
+            --pad:var(--dusk-peony);
+        }
+
+        /* 押した時は沈んで光る(②③のサンプラーと同じ手ごたえ) */
+        #sync-panel .sync-nudge-pad:active{
+            transform:translateY(2px);
+
+            box-shadow:
+                inset 0 0 0 2px var(--pad),
+                inset 0 0 18px var(--pad),
+                0 1px 0 #0a070c;
+        }
+
+        /* 限界まで動かした向きのパッドは薄く(押しても動かないため) */
+        #sync-panel .sync-nudge-pad:disabled{
+            opacity:0.3;
+            cursor:default;
+        }
+
+        #sync-panel .sync-nudge-arrow{
+            font-size:0.75rem;
+            line-height:1;
+
+            color:var(--pad);
+        }
+
+        #sync-panel .sync-nudge-num{
+            font-size:1.4rem;
+            font-weight:bold;
+            line-height:1.1;
+
+            font-variant-numeric:tabular-nums;
+        }
+
+        #sync-panel .sync-nudge-word{
+            font-size:0.7rem;
+            line-height:1.2;
+
+            color:rgba(255,255,255,0.75);
+        }
+
+        /* 横いっぱいのボタン(③の位置に戻す・もう一度カチッを鳴らす・終わる) */
+        #sync-panel .sync-beat-wide{
+            width:100%;
+        }
+
+        #sync-panel .sync-beat-close{
+            margin-top:4px;
+        }
+
+        /* ④の「👀 みんなの拍を見比べる」 */
+        #sync-panel .sync-beat-open-btn{
+            width:100%;
+            margin:4px 0 6px 0;
+        }
+
+        #sync-panel .sync-beat-open-note{
+            text-align:center;
+            margin-bottom:6px;
         }
 
         /* リードだけの「もう一度カチッを鳴らす」は横いっぱい(ほかのボタンと縦の線をそろえる) */
@@ -8642,22 +8934,17 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
             </p>
 
             <!--
-                みんなの拍ランプ(v228。竹弘の案「ランプで拍を確認できるようにして、
-                それがリードランナーと合っているかを確認してもらう」)。
+                「👀 みんなの拍を見比べる」(v229)。
 
-                ③で合わせた拍ごとに、同じ強さで光ります(js/sync.js の
-                flashSyncBeatLamp)。⚠️ 強弱は付けない(竹弘の判断。右足・左足と
-                同じで、合わせる必要のないものを見せると不安にさせるため)。
+                v228はここに小さな「みんなの拍ランプ」を置いていましたが、
+                竹弘の判断「小さくてわかりにくい」で、全画面の拍合わせ画面
+                (下の #sync-beat-screen)を開くボタンにしました。
             -->
-            <div class="sync-beat-row">
-                <span class="sync-beat-lamp" id="sync-beat-lamp"></span>
-                <span class="sync-beat-label">みんなの拍</span>
-            </div>
+            <button type="button" id="sync-beat-open-btn" class="sync-btn sync-btn-primary sync-beat-open-btn">👀 みんなの拍を見比べる</button>
 
-            <p class="connect-note">
-                リードランナーのスマホと並べて、<br>
-                ランプが一緒に光るか確かめてください。<br>
-                ずれて光る人は、③の「合わせ直す」で叩き直します。
+            <p class="connect-note sync-beat-open-note">
+                全員で押して、スマホを並べます。<br>
+                画面の縁が一緒に光れば、拍は合っています。
             </p>
 
             <!--
@@ -8716,6 +9003,127 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
             <p class="connect-note sync-guide" id="sync-start-guide"></p>
 
         </section>
+
+    </div>
+
+    <!--
+        拍合わせ画面(v229。竹弘の要望「画面の縁を太めのラインで光らせる」
+        「DJ風の大きいモニタとパッドボタンのみのテーブル」)。
+
+        ④の「👀 みんなの拍を見比べる」で開く全画面です。中身は js/sync.js の
+        openSyncBeatScreen / refreshSyncBeatScreen が書き換えます。
+
+        ⚠️ #sync-panel の**中**、本文(.license-body)の**外**に置きます
+           (確認のポップと同じ理由)。z-index はポップより1つ下なので、
+           ここから「もう一度カチッを鳴らす」を押した時のポップは手前に出ます。
+    -->
+    <div id="sync-beat-screen" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="sync-beat-title">
+
+        <!-- 光る縁(画面いっぱいの枠。指は下の中身に通す) -->
+        <div class="sync-beat-frame" id="sync-beat-frame"></div>
+
+        <div class="sync-beat-inner">
+
+            <p class="sync-beat-title" id="sync-beat-title">👀 みんなの拍を見比べる</p>
+
+            <p class="sync-beat-lead">
+                スマホを並べて、<br>
+                縁が一緒に光るか見てください
+            </p>
+
+            <!-- DJ風の大きなモニタ -->
+            <div class="sync-beat-monitor">
+
+                <div class="sync-beat-mon-row">
+                    <span class="sync-beat-mon-label">BEAT</span>
+                    <span class="sync-beat-mon-bpm" id="sync-beat-mon-bpm">BPM--</span>
+                </div>
+
+                <!-- 拍の印が右から中央の線へ流れてくる(js/sync.js の drawSyncBeatFlow) -->
+                <canvas class="sync-beat-flow" id="sync-beat-flow"></canvas>
+
+                <!-- ③の位置から、どれだけ早めた/遅らせたか -->
+                <div class="sync-nudge-meter">
+                    <span class="sync-nudge-track"></span>
+                    <span class="sync-nudge-zero"></span>
+                    <span class="sync-nudge-mark" id="sync-nudge-mark"></span>
+                </div>
+
+                <div class="sync-nudge-ends">
+                    <span>◀ 早める</span>
+                    <span>遅らせる ▶</span>
+                </div>
+
+                <p class="sync-nudge-value" id="sync-nudge-value">±0ms</p>
+                <p class="sync-nudge-caption" id="sync-nudge-caption"></p>
+
+            </div>
+
+            <!-- 合わせる人だけ:パッド(竹弘と決めた ±10・±50 と「③の位置に戻す」) -->
+            <div id="sync-nudge-box">
+
+                <!--
+                    ⚠️ 「ほんの少しのずれは普通」の一言(v229)。縁が光るのは③で
+                       叩いた瞬間なので、人の叩き癖(10〜30ms)や画面の違いが
+                       そのまま出ます。曲の拍は②と③で叩き癖が打ち消し合うので、
+                       光が少しずれていても曲は揃っています。少しのずれまで
+                       直すと、かえって曲がずれます(js/sync.js 冒頭の【v229】)。
+                -->
+                <p class="sync-beat-hint">
+                    遅れて光るなら「早める」、<br>
+                    早く光るなら「遅らせる」。<br>
+                    ほんの少しのずれは、人や画面の違いで<br>
+                    出るのが普通です。はっきりずれている<br>
+                    時だけ直してください
+                </p>
+
+                <div class="sync-nudge-pads">
+                    <button type="button" class="sync-nudge-pad sync-nudge-early" data-nudge="-50">
+                        <span class="sync-nudge-arrow">◀</span>
+                        <span class="sync-nudge-num">50</span>
+                        <span class="sync-nudge-word">早める</span>
+                    </button>
+                    <button type="button" class="sync-nudge-pad sync-nudge-early" data-nudge="-10">
+                        <span class="sync-nudge-arrow">◀</span>
+                        <span class="sync-nudge-num">10</span>
+                        <span class="sync-nudge-word">早める</span>
+                    </button>
+                    <button type="button" class="sync-nudge-pad sync-nudge-late" data-nudge="10">
+                        <span class="sync-nudge-arrow">▶</span>
+                        <span class="sync-nudge-num">10</span>
+                        <span class="sync-nudge-word">遅らせる</span>
+                    </button>
+                    <button type="button" class="sync-nudge-pad sync-nudge-late" data-nudge="50">
+                        <span class="sync-nudge-arrow">▶</span>
+                        <span class="sync-nudge-num">50</span>
+                        <span class="sync-nudge-word">遅らせる</span>
+                    </button>
+                </div>
+
+                <button type="button" id="sync-nudge-reset-btn" class="sync-btn sync-beat-wide">③の位置に戻す</button>
+
+                <p class="sync-beat-hint">
+                    大きくずれている時は、閉じて ③ の<br>
+                    「合わせ直す」で叩き直す方が確実です
+                </p>
+
+            </div>
+
+            <!-- リードランナーだけ:基準なのでパッドは出さない(竹弘と合意) -->
+            <div id="sync-beat-lead-box" style="display:none;">
+
+                <p class="sync-beat-hint">
+                    あなたはリードランナー(基準)です。<br>
+                    ほかの人が、この光に合わせます
+                </p>
+
+                <button type="button" id="sync-beat-replay-btn" class="sync-btn sync-beat-wide">🔊 もう一度カチッを鳴らす</button>
+
+            </div>
+
+            <button type="button" id="sync-beat-close-btn" class="sync-btn sync-btn-primary sync-beat-wide sync-beat-close">終わる</button>
+
+        </div>
 
     </div>
 
