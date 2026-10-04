@@ -27,7 +27,8 @@
 
      ① みんなで走るピッチ … 定規で決める。「決定」で灰色にロック
      ② Bluetooth遅延     … ピッに合わせて12回タップして測る
-     ③ みんなの時計を合わせる … みんなで同じ音を聴いて12回タップ(v225)
+     ③ みんなの拍を合わせる … みんなで同じ音を聴いて12回タップ(v225)
+                            (v227までの名前は「みんなの時計を合わせる」)
      ④ 曲開始時刻ボタン   … 10〜20秒後の時刻(10秒刻み)を1つ出す
                             (v225までは4つ。v226で1つに)
      ⑤ 薄暗いロック画面   … 音量ボタン以外の操作を止める
@@ -50,8 +51,14 @@
                     ・③の音を「ピッ」から「カチッ」に(外の騒音に負けない)
                     ・③の役割ボタンと「決定」の後に、確認のポップ
                     ・④の時刻ボタンを4つから1つに
-          (v227) … ④の時計を「みんなの時計」に ← いまここ
-                    (下の「みんなの時計」の説明)
+          (v227) … ④の時計を「みんなの時計」にしようとした → 失敗
+          (v228) … 「みんなの拍を合わせる」に作り直し ← いまここ
+                    ・③の名前を「みんなの拍を合わせる」に
+                    ・④の時計は「このスマホの時計」と正直に出す
+                    ・④に「みんなの拍ランプ」(毎拍、強弱なし)
+                    ・リードだけに「🔊 もう一度カチッを鳴らす」
+                    ・開き直した時は①②を決めたまま開く
+                    (下の【v227の失敗と、v228の考え方】)
      段④        … 薄暗いロック画面・走行タイマー・イヤホン操作・時刻からの再開
 
 ----------------------------------------------------------------------
@@ -82,51 +89,55 @@
 
 ----------------------------------------------------------------------
 
-【みんなの時計(v227)】
+【v227の失敗と、v228の考え方】
 
- v226までの④は、時計に**各スマホの時計**(Date.now)をそのまま出して
- いました。曲のスタートは③の基準で揃うので問題なかったのですが、
- 画面の時計は2台で食い違って見えました。竹弘の実機報告(2026-10-04):
+ ---- 合わせられるのは「拍」。「時刻」は合わせられない ----
 
-     「リードランナーとその他のnowの同期時計が合って見えないのが、
-       『みんなの時計を合わせる』がうまくいっていないものと間違えて
-       しまい混乱を招いてしまうのを改善したい」
+ 手拍子にたとえると分かりやすいです。
 
- 食い違って見えた理由は2つでした。
+     先生(リードランナー)が「パン、パン、パン」と同じ間隔で手を叩く。
+     みんなはそれを聞いて、すぐに同じリズムで足踏みできる。 ← 拍合わせ
+     でも手拍子はどれも同じ音なので、「今のが何回目のパンか」は
+     分からない。腕時計が2秒ずれていたら、「12時ちょうどのパン」も
+     2秒ずれる。                                         ← 時刻は無理
 
-     ・2台の時計そのものが約40msずれている(9/23の44msと同じ)
-     ・書き換えが0.2秒ごとで、各スマホがばらばらの瞬間に書き換えるので、
-       秒がめくれる瞬間が最大0.25秒ほど食い違って見える
+ ③の音合わせで全員が共有できるのは**拍(いつ足を踏むか)だけ**です。
+ 「今が何時何分何秒か」は、各スマホの時計(スマホが自分で「日付と時刻を
+ 自動設定」で合わせたもの。ノリRunはネットから時刻を取っていません)に
+ 頼るしかなく、その時計は**スマホごとに数秒ずれることがあります。**
 
- そこで v227 から、④には**リードランナーの時計を、全員のスマホで
- 同じ瞬間にめくって**出します。それが「みんなの時計」です。
+ ---- v227 でやろうとしたこと(失敗) ----
 
- 【どうやってリードランナーの時計を配るのか ―― 音に乗せる】
+ v227 は、④の時計を「みんなの時計」(リードランナーの時計)にしようと
+ しました。リードのカチッを、リードの時計の目盛りに乗せて鳴らし、
+ ほかの人は自分の時計を「端数だけ」直す作りです。**スマホの時計どうしの
+ ずれが0.4秒以内**なら、これで全員が同じ時刻を出せます。
 
- ③の基準は「拍の瞬間」を全員が±20ms以内で共有していますが、
- 「今が何時何秒か」は持っていません(全部同じ音なので何個目か分からない)。
+ ところが竹弘の実機(2026-10-04)では、表示が約2秒ずれました。time.is で
+ 測ると XPERIA が1.8秒遅れ、GALAXY がぴったり。9/23 には同じ XPERIA が
+ 0.147秒だったので、**スマホの時計は日によってここまで変わります。**
+ 端数だけ直す作りでは、この2秒は直せません。しかもアプリには、相手の
+ 時計がずれていることを知る方法がありません。
 
- そこで、**リードランナーのカチッを、リードランナーの時計の目盛り
- ぴったりに鳴らし始めます**(目盛り = 聴き合わせる音の間隔 P の倍数。
- P はピッチから決まるので全員が同じ値を知っています)。
+ 竹弘の判断(2026-10-04):
 
-     リードの時計   …|-------|-------|-------|  ← カチッは目盛りの上
-     自分の時計     …  |-------|-------|------    (約40msずれている)
-     自分の基準     …|  ← 叩いた結果。リードの目盛りの上にある
+     「『みんなの時計』と言うのはちょっと違う気がして、『みんなの拍を
+       合わせる』というのが適切。本題である拍を合わせる事が重要なので、
+       ランプで拍を確認できるようにして、それがリードランナーと合って
+       いるかを確認してもらうのが重要」
 
- 自分の基準は「リードの時計の目盛りの上」にあるので、自分の時計で
- 測った基準の時刻を、**いちばん近い目盛りに丸めれば**、リードの時計で
- 何時何分何秒かが分かります。直すのは端数(P の半分=0.2〜0.3秒未満)
- だけで、大まかな時刻は自分の時計で足ります(差はたった0.04秒)。
+ ---- v228 の形 ----
 
-     みんなの時計 ＝ 基準を目盛りに丸めた時刻 ＋ (今 − 基準)
-
- これで、全員が「リードの時計」を表示し、**同じ瞬間に秒がめくれます。**
- 時刻ボタンもこの時計で選ぶので、どのスマホでも必ず同じ拍で走り出します。
-
- ⚠️ 限界:時計の自動設定を切っているなどで、リードと P の半分以上
-    ずれたスマホは、目盛り1つぶん(140〜250なら2拍)ずれて見えます。
-    それでも足は揃います(何拍目かが違うだけ=右足/左足の違いと同じ)。
+     ・③は「みんなの拍を合わせる」
+     ・④の時計は「このスマホの時計」と正直に出す(数秒ずれることがある、
+       と添える)。時刻ボタンも、このスマホの時計で動く(v226と同じ)
+       → 時計が2秒ずれていれば、曲の始まりも約2秒ずれる。**拍は揃う**
+     ・④に「みんなの拍ランプ」。③で合わせた拍ごとに、**同じ強さで**光る
+       (強弱は付けない。竹弘の判断「拍は合っているのに強弱が合わないと、
+       強弱も合わせないとと不安になる。右足・左足と同じで重要でない」)
+     ・ランプがリードと合わない人は、③の「合わせ直す」で叩き直す。
+       リードは「🔊 もう一度カチッを鳴らす」で音を出す
+       (⚠️ カチッは**最初と同じリズムの位置**で鳴らす。startSyncLeadClicks)
 
  📘 QRコードとカメラで時計を配る案は、カメラの遅れ(0.05〜0.15秒・
     機種や明るさで違う)が消せず精度が落ちるので採らなかった
@@ -317,38 +328,48 @@ const SYNC_START_GRID_SEC = 10;
 時計を書き換えるのを、秒の境目から何ms遅らせるか(v227)。
 
 ⚠️ v226までは「0.2秒ごと」(SYNC_CLOCK_TIMER_MS)に書き換えていました。
-   各スマホがばらばらの瞬間に書き換えるので、秒がめくれる瞬間が最大
-   0.25秒ほど食い違って見え、「時計が合っていない」と見える原因の1つ
-   でした(冒頭の【みんなの時計】)。
-
-v227からは、**みんなの時計の秒の境目に合わせて**書き換えます。全員が
-同じ瞬間に秒をめくります。
+   それだと、スマホの時計の秒が変わってから画面に出るまでに最大0.2秒
+   遅れます。v227から、**このスマホの時計の秒の境目に合わせて**書き換え、
+   ステータスバーの時計と同じ瞬間に秒が進むようにしました。
 
 境目ちょうどを狙うと、タイマーがわずかに早く起きた時に前の秒のまま
-書いてしまうおそれがあるので、15msだけ後ろにずらします。全員が同じ
-だけずらすので、揃い方には影響しません(目では分からない長さです)。
+書いてしまうおそれがあるので、15msだけ後ろにずらします(目では
+分からない長さです)。
+
+⚠️ v228で「みんなの時計」をやめたので、2台の時計がそろって見えるわけでは
+   ありません。2台の時計は、スマホの時計のずれ(数秒のこともある)の
+   ぶんだけずれて見えます(冒頭の【v227の失敗と、v228の考え方】)。
 */
 const SYNC_CLOCK_TICK_MARGIN_MS = 15;
 
 /*
-どの拍で走り出すかを選ぶ時の「計算の誤差よけ」(拍の何分の1か。v227)。
+「みんなの拍ランプ」を1回光らせる長さ(ms。v228)。
 
-開始時刻(10秒刻み)が、ちょうど拍の上に来ることがあります
-(例:ピッチ140なら1拍は3/7秒なので、30秒ごとに拍とぴったり重なる)。
-その時、小数の計算のわずかな誤差で、あるスマホは「その拍」、別の
-スマホは「次の拍」を選ぶ、ということが起きないようにします。
-0.001拍 = 0.5ms足らず。計算の誤差(1万分の1ms程度)より十分大きく、
-人には分からない小ささです。
+拍ごとに光って、この長さで消えます。140なら1拍は約430msなので、
+その3分の1くらいにしています(光っている時間が長すぎると、どこが
+拍の頭なのか見分けにくくなるため)。⚠️ c014.html の
+.sync-beat-lamp.sync-beat-on の animation の長さと同じ値にすること。
 */
-const SYNC_START_STEP_EPSILON = 0.001;
+const SYNC_LAMP_FLASH_MS = 140;
 
 /*
-「スマホが眠った」などで、みんなの時計が狂ったとみなす境目(ms。v227)。
+リードランナーに Bluetooth を切ってもらう時の説明(v228)。
 
-みんなの時計は、③の基準からの経過を performance.now()(ページを開いて
-からの時計)で数えています。この時計は、**スマホが深く眠っている間は
-止まる端末がある**と言われています。止まると、その間に進んだ時間だけ
-基準がずれ、拍が合わなくなります。
+③の「音を出す」と、④の「もう一度カチッを鳴らす」の2か所で同じ文を
+出すので、ここに1つだけ書いておきます(2か所に書くと、片方だけ直し
+忘れるため)。なぜ切ってもらうのかは askSyncClockRole() のコメント。
+*/
+const SYNC_BLUETOOTH_OFF_TEXT =
+    "このスマホのスピーカーから鳴らすため、<br>" +
+    "イヤホンをケースにしまうか、<br>" +
+    "Bluetoothをオフにしてください";
+
+/*
+「スマホが眠った」などで、拍がずれたとみなす境目(ms。v227)。
+
+③の基準は performance.now()(ページを開いてからの時計)で持っています。
+この時計は、**スマホが深く眠っている間は止まる端末がある**と言われて
+います。止まると、その間に進んだ時間だけ基準がずれ、拍が合わなくなります。
 
 そこで、スマホの時計(Date.now)との差を、基準を決めた時と見比べます。
 ふつうはこの2つは一緒に進むので、差はほぼ0のままです。差が開いたら
@@ -565,7 +586,10 @@ const syncState = {
     clockSpreadMs: null,
 
     // ③の枠に一時的に出す知らせ。無ければ空
-    clockNotice: ""
+    clockNotice: "",
+
+    // ④の「もう一度カチッを鳴らす」の下に一時的に出す知らせ(v228)。無ければ空
+    replayNotice: ""
 
 };
 
@@ -586,17 +610,6 @@ let syncAnchorPeriodMs = 0;
 let syncAnchorTakenAtMs = 0;
 
 /*
-基準の瞬間が、**みんなの時計(リードランナーの時計)で何時何分何秒か**
-(ミリ秒。Date.now と同じ数え方)。v227。
-
-自分の時計で測った基準の時刻を、聴き合わせる音の間隔の倍数に丸めた
-値です(冒頭の【みんなの時計】)。基準が無い時は null。
-
-    みんなの時計の今 ＝ syncAnchorLabelMs ＋ (performance.now() − syncAnchorPerfMs)
-*/
-let syncAnchorLabelMs = null;
-
-/*
 基準を決めた時の「スマホの時計 − 指の時計」(ms。v227)。
 
 あとで同じ差を測り直し、開いていたら「眠った」などで基準が狂ったと
@@ -607,22 +620,78 @@ let syncAnchorWallOffsetMs = 0;
 // 「狂ったかも」を🐛パネルに1回だけ出すための印(毎秒出さないように)
 let syncDriftLogged = false;
 
+/*
+リードランナーのカチッの「リズムの位置」(v228)。
+
+    syncLeadGridPerfMs   … 最初に鳴らしたカチッの瞬間(performance.now の物差し)
+    syncLeadGridPeriodMs … そのカチッの間隔(ms)
+
+**このスマホがリードランナーとしてカチッを鳴らした時だけ**値が入ります
+(合わせる人なら null)。
+
+【なぜ覚えておくのか】
+
+「🔊 もう一度カチッを鳴らす」で鳴らし直す時、**最初と同じリズムの位置**に
+乗せるためです。適当な瞬間に鳴らし直すと、叩き直した人だけ別の
+リズムに合ってしまい、ほかの人とランプがずれます。
+
+    最初のカチッ   |   |   |   |   |      ← みんながこれで合わせた
+    鳴らし直し     .   .   .   |   |   |  ← 同じ位置の続きに乗せる
+
+リードが③を「合わせ直す」で最初からやった時も、同じリズムの位置で
+鳴らします(ほかの人の基準がそのまま使えるように)。ピッチを変えると
+間隔が変わるので、その時だけ新しく作ります。
+
+⚠️ v227の「リードの時計の目盛りに乗せる」作りは、v228でこれに置き換えました。
+   目盛りは Date.now(スマホの時計)で数えるので、スマホの時計が合わせ
+   直されると位置が飛びます。こちらは performance.now で覚えるので飛びません。
+*/
+let syncLeadGridPerfMs = null;
+let syncLeadGridPeriodMs = 0;
+
+/*
+「みんなの拍ランプ」を光らせる見回り係(setTimeout の受付番号。v228)。
+止まっている間は0。
+*/
+let syncLampTimerId = 0;
+
 // 叩いた時刻の並び
 let syncClockTaps = [];
 
 /*
-リードランナーが鳴らす音の見回り係と、次に鳴らす時刻・鳴らすのをやめる時刻
-(deckAudioCtx の時計で何秒か)。
+リードランナーが鳴らす音の見回り係と、次に鳴らす瞬間・鳴らすのをやめる時刻。
+
+    syncClockBeepNextPerfMs … 次のカチッの瞬間(performance.now の物差しのms)
+    syncClockBeepEndSec     … やめる時刻(deckAudioCtx の時計で何秒か)
 
 ⚠️ v226で「鳴らした数」(syncClockBeepCount)を「やめる時刻」
    (syncClockBeepEndSec)に置き換えました(SYNC_CLOCK_MAX_SEC のコメント)。
+
+⚠️ v228で、次のカチッを「音の時計」(syncClockBeepNextSec)ではなく
+   「指の時計」で持つようにしました。「もう一度カチッを鳴らす」で、最初と
+   同じリズムの位置に乗せるためです(syncLeadGridPerfMs のコメント)。
+   音の時計に直すのは、予約する直前です(scheduleSyncClockBeeps)。
 
 ⚠️ 見回り係が動いている(0でない)= **いま音を鳴らしている**、という
    意味でも使います(ターンテーブルを回したままにする data-playing)。
 */
 let syncClockBeepTimerId = 0;
-let syncClockBeepNextSec = 0;
+let syncClockBeepNextPerfMs = 0;
 let syncClockBeepEndSec = 0;
+
+/*
+カチッを鳴らしている間に測った「音の時計 − 指の時計」の、いちばん大きい値
+(秒。v228)。鳴らし始めるたびに -Infinity に戻します。
+
+【なぜ「いちばん大きい値」なのか】
+
+音の時計(deckAudioCtx.currentTime)は、なめらかに進むのではなく、音を
+まとめて作るたびに数ms〜数十msずつ飛んで進みます。測るたびに差が少し
+違い、「飛んだ直後」がいちばん大きくなります(②の noteSyncClockOffset と
+同じ考え方)。いちばん大きい値を使えば、最初に鳴らした時も、鳴らし直した
+時も「飛んだ直後」という同じ条件でそろい、**同じリズムの位置**に乗ります。
+*/
+let syncLeadOffsetMaxSec = -Infinity;
 
 /*
 ③の「カチッ」専用の音量つまみです(v226)。
@@ -648,8 +717,9 @@ let syncClockTimerId = 0;
 カウントダウン中の約束ごと。カウントダウンしていない時は null。
 
     token          … この約束の目印(「やめる」で別の約束になったか見分ける)
-    targetSharedMs … 開始時刻(みんなの時計のミリ秒。みんなの耳に届く時刻)
-                     ⚠️ v226までは targetWallMs(各スマホの時計)でした
+    targetWallMs   … 開始時刻(このスマホの時計のミリ秒。耳に届く時刻)
+                     ⚠️ v227だけ「みんなの時計」(targetSharedMs)でしたが、
+                        v228でこのスマホの時計に戻しました
     plan           … どの曲を、どの位置から鳴らすか(prepareSyncPlan の答え)
     planText       … 画面に出す説明(曲名入り)
     wPerfMs        … 狙いの位置が鳴り始める瞬間(performance.now の物差し)
@@ -815,6 +885,19 @@ v226で4つから1つに減らしましたが(c014.html の④の説明)、HTML�
 */
 const syncTimeBtnEls = document.querySelectorAll("#sync-step-start .sync-time-btn");
 
+/*
+④の「みんなの拍ランプ」と、リードだけの「もう一度カチッを鳴らす」(v228)。
+
+    #sync-beat-lamp    … 拍ごとに光るランプ(光り方は CSS の .sync-beat-on)
+    #sync-replay-box   … リードだけに見せる枠(ボタンと説明)
+    #sync-replay-btn   … 🔊 もう一度カチッを鳴らす / 🔇 カチッを止める
+    #sync-replay-note  … その下の説明
+*/
+const syncBeatLampEl = document.getElementById("sync-beat-lamp");
+const syncReplayBoxEl = document.getElementById("sync-replay-box");
+const syncReplayBtn = document.getElementById("sync-replay-btn");
+const syncReplayNoteEl = document.getElementById("sync-replay-note");
+
 const syncCountdownTargetEl = document.getElementById("sync-countdown-target");
 const syncCountdownRestEl = document.getElementById("sync-countdown-rest");
 const syncCountdownPlanEl = document.getElementById("sync-countdown-plan");
@@ -940,24 +1023,42 @@ async function openSyncPanel(){
     }
 
     /*
-    ---- ①は毎回、初期設定のマイピッチから始めます ----
+    ---- 走っている途中で開き直したか(v228) ----
 
-    同期モードを開き直すたびに、前回みんなで決めた値ではなく
-    **自分のいつものピッチ**から始めます。いつもの値を中心に、
-    みんなの数字へ定規を寄せていく方が分かりやすいためです。
+    ③の基準が残っていれば、みんなで走っている途中です(基準はページを
+    開き直すか、①を選び直すか、③を合わせ直すまで消えません)。
+
+    竹弘の要望(2026-10-04):リードランナーは走行中いつでも「もう一度
+    カチッを鳴らす」を出せるように。そのたびに①のピッチを選び直し、
+    ②を決め直すのは面倒なので、**①②は決めたまま(灰色)で開きます。**
+    変えたい時は、いつもどおり「再設定」「測り直す」で外せます。
+
+    ⚠️ ③の「決定」だけは、v225のとおり毎回押してもらいます(メンバーが
+       同じかを人に確かめてもらうため)。
+    */
+    const resuming = (syncAnchorPerfMs !== null);
+
+    /*
+    ---- ①は、初めて開く時は初期設定のマイピッチから始めます ----
+
+    **自分のいつものピッチ**から始めて、みんなの数字へ定規を寄せていく
+    方が分かりやすいためです。走っている途中で開き直した時は、
+    みんなで決めたピッチのままにします(上の resuming)。
     */
     const myPitch = await loadMyPitch();
 
-    syncState.pitch = myPitch;
-    syncState.pitchDecided = false;
+    const startPitch = resuming ? syncState.pitch : myPitch;
 
-    syncRuler.setValue(myPitch);
+    syncState.pitch = startPitch;
+    syncState.pitchDecided = resuming;
+
+    syncRuler.setValue(startPitch);
 
     /*
     数字も先に合わせておきます。定規からの知らせ(onChange)は描き始めた
     次のコマで届くので、それを待つと一瞬だけ前回の数字が見えるためです。
     */
-    updateSyncPitchDisplay(myPitch);
+    updateSyncPitchDisplay(startPitch);
 
     /*
     ---- ② は、前回測った値があれば最初から出しておきます(v222) ----
@@ -975,7 +1076,10 @@ async function openSyncPanel(){
     syncState.latencySpreadMs = null;
     syncState.latencyFromSaved = (savedLatency !== null);
     syncState.latencyPhase = (savedLatency !== null) ? "done" : "idle";
-    syncState.latencyDecided = false;
+
+    // 走っている途中で開き直した時は、②も決めたまま(v228。上の resuming)
+    syncState.latencyDecided = resuming && (savedLatency !== null);
+
     syncState.latencyNotice = "";
 
     // ④ も毎回まっさらから(v224)
@@ -996,6 +1100,7 @@ async function openSyncPanel(){
     syncState.clockRole = "";
     syncState.clockDecided = false;
     syncState.clockNotice = "";
+    syncState.replayNotice = "";
 
     if(syncAnchorPerfMs !== null){
 
@@ -1033,7 +1138,9 @@ async function openSyncPanel(){
 
     console.log(
         "みんなで走る同期モードを開きました :",
-        "マイピッチ " + myPitch + " から始めます /",
+        (resuming
+            ? "走行の途中で開き直し(①ピッチ " + startPitch + " と②遅延は決めたまま)"
+            : "マイピッチ " + myPitch + " から始めます") + " /",
         (syncState.wasPlaying ? "鳴っていた曲を一時停止" : "曲は止まっていた") + " /",
         "前回の遅延 " + (savedLatency === null ? "なし" : savedLatency + "ms")
     );
@@ -1066,6 +1173,9 @@ function closeSyncPanel(){
     cancelSyncCountdown("");
 
     stopSyncClock();
+
+    // 拍ランプも止めます(v228。画面が隠れた後まで光り続けないように)
+    stopSyncBeatLamp();
 
     syncPanelEl.style.display = "none";
 
@@ -1149,6 +1259,23 @@ function decideSyncPitch(){
 
     syncState.pitch = syncRuler.getValue();
     syncState.pitchDecided = true;
+
+    /*
+    前に合わせた基準が残っていて、その時と**聴き合わせる音の間隔が違う**
+    ピッチを決めた時は、基準を捨てます(v228)。
+
+    基準は「その間隔のカチッ」で合わせたものなので、ピッチが変わると
+    前提が崩れます。「再設定」を押した時は resetSyncPitch() で捨てて
+    いますが、ここでも確かめておきます(v225〜v227は、開き直して①で
+    別のピッチを決めると、前の基準が残ったままになっていた)。
+    */
+    if(syncAnchorPerfMs !== null && Math.abs(getSyncSharedPeriodMs() - syncAnchorPeriodMs) > 0.001){
+
+        console.log("同期モード ① ピッチが変わったので、前の基準を捨てます");
+
+        redoSyncClock();
+
+    }
 
     // 決めたら音は止めます。次の②では別の音(ピッ)を聴くためです
     stopSyncTempoSound();
@@ -2256,7 +2383,7 @@ function saveSyncLatency(latencyMs){
 
 
 // ==========================================================
-// 5-2b. ③ みんなの時計を合わせる「音合わせ」(v225)
+// 5-2b. ③ みんなの拍を合わせる「音合わせ」(v225。v228で名前を変更)
 // ==========================================================
 /*
 【なぜ要るのか ―― スマホの時計は信用できなかった】
@@ -2335,6 +2462,23 @@ function getSyncSharedPeriodMs(){
  * みんなで聴いて合わせます。イヤホンを付けたままだと、リードランナーは
  * 自分だけイヤホンで聴いてしまい、ほかの人は何も聞こえません。
  *
+ * 【リードランナーは Bluetooth も切る(v228)】
+ *
+ * 竹弘の指摘(2026-10-04):「イヤホンを外すだけだとイヤホンから鳴って
+ * しまう」。Bluetooth がつながっている間は、スマホはすべての音を
+ * イヤホンへ送ります。耳から外しても、カチッは手の中のイヤホンから
+ * 小さく鳴るだけで、みんなには聞こえません。
+ *
+ * ⚠️ **アプリから Bluetooth を切ったり、音の出口をスピーカーに切り替えたり
+ *    することはできません。** Webアプリ(PWA)に許されていない操作です
+ *    (Chrome の Android 版には、音の出口を選ぶ setSinkId がありません。
+ *    Web Bluetooth も、イヤホンの音楽の接続には使えません)。
+ *    だから人にお願いします:イヤホンをケースにしまう(多くのイヤホンは
+ *    これで切れる)か、スマホの Bluetooth をオフにする。
+ *
+ * 合わせる人のスマホは音を出さないので、Bluetooth はつないだままで
+ * 構いません。リードのカチッが耳に届くよう、耳から外すだけです。
+ *
  * 「はい」で startSyncClockRole() に進みます。
  * ⚠️ 「はい」を押した瞬間も「人の操作の中」なので、音の出口を起こす
  *    (resumeDeckAudio)処理はそのまま効きます。
@@ -2345,12 +2489,25 @@ function askSyncClockRole(role){
 
     if(syncState.clockDecided){ return; }
 
+    if(role === "lead"){
+
+        openSyncDialog({
+            icon: "🔊",
+            title: "Bluetoothイヤホンを<br>切りましたか?",
+            message: SYNC_BLUETOOTH_OFF_TEXT,
+            okText: "はい",
+            cancelText: "まだ",
+            onOk: function(){ startSyncClockRole(role); }
+        });
+
+        return;
+
+    }
+
     openSyncDialog({
-        icon: "🔊",
-        title: "イヤホンを外しましたか?<br>準備はいいですか?",
-        message: (role === "lead")
-            ? "「はい」を押すと、このスマホの<br>スピーカーからカチッが鳴り始めます"
-            : "リードランナーのカチッに合わせて<br>レコードを12回タップします",
+        icon: "👂",
+        title: "イヤホンを耳から<br>外しましたか?",
+        message: "リードランナーのカチッを耳で聴いて、<br>レコードを12回タップします",
         okText: "はい",
         cancelText: "まだ",
         onOk: function(){ startSyncClockRole(role); }
@@ -2389,7 +2546,8 @@ function startSyncClockRole(role){
 
     if(role === "lead"){
 
-        if(!deckAudioCtx){
+        // カチッを鳴らし始めます(v228で startSyncLeadClicks に切り出し)
+        if(!startSyncLeadClicks()){
 
             syncState.clockPhase = "idle";
             syncState.clockNotice = "⚠️ 音を出す準備ができませんでした。<br>もう一度押してください";
@@ -2400,56 +2558,16 @@ function startSyncClockRole(role){
 
         }
 
-        /*
-        ③の音は「カチッ」です(v226。v225までは②と同じ「ピッ」)。
-
-        竹弘の要望(2026-09-27):
-            「メトロノーム音も電子音の『ピッ』だと外だと音が騒音に
-              かき消される場合がある為、『カチッ』にしたいです」
-
-        ②のBluetooth遅延は、イヤホンで聴くので「ピッ」のままです
-        (竹弘の判断)。
-
-        音源は①の定規・ノリノリアシストと同じ click.wav です。読み込みは
-        js/metronome.js に任せます(同じファイルを2回読まないため)。
-        すでに読み込み済みなら、この1行は何もしません。
-        */
-        loadMetronomeClick();
-
-        if(!syncClockGainNode){
-
-            syncClockGainNode = deckAudioCtx.createGain();
-
-            // 大きさはノリノリアシストのカチッと同じにします
-            syncClockGainNode.gain.value = METRONOME_GAIN_CLICK;
-
-            syncClockGainNode.connect(deckAudioCtx.destination);
-
-        }
+    }
+    else{
 
         /*
-        ⚠️ 読み込めなかった時の保険に「ピッ」も使えるようにしておきます
-           (playSyncClockClick のコメント)。
+        合わせる人になったら、リードとして鳴らしたリズムの位置は捨てます
+        (v228)。このスマホはもうリードではないので、④の「もう一度カチッを
+        鳴らす」も出しません。
         */
-        if(!syncBeepGainNode){
-
-            syncBeepGainNode = deckAudioCtx.createGain();
-            syncBeepGainNode.gain.value = METRONOME_GAIN_BEEP;
-            syncBeepGainNode.connect(deckAudioCtx.destination);
-
-        }
-
-        /*
-        最初のカチッは、リードランナーの時計の目盛りぴったりに鳴らします
-        (v227。findSyncLeadFirstClickSec のコメント)。2つ目からは音の間隔
-        ごとに足していくので、全部のカチッが目盛りの上に乗ります。
-        */
-        syncClockBeepNextSec = findSyncLeadFirstClickSec();
-        syncClockBeepEndSec = syncClockBeepNextSec + SYNC_CLOCK_MAX_SEC;
-
-        syncClockBeepTimerId = setInterval(scheduleSyncClockBeeps,SYNC_TEMPO_TIMER_MS);
-
-        scheduleSyncClockBeeps();
+        syncLeadGridPerfMs = null;
+        syncLeadGridPeriodMs = 0;
 
     }
 
@@ -2466,56 +2584,120 @@ function startSyncClockRole(role){
 }
 
 /**
- * リードランナーの最初のカチッを、いつ鳴らすかを決めます(v227)。
+ * リードランナーのカチッを鳴らし始めます(v228で startSyncClockRole から切り出し)。
  *
- * 「音を出す」を押してから SYNC_CLOCK_LEAD_SEC(1秒)たった後で、
- * **リードランナーの時計がちょうど「音の間隔の倍数」になる瞬間**を探します。
- * これで、カチッにリードランナーの時計の目盛りが乗ります(冒頭の
- * 【みんなの時計】)。ほかの人はそのカチッを叩くので、自分の基準を
- * 目盛りに丸めるだけで、リードランナーの時計が分かります。
+ * 呼ぶ場所は2つです。
  *
- * 【3つの時計を行き来する】
+ *     ③の「音を出す」               … 音合わせを始める時
+ *     ④の「🔊 もう一度カチッを鳴らす」 … ランプが合わない人のために鳴らし直す時
  *
- *     音の時計   … deckAudioCtx.currentTime(秒)。カチッはこれで予約する
- *     指の時計   … performance.now()(ms)
- *     スマホの時計 … Date.now()(ms)。目盛りはこれで数える
+ * どちらも**同じリズムの位置**に乗せて鳴らします(findSyncLeadFirstClickPerfMs)。
  *
- * 音の時計 → 指の時計は sampleSyncClockOffset()(②③と同じ物差し)、
- * 指の時計 → スマホの時計は「Date.now() − performance.now()」で直します。
- *
- * ⚠️ スピーカーの遅れや、人が早めに叩く癖のぶん、叩いた位置は目盛りから
- *    数十msずれます。でも丸める幅は「音の間隔の半分」(0.2〜0.3秒)あるので、
- *    丸め先が変わることはありません。竹弘の実測でもスピーカーでの差は
- *    -58〜-8ms でした(②をスピーカーで測った値)。
- *
- * @return {number} 最初のカチッを鳴らす時刻(deckAudioCtx の時計で何秒か)
+ * @return {boolean} 鳴らし始められたか(音の出口が用意できなければ false)
  */
-function findSyncLeadFirstClickSec(){
+function startSyncLeadClicks(){
+
+    // 音の出口を用意して、眠っていたら起こします(人の操作の中で呼ばれる)
+    ensureDeckAudioGraph();
+    resumeDeckAudio();
+
+    if(!deckAudioCtx){ return false; }
+
+    stopSyncClockBeeps();
+
+    /*
+    ③の音は「カチッ」です(v226。v225までは②と同じ「ピッ」)。
+
+    竹弘の要望(2026-09-27):
+        「メトロノーム音も電子音の『ピッ』だと外だと音が騒音に
+          かき消される場合がある為、『カチッ』にしたいです」
+
+    ②のBluetooth遅延は、イヤホンで聴くので「ピッ」のままです
+    (竹弘の判断)。
+
+    音源は①の定規・ノリノリアシストと同じ click.wav です。読み込みは
+    js/metronome.js に任せます(同じファイルを2回読まないため)。
+    すでに読み込み済みなら、この1行は何もしません。
+    */
+    loadMetronomeClick();
+
+    if(!syncClockGainNode){
+
+        syncClockGainNode = deckAudioCtx.createGain();
+
+        // 大きさはノリノリアシストのカチッと同じにします
+        syncClockGainNode.gain.value = METRONOME_GAIN_CLICK;
+
+        syncClockGainNode.connect(deckAudioCtx.destination);
+
+    }
+
+    /*
+    ⚠️ 読み込めなかった時の保険に「ピッ」も使えるようにしておきます
+       (playSyncClockClick のコメント)。
+    */
+    if(!syncBeepGainNode){
+
+        syncBeepGainNode = deckAudioCtx.createGain();
+        syncBeepGainNode.gain.value = METRONOME_GAIN_BEEP;
+        syncBeepGainNode.connect(deckAudioCtx.destination);
+
+    }
+
+    // 音の時計と指の時計の対応は、鳴らすたびに測り直します(scheduleSyncClockBeeps)
+    syncLeadOffsetMaxSec = -Infinity;
+
+    syncClockBeepNextPerfMs = findSyncLeadFirstClickPerfMs();
+    syncClockBeepEndSec = deckAudioCtx.currentTime + SYNC_CLOCK_LEAD_SEC + SYNC_CLOCK_MAX_SEC;
+
+    syncClockBeepTimerId = setInterval(scheduleSyncClockBeeps,SYNC_TEMPO_TIMER_MS);
+
+    scheduleSyncClockBeeps();
+
+    return true;
+
+}
+
+/**
+ * リードランナーの最初のカチッを、いつ鳴らすかを決めます(v228)。
+ *
+ * 「音を出す」を押してから SYNC_CLOCK_LEAD_SEC(1秒)たった後で:
+ *
+ *     初めて鳴らす時 … ちょうど1秒後。その瞬間を「リズムの位置」として覚える
+ *     2回目から      … 覚えたリズムの位置の続きで、1秒後以降の最初の瞬間
+ *                      (1秒〜1秒+音1個のあいだ)
+ *
+ * ピッチを変えて音の間隔が変わった時は、覚えた位置は使えないので、
+ * 初めての時と同じく新しく作ります。
+ *
+ * ⚠️ 指の時計(performance.now)で数えます。スマホの時計(Date.now)は
+ *    合わせ直されると飛ぶことがあるためです(v227の作りをやめた理由。
+ *    syncLeadGridPerfMs のコメント)。
+ *
+ * @return {number} 最初のカチッを鳴らす瞬間(performance.now の物差し)
+ */
+function findSyncLeadFirstClickPerfMs(){
 
     const periodMs = getSyncSharedPeriodMs();
 
-    // 音の時計 − 指の時計(秒)
-    const ctxMinusPerfSec = sampleSyncClockOffset();
+    const earliestPerfMs = performance.now() + SYNC_CLOCK_LEAD_SEC * 1000;
 
-    // スマホの時計 − 指の時計(ms)
-    const wallMinusPerfMs = Date.now() - performance.now();
+    if(syncLeadGridPerfMs !== null && Math.abs(syncLeadGridPeriodMs - periodMs) < 0.001){
 
-    // 早くてもこの時刻(音の時計)より後に鳴らします
-    const earliestCtxSec = deckAudioCtx.currentTime + SYNC_CLOCK_LEAD_SEC;
+        /*
+        覚えた位置から、音の間隔ごとに数えて、1秒後以降で最初のもの。
+        Math.ceil は切り上げ(「何個ぶん進めば1秒後を追い越すか」)です。
+        */
+        const steps = Math.ceil((earliestPerfMs - syncLeadGridPerfMs) / periodMs);
 
-    // それが、スマホの時計で何ミリ秒か
-    const earliestWallMs = (earliestCtxSec - ctxMinusPerfSec) * 1000 + wallMinusPerfMs;
+        return syncLeadGridPerfMs + steps * periodMs;
 
-    /*
-    それ以降で、最初の目盛り(音の間隔の倍数)。
+    }
 
-    Date.now() は「1970年1月1日から何ミリ秒か」という大きな数なので、
-    目盛りもそこから数えます。ピッチが同じなら音の間隔も同じなので、
-    **全員のスマホで同じ場所に目盛りが並びます。**
-    */
-    const firstWallMs = Math.ceil(earliestWallMs / periodMs) * periodMs;
+    syncLeadGridPerfMs = earliestPerfMs;
+    syncLeadGridPeriodMs = periodMs;
 
-    return earliestCtxSec + (firstWallMs - earliestWallMs) / 1000;
+    return earliestPerfMs;
 
 }
 
@@ -2527,10 +2709,22 @@ function findSyncLeadFirstClickSec(){
  *
  * ⚠️ v226から、リードランナーが12回叩き終わっても止めません。止めるのは
  *    「決定」「合わせ直す」「✕」、または3分たった時(SYNC_CLOCK_MAX_SEC)です。
+ *    v228の「もう一度カチッを鳴らす」は、もう一度押す・時刻ボタン・✕・3分で止めます。
  */
 function scheduleSyncClockBeeps(){
 
     if(!deckAudioCtx){ return; }
+
+    /*
+    音の時計と指の時計の対応を、見回りのたびに測って、いちばん大きい値を
+    使います(v228。syncLeadOffsetMaxSec のコメント)。
+    */
+    const offsetSec = sampleSyncClockOffset();
+
+    if(offsetSec !== null && offsetSec > syncLeadOffsetMaxSec){ syncLeadOffsetMaxSec = offsetSec; }
+
+    // 次のカチッの瞬間を、音の時計に直します(指の時計の秒 + 対応)
+    const toCtxSec = function(perfMs){ return perfMs / 1000 + syncLeadOffsetMaxSec; };
 
     /*
     止め忘れの保険(3分)。
@@ -2539,7 +2733,7 @@ function scheduleSyncClockBeeps(){
     押してもらいます(②で途中で止まった時と同じ)。叩き終わっていれば、
     基準はもう出ているので、音だけ止めてそのことを知らせます。
     */
-    if(syncClockBeepNextSec >= syncClockBeepEndSec){
+    if(toCtxSec(syncClockBeepNextPerfMs) >= syncClockBeepEndSec){
 
         stopSyncClockBeeps();
 
@@ -2549,6 +2743,12 @@ function scheduleSyncClockBeeps(){
 
             syncState.clockPhase = "idle";
             syncState.clockNotice = "途中で止まりました。<br>もう一度「音を出す」を押してください";
+
+        }
+        else if(syncState.clockDecided){
+
+            // ④の「もう一度カチッを鳴らす」で鳴らしていた時(v228)
+            syncState.replayNotice = "🔇 " + (SYNC_CLOCK_MAX_SEC / 60) + "分たったので、カチッを止めました";
 
         }
         else{
@@ -2565,17 +2765,21 @@ function scheduleSyncClockBeeps(){
 
     }
 
-    const horizon = deckAudioCtx.currentTime + SYNC_TEMPO_LOOKAHEAD_SEC;
+    const nowCtxSec = deckAudioCtx.currentTime;
 
-    const periodSec = getSyncSharedPeriodMs() / 1000;
+    const horizon = nowCtxSec + SYNC_TEMPO_LOOKAHEAD_SEC;
 
-    while(syncClockBeepNextSec < horizon && syncClockBeepNextSec < syncClockBeepEndSec){
+    const periodMs = getSyncSharedPeriodMs();
 
-        if(syncClockBeepNextSec >= deckAudioCtx.currentTime){
-            playSyncClockClick(syncClockBeepNextSec);
+    while(toCtxSec(syncClockBeepNextPerfMs) < horizon && toCtxSec(syncClockBeepNextPerfMs) < syncClockBeepEndSec){
+
+        const atCtxSec = toCtxSec(syncClockBeepNextPerfMs);
+
+        if(atCtxSec >= nowCtxSec){
+            playSyncClockClick(atCtxSec);
         }
 
-        syncClockBeepNextSec += periodSec;
+        syncClockBeepNextPerfMs += periodMs;
 
     }
 
@@ -2730,20 +2934,11 @@ function finishSyncClockMeasure(){
     syncAnchorTakenAtMs = Date.now();
 
     /*
-    ---- みんなの時計を決めます(v227) ----
-
-    基準の瞬間を自分の時計で測り、いちばん近い目盛り(音の間隔の倍数)に
-    丸めます。リードランナーはカチッを目盛りぴったりに鳴らしているので
-    (findSyncLeadFirstClickSec)、丸めた先が「リードランナーの時計で
-    何時何分何秒か」になります。
-
-    Math.round は「いちばん近い整数」(四捨五入)です。
+    基準を決めた時の「スマホの時計 − 指の時計」を控えておきます(v227)。
+    あとで同じ差を測り直し、開いていたら「スマホが眠った」などで基準が
+    狂ったと分かります(SYNC_SHARED_DRIFT_WARN_MS のコメント)。
     */
     syncAnchorWallOffsetMs = Date.now() - performance.now();
-
-    const anchorWallMs = syncAnchorPerfMs + syncAnchorWallOffsetMs;
-
-    syncAnchorLabelMs = Math.round(anchorWallMs / periodMs) * periodMs;
 
     syncDriftLogged = false;
 
@@ -2753,29 +2948,13 @@ function finishSyncClockMeasure(){
 
     refreshSyncClockStep();
 
-    // 時計の書き換えを、新しいみんなの時計の秒の境目に合わせ直します
-    restartSyncClock();
-
     console.log(
-        "同期モード ③ みんなの基準を合わせました :",
+        "同期モード ③ みんなの拍を合わせました :",
         "ばらつき ±" + syncState.clockSpreadMs + "ms",
         "/ まとまり " + result.concentration.toFixed(2),
         "/ 音の間隔 " + periodMs.toFixed(1) + "ms",
         "/ 1拍 " + (60000 / syncState.pitch).toFixed(1) + "ms",
         "/ 音1個 = " + (periodMs / (60000 / syncState.pitch)).toFixed(2) + "拍"
-    );
-
-    /*
-    自分の時計を、どれだけ動かすとみんなの時計になるか(v227)。
-
-    リードランナーは「スピーカーの遅れ − 早めに叩く癖」のぶん(数十ms)、
-    ほかの人はそれに「リードランナーの時計との差」が加わります。
-    2台の値を比べると、2台の時計がどれだけずれていたかが分かります。
-    */
-    console.log(
-        "同期モード ③ みんなの時計 : このスマホの時計に " +
-        formatSyncSignedMs(syncAnchorLabelMs - anchorWallMs) + " 足した時刻",
-        "(" + formatSyncClock(syncAnchorLabelMs) + " の目盛りに合わせました)"
     );
 
 }
@@ -2808,17 +2987,52 @@ function decideSyncClock(){
 
     refreshSyncClockStep();
 
+    openSyncEarphoneDialog("付けたら、④で開始時刻を選びます");
+
+    console.log("同期モード ③ 基準を決定しました");
+
+}
+
+/**
+ * 「イヤホンを装着してください。」のポップを出します(v226。v228で切り出し)。
+ *
+ * ③の「決定」の後と、④の「カチッを止める」の後に出します。
+ *
+ * リードランナーには「Bluetoothをつなぎ直して」を添えます(v228)。
+ * リードはカチッをスピーカーから鳴らすために Bluetooth を切っているので
+ * (askSyncClockRole のコメント)、付けるだけでは音がイヤホンに戻りません。
+ *
+ * @param {string} afterText - 2行目に添える「次にすること」
+ */
+function openSyncEarphoneDialog(afterText){
+
+    const isLead = isSyncLeadPhone();
+
     openSyncDialog({
         icon: "🎧",
         title: "イヤホンを装着してください。",
-        message: "付けたら、④で開始時刻を選びます",
+        message: isLead
+            ? "Bluetoothをつなぎ直してから<br>付けてください。<br>" + afterText
+            : afterText,
         okText: "装着しました",
         cancelText: "",
         onOk: null
     });
 
-    // 決定した時刻を、みんなの時計で出します(v227。2台のログを見比べやすいように)
-    console.log("同期モード ③ 基準を決定しました : みんなの時計 " + formatSyncClock(getSyncDisplayNowMs()));
+}
+
+/**
+ * このスマホがリードランナーか(v228)。
+ *
+ * リードとしてカチッを鳴らしたリズムの位置を覚えていて、しかも今の
+ * ピッチの音の間隔と同じなら、リードです(syncLeadGridPerfMs のコメント)。
+ * 画面を開き直すと役割のボタンの選択(clockRole)は消えますが、こちらは
+ * 残るので、走っている途中で開き直してもリードだと分かります。
+ */
+function isSyncLeadPhone(){
+
+    return syncLeadGridPerfMs !== null &&
+           Math.abs(syncLeadGridPeriodMs - getSyncSharedPeriodMs()) < 0.001;
 
 }
 
@@ -2840,10 +3054,15 @@ function redoSyncClock(){
     syncAnchorPeriodMs = 0;
     syncAnchorTakenAtMs = 0;
 
-    // みんなの時計も捨てます(v227)
-    syncAnchorLabelMs = null;
+    // 「眠ったか」の点検の控えも捨てます(v227)
     syncAnchorWallOffsetMs = 0;
     syncDriftLogged = false;
+
+    /*
+    ⚠️ リードとして鳴らしたリズムの位置(syncLeadGridPerfMs)は**捨てません**
+       (v228)。リードが合わせ直す時も、同じ位置でカチッを鳴らせば、
+       ほかの人の基準がそのまま使えるためです。
+    */
 
     syncState.clockRole = "";
     syncState.clockPhase = "idle";
@@ -2863,8 +3082,8 @@ function redoSyncClock(){
  * ⚠️ v227から**時刻(20:10など)は出しません。** v226までは「00:21:30 に
  *    合わせ済み」と出していましたが、これは各自が叩き終えた時刻なので、
  *    2台で14秒も違って見えました(竹弘の実機ログ:00:21:30 と 00:21:44)。
- *    みんなの時計を揃えて見せる v227 で、ここだけ食い違って見えると
- *    また「合っていない」と誤解されるので、経った時間だけにしました。
+ *    時刻が食い違って見えると「合っていない」と誤解されるので、経った
+ *    時間だけにしました。
  *
  * @return {string} 例:「30分前に合わせました」
  */
@@ -2879,36 +3098,6 @@ function buildSyncAnchorAgeText(){
               : (Math.floor(minutes / 60) + "時間" + (minutes % 60) + "分前に");
 
     return ago + "合わせました";
-
-}
-
-/**
- * 今が、みんなの時計で何時何分何秒か(ミリ秒。Date.now と同じ数え方)。v227。
- *
- * 基準からの経過は performance.now() で数えます(スマホの時計は、
- * 電波で勝手に直されて飛ぶことがあるため。基準と同じ考え方)。
- *
- * @return {number|null} 基準がまだ無ければ null
- */
-function getSyncSharedNowMs(){
-
-    if(syncAnchorPerfMs === null || syncAnchorLabelMs === null){ return null; }
-
-    return syncAnchorLabelMs + (performance.now() - syncAnchorPerfMs);
-
-}
-
-/**
- * 画面の時計に出す「今」(v227)。
- *
- * 基準があればみんなの時計、無ければスマホの時計です。
- * (④は基準が決まるまで隠れているので、ふつうはみんなの時計しか見えません)
- */
-function getSyncDisplayNowMs(){
-
-    const sharedMs = getSyncSharedNowMs();
-
-    return (sharedMs !== null) ? sharedMs : Date.now();
 
 }
 
@@ -2930,7 +3119,7 @@ function getSyncAnchorDriftMs(){
 }
 
 /**
- * みんなの時計が狂ったおそれがあるか(v227)。
+ * スマホが眠るなどして、拍がずれたおそれがあるか(v227)。
  *
  * 初めて境目を超えた時に、🐛パネルへ1回だけ記録します
  * (毎秒の見回りから呼ばれるので、毎回出すと流れてしまうため)。
@@ -2946,7 +3135,7 @@ function isSyncAnchorDrifted(){
         syncDriftLogged = true;
 
         console.warn(
-            "同期モード ③ みんなの時計が狂ったおそれがあります :",
+            "同期モード ③ 拍がずれたおそれがあります :",
             "スマホの時計と指の時計の差が " + formatSyncSignedMs(driftMs) + " 動きました",
             "(スマホが眠った / 時計が合わせ直された)"
         );
@@ -3060,15 +3249,19 @@ function refreshSyncClockStep(){
         big = "✓";
         small = "OK";
 
-        caption = "みんなの基準を合わせました";
+        caption = "みんなの拍を合わせました";
 
         /*
         リードランナーの音がまだ鳴っている時は、そのことを2行目に
         添えます(v226)。ほかの人がまだ叩いているので、ここで止めずに
         「決定」まで鳴らし続けるためです。
+        決定した後に鳴っているのは、④の「もう一度カチッを鳴らす」です(v228)。
         音を止めた知らせ(3分の保険)があれば、そちらを出します。
         */
-        if(playing){
+        if(playing && decided){
+            caption += "<br>🔊 もう一度鳴らしています(④で止められます)";
+        }
+        else if(playing){
             caption += "<br>🔊 「決定」まで鳴らし続けます";
         }
         else if(syncState.clockNotice){
@@ -3083,7 +3276,7 @@ function refreshSyncClockStep(){
             このまま使うと、拍が合わないまま走り出してしまいます。
             */
             sub = "⚠️ スマホが眠った等で、<br>" +
-                  "時計が狂ったおそれがあります。<br>" +
+                  "拍がずれたおそれがあります。<br>" +
                   "「合わせ直す」を押してください";
 
         }
@@ -3307,10 +3500,7 @@ performance.now()(ページを開いてからの経過時間)の方が確かな�
 */
 
 /**
- * 時刻を「19:52:07」の形にします(その土地の時刻)。
- *
- * みんなの時計(v227)も Date.now() と同じ数え方のミリ秒なので、
- * そのまま渡せます。
+ * 時刻を「19:52:07」の形にします(スマホの時計の、その土地の時刻)。
  *
  * @param  {number} ms - 時計のミリ秒(Date.now() と同じ数え方)
  * @return {string}
@@ -3338,12 +3528,14 @@ function formatSyncClock(ms){
  * だから竹弘の指定「残り10秒になったら20秒後の時刻に切り替える」が、
  * この1行で自然に成り立ちます。
  *
- * ⚠️ v227から、今の時刻には**みんなの時計**を渡します。全員が同じ時計で
- *    計算するので、ボタンの時刻が切り替わる瞬間も全員で揃います。
+ * ⚠️ スマホの時計は、スマホごとに数秒ずれることがあります(竹弘の実機で
+ *    1.8秒)。同じ時刻のボタンを押しても、曲の始まりはそのぶんずれます。
+ *    **拍は③の基準で揃うので、足は揃います**(冒頭の【v227の失敗と、
+ *    v228の考え方】)。
  *
- * @param  {number} nowMs  - 今の時刻(みんなの時計)
+ * @param  {number} nowMs  - 今の時刻(Date.now())
  * @param  {number} minSec - 最低何秒後か
- * @return {number} 開始時刻(みんなの時計のミリ秒)
+ * @return {number} 開始時刻(Date.now() の物差しのミリ秒)
  */
 function getSyncStartTargetMs(nowMs,minSec){
 
@@ -3378,27 +3570,11 @@ function stopSyncClock(){
 }
 
 /**
- * 書き換えの予定を、今の時計の秒の境目に合わせ直します(v227)。
- *
- * みんなの時計が決まった(または変わった)直後に呼びます。書き換えは
- * 「次の秒の境目」に予約してあるので、時計そのものが変わると、
- * 予約がずれた境目を指したままになるためです。
- * 書き換えが止まっている時(画面を閉じている時)は何もしません。
- */
-function restartSyncClock(){
-
-    if(!syncClockTimerId){ return; }
-
-    tickSyncClock();
-
-}
-
-/**
  * 時計・ボタン・カウントダウンを書き換え、次の秒の境目に自分を予約し直します。
  *
  * ⚠️ v226までは setInterval で0.2秒ごとに書き換えていました。それだと
- *    各スマホがばらばらの瞬間に書き換えるので、秒がめくれる瞬間が
- *    最大0.25秒ほど食い違って見えました(冒頭の【みんなの時計】)。
+ *    スマホの時計の秒が変わってから画面に出るまで、最大0.2秒遅れました
+ *    (SYNC_CLOCK_TICK_MARGIN_MS のコメント)。
  *
  * 【次の境目までの待ち時間の求め方】
  *
@@ -3411,7 +3587,7 @@ function restartSyncClock(){
  */
 function tickSyncClock(){
 
-    const nowMs = getSyncDisplayNowMs();
+    const nowMs = Date.now();
 
     /*
     先に次の予約を入れてから、書き換えます。
@@ -3420,12 +3596,7 @@ function tickSyncClock(){
     増えた時の用心です。予約を後から入れる順番だと、止めたはずの見回りが
     その直後に復活してしまいます。今の書き換え(時刻ボタン・カウントダウン・
     基準の行)は、どれも見回りを止めません。
-
-    clearTimeout は、もう動き終わった予約に使っても何も起きません。
-    restartSyncClock() から呼ばれた時に、前の予約を二重に残さないための
-    1行です。
     */
-    clearTimeout(syncClockTimerId);
 
     // 1秒の中の位置(0〜999ms)。% は負の数で負を返すので、0以上に直します
     const inSecondMs = ((nowMs % 1000) + 1000) % 1000;
@@ -3439,7 +3610,7 @@ function tickSyncClock(){
     refreshSyncCountdown(nowMs);
 
     /*
-    「◯分前に合わせました」と、時計が狂っていないかの点検も、
+    「◯分前に合わせました」と、拍がずれていないかの点検も、
     ここで書き直します(v227。開いたままでも古い表示が残らないように)。
     */
     refreshSyncAnchorLine();
@@ -3453,7 +3624,7 @@ function tickSyncClock(){
  *    (data-target-ms)です。押した瞬間に計算し直すと、切り替わりの
  *    境目で「見ていた時刻と違う時刻」で始まってしまうためです。
  *
- * @param {number} nowMs - 今の時刻(みんなの時計。v227)
+ * @param {number} nowMs - 今の時刻(Date.now())
  */
 function refreshSyncStartButtons(nowMs){
 
@@ -3482,17 +3653,17 @@ function refreshSyncStartButtons(nowMs){
  * 開始時刻を過ぎても始まらない時(画面が消えてタイマーが止められた等)は、
  * 諦めて知らせます(いつまでも「あと0秒」のまま待たせないように)。
  *
- * @param {number} nowMs - 今の時刻(みんなの時計。v227)
+ * @param {number} nowMs - 今の時刻(Date.now())
  */
 function refreshSyncCountdown(nowMs){
 
     if(!syncCountdown){ return; }
 
-    const restSec = Math.max(0,Math.ceil((syncCountdown.targetSharedMs - nowMs) / 1000));
+    const restSec = Math.max(0,Math.ceil((syncCountdown.targetWallMs - nowMs) / 1000));
 
     if(syncCountdownRestEl){ syncCountdownRestEl.textContent = String(restSec); }
 
-    if(nowMs > syncCountdown.targetSharedMs + SYNC_LATE_GIVEUP_MS){
+    if(nowMs > syncCountdown.targetWallMs + SYNC_LATE_GIVEUP_MS){
 
         console.warn("同期モード ③ 開始時刻を過ぎても始まらなかったので取りやめました");
 
@@ -3508,7 +3679,7 @@ function refreshSyncCountdown(nowMs){
 function refreshSyncStartStep(){
 
     /*
-    ③(みんなの時計)が決まるまで④は見せません(v225)。
+    ③(みんなの拍)が決まるまで④は見せません(v225)。
     基準が無いと、いつスタートすればよいかが決められないためです。
     */
     if(syncStepStartEl){
@@ -3532,7 +3703,7 @@ function refreshSyncStartStep(){
     if(counting){
 
         if(syncCountdownTargetEl){
-            syncCountdownTargetEl.textContent = formatSyncClock(syncCountdown.targetSharedMs);
+            syncCountdownTargetEl.textContent = formatSyncClock(syncCountdown.targetWallMs);
         }
 
         /*
@@ -3543,30 +3714,46 @@ function refreshSyncStartStep(){
             syncCountdownPlanEl.textContent = syncCountdown.planText || "曲を準備しています…";
         }
 
-        refreshSyncCountdown(getSyncDisplayNowMs());
+        refreshSyncCountdown(Date.now());
 
     }
+
+    // ---- みんなの拍ランプと、リードの「もう一度カチッを鳴らす」(v228) ----
+
+    if(isSyncLampWanted()){
+        startSyncBeatLamp();
+    }
+    else{
+        stopSyncBeatLamp();
+    }
+
+    refreshSyncReplayBox(counting);
 
     if(syncStartGuideEl){
 
         syncStartGuideEl.innerHTML = counting
             ? "やめると、時刻を選び直せます"
-            : (syncState.startNotice || "押した時刻に、みんなの曲が<br>一斉にスタートします");
+            /*
+            v228で「みんなの曲が一斉にスタートします」から変えました。
+            スマホの時計は数秒ずれることがあり、曲の始まりは一斉とは
+            限らないためです(揃うのは拍)。
+            */
+            : (syncState.startNotice || "押した時刻に曲がスタートし、<br>みんなの拍が揃います");
 
     }
 
 }
 
 /**
- * ④の上の「みんなの時計 : ◯分前に合わせました」の行を書き換えます。
+ * ④の上の「みんなの拍 : ◯分前に合わせました」の行を書き換えます。
  *
  * v227で refreshSyncStartStep() から切り出しました。秒ごとの見回り
- * (tickSyncClock)からも呼んで、「◯分前」と「時計が狂っていないか」を
+ * (tickSyncClock)からも呼んで、「◯分前」と「拍がずれていないか」を
  * 画面を開いたままでも新しくしておくためです。
  *
  * 出し分け(上ほど優先):
  *
- *     狂ったおそれ … スマホが眠った等(isSyncAnchorDrifted)。拍が合わなく
+ *     ずれたおそれ … スマホが眠った等(isSyncAnchorDrifted)。拍が合わなく
  *                    なるので、いちばん強く合わせ直しを勧めます
  *     古い         … 合わせてから2時間以上(isSyncAnchorStale)
  *     ふつう       … いつ合わせたかだけ
@@ -3587,22 +3774,232 @@ function refreshSyncAnchorLine(){
 
         syncAnchorStateEl.innerHTML =
             "⚠️ スマホが眠った等で、<br>" +
-            "みんなの時計が狂ったおそれがあります。<br>" +
+            "拍がずれたおそれがあります。<br>" +
             "③の「合わせ直す」を押してください";
 
     }
     else if(isSyncAnchorStale()){
 
         syncAnchorStateEl.innerHTML =
-            "⚠️ みんなの時計 : " + buildSyncAnchorAgeText() +
+            "⚠️ みんなの拍 : " + buildSyncAnchorAgeText() +
             "<br>そろそろ ③ で合わせ直すと確実です";
 
     }
     else{
 
-        syncAnchorStateEl.innerHTML = "みんなの時計 : " + buildSyncAnchorAgeText();
+        syncAnchorStateEl.innerHTML = "みんなの拍 : " + buildSyncAnchorAgeText();
 
     }
+
+}
+
+/**
+ * 「みんなの拍ランプ」を光らせてよい状態か(v228)。
+ *
+ * 同期モードの画面が開いていて、④が出ていて(①②③が決まっている)、
+ * 基準がある時だけです。画面を閉じた後まで光り続けないよう、光らせる
+ * たびにここで確かめます。
+ */
+function isSyncLampWanted(){
+
+    return !!syncPanelEl && syncPanelEl.style.display === "flex" &&
+           !!syncStepStartEl && syncStepStartEl.style.display !== "none" &&
+           syncAnchorPerfMs !== null;
+
+}
+
+/**
+ * 「みんなの拍ランプ」を光らせ始めます(v228)。
+ *
+ * 【何を見せるランプか】
+ *
+ * ③で合わせた拍(基準 + 1拍 × n)のたびに、同じ強さで1回光ります。
+ * 全員のスマホを並べて、**リードランナーのランプと一緒に光っていれば、
+ * 拍は合っています。** ずれて光る人は、③の叩き方がうまくいかなかったので、
+ * 「合わせ直す」で叩き直してもらいます(竹弘の案、2026-10-04)。
+ *
+ * ⚠️ 強弱は付けません(竹弘の判断:「拍は合っているのに強弱のタイミングが
+ *    合っていないと、強弱も合わせないとと不安になる。右足・左足から
+ *    踏み出すかは重要でないのと同じ」)。
+ *
+ * ⚠️ ②の「ピッに合わせて画面を光らせてはいけない」とは別の話です。
+ *    あちらは測っている最中に目で合わせてしまうのを防ぐためで、④は
+ *    測り終わった後なので光らせて構いません。ただし③を叩き直す人には
+ *    「画面は見ずに、耳だけで」と出しています(人のランプに目で合わせない)。
+ */
+function startSyncBeatLamp(){
+
+    if(syncLampTimerId){ return; }
+
+    scheduleSyncBeatLamp();
+
+}
+
+/**
+ * 次の拍に光るよう、1回だけ予約します(v228)。
+ *
+ * 【次の拍の求め方】
+ *
+ *     基準から今までに何拍ぶん進んだか = (今 − 基準) ÷ 1拍
+ *     それを四捨五入して1を足したものが、次に光らせる拍の番号
+ *
+ * 四捨五入にしているのは、光らせた直後に呼ばれた時のためです。タイマーは
+ * 待ち時間を整数msに切り捨てるので、拍の瞬間よりわずかに早く起きることが
+ * あります。切り捨て(Math.floor)で数えると「まだ同じ拍の手前」と数えて、
+ * 同じ拍で2回光ってしまいます。
+ */
+function scheduleSyncBeatLamp(){
+
+    const beatMs = 60000 / syncState.pitch;
+
+    const nowMs = performance.now();
+
+    const index = Math.round((nowMs - syncAnchorPerfMs) / beatMs) + 1;
+
+    const nextMs = syncAnchorPerfMs + index * beatMs;
+
+    syncLampTimerId = setTimeout(flashSyncBeatLamp,Math.max(0,nextMs - nowMs));
+
+}
+
+/**
+ * ランプを1回光らせて、次の拍を予約します(v228)。
+ *
+ * 光り方は CSS のアニメーション(.sync-beat-on)に任せます。同じ印を
+ * 付け直してもアニメーションは最初からやり直さないので、いったん外して、
+ * offsetWidth を読んで(ブラウザに「今の見た目」を確定させて)から
+ * 付け直します。こうするとアニメーションが毎回最初から動きます。
+ */
+function flashSyncBeatLamp(){
+
+    syncLampTimerId = 0;
+
+    if(!isSyncLampWanted()){ return; }
+
+    if(syncBeatLampEl){
+
+        syncBeatLampEl.classList.remove("sync-beat-on");
+
+        void syncBeatLampEl.offsetWidth;
+
+        syncBeatLampEl.classList.add("sync-beat-on");
+
+    }
+
+    scheduleSyncBeatLamp();
+
+}
+
+/**
+ * ランプを止めます(v228。画面を閉じた時・スタートした時など)。
+ */
+function stopSyncBeatLamp(){
+
+    if(syncLampTimerId){
+
+        clearTimeout(syncLampTimerId);
+
+        syncLampTimerId = 0;
+
+    }
+
+    if(syncBeatLampEl){ syncBeatLampEl.classList.remove("sync-beat-on"); }
+
+}
+
+/**
+ * リードだけに見せる「🔊 もう一度カチッを鳴らす」の枠を書き換えます(v228)。
+ *
+ * 見せるのは、このスマホがリードで(isSyncLeadPhone)、④が出ていて、
+ * カウントダウン中でない時です。カウントダウンが始まったらカチッは
+ * 止めるので(scheduleSyncStart)、ボタンも隠します。
+ *
+ * @param {boolean} counting - カウントダウン中か
+ */
+function refreshSyncReplayBox(counting){
+
+    if(!syncReplayBoxEl){ return; }
+
+    const startShown = !!syncStepStartEl && syncStepStartEl.style.display !== "none";
+
+    const visible = startShown && !counting && isSyncLeadPhone() && syncAnchorPerfMs !== null;
+
+    syncReplayBoxEl.style.display = visible ? "" : "none";
+
+    if(!visible){ return; }
+
+    // 決定した後に鳴っている = 「もう一度カチッを鳴らす」で鳴らしている最中
+    const replaying = (syncClockBeepTimerId !== 0);
+
+    if(syncReplayBtn){
+
+        syncReplayBtn.textContent = replaying ? "🔇 カチッを止める" : "🔊 もう一度カチッを鳴らす";
+
+        // 鳴らしている間は塗りつぶし(今は音が出ている、と一目で分かるように)
+        syncReplayBtn.classList.toggle("sync-btn-primary",replaying);
+
+    }
+
+    if(syncReplayNoteEl){
+
+        syncReplayNoteEl.innerHTML = replaying
+            ? "合わせ直す人が叩き終わったら<br>止めてください"
+            : (syncState.replayNotice ||
+               "ランプが合わない人がいたら押してください。<br>" +
+               "その人は ③ の「合わせ直す」で叩き直します");
+
+    }
+
+}
+
+/**
+ * 「🔊 もう一度カチッを鳴らす / 🔇 カチッを止める」が押された時(v228)。
+ *
+ * 竹弘の要望(2026-10-04):ランプがリードと合わない人だけ叩き直せるように、
+ * リードランナーはいつでもカチッを出せるように。
+ *
+ * 鳴らす前に、Bluetooth を切ってもらうポップを出します(③の「音を出す」と
+ * 同じ。askSyncClockRole のコメント)。止めた後は、イヤホンを付け直す
+ * ポップを出します(③の「決定」の後と同じ)。
+ */
+function toggleSyncReplay(){
+
+    if(!isSyncLeadPhone() || syncAnchorPerfMs === null){ return; }
+
+    if(syncClockBeepTimerId !== 0){
+
+        stopSyncClockBeeps();
+
+        syncState.replayNotice = "";
+
+        refreshSyncClockStep();
+
+        openSyncEarphoneDialog("ランプが合っているか、<br>もう一度確かめてください");
+
+        console.log("同期モード ④ もう一度鳴らしたカチッを止めました");
+
+        return;
+
+    }
+
+    openSyncDialog({
+        icon: "🔊",
+        title: "Bluetoothイヤホンを<br>切りましたか?",
+        message: SYNC_BLUETOOTH_OFF_TEXT,
+        okText: "鳴らす",
+        cancelText: "まだ",
+        onOk: function(){
+
+            syncState.replayNotice = startSyncLeadClicks()
+                ? ""
+                : "⚠️ 音を出す準備ができませんでした。<br>もう一度押してください";
+
+            refreshSyncClockStep();
+
+            console.log("同期モード ④ カチッをもう一度鳴らします(最初と同じリズムの位置で)");
+
+        }
+    });
 
 }
 
@@ -3619,14 +4016,14 @@ function handleSyncTimeButton(button){
     // ①②③が決まっていなければ、ここには来ないはずですが念のため
     if(!syncState.pitchDecided || !syncState.latencyDecided || syncState.latencyMs === null){ return; }
 
-    if(!syncState.clockDecided || syncAnchorPerfMs === null || syncAnchorLabelMs === null){ return; }
+    if(!syncState.clockDecided || syncAnchorPerfMs === null){ return; }
 
-    // ボタンに書いてある開始時刻(みんなの時計。refreshSyncStartButtons)
-    const targetSharedMs = Number(button.dataset.targetMs);
+    // ボタンに書いてある開始時刻(このスマホの時計。refreshSyncStartButtons)
+    const targetWallMs = Number(button.dataset.targetMs);
 
-    if(!isFinite(targetSharedMs)){ return; }
+    if(!isFinite(targetWallMs)){ return; }
 
-    scheduleSyncStart(targetSharedMs);
+    scheduleSyncStart(targetWallMs);
 
 }
 
@@ -3637,9 +4034,9 @@ function handleSyncTimeButton(button){
  *    画面を消さないお願い(Wake Lock)や、曲を載せる時のファイルの
  *    権限確認は、人の操作の中でないと断られることがあるためです。
  *
- * @param {number} targetSharedMs - 開始時刻(みんなの時計。v227)
+ * @param {number} targetWallMs - 開始時刻(このスマホの時計。Date.now() の物差し)
  */
-async function scheduleSyncStart(targetSharedMs){
+async function scheduleSyncStart(targetWallMs){
 
     /*
     この約束の目印です。準備の途中で「やめる」が押されると syncCountdown が
@@ -3648,9 +4045,16 @@ async function scheduleSyncStart(targetSharedMs){
     */
     const token = {};
 
+    /*
+    リードが「もう一度カチッを鳴らす」で鳴らしていたら、止めます(v228)。
+    みんなで時刻ボタンを押したということは、合わせ直しは済んだということ
+    です。止めないと、スタートした後も曲の上にカチッが鳴り続けます。
+    */
+    stopSyncClockBeeps();
+
     syncCountdown = {
         token:token,
-        targetSharedMs:targetSharedMs,
+        targetWallMs:targetWallMs,
         plan:null,
         planText:"",
         wPerfMs:0,
@@ -3715,37 +4119,29 @@ async function scheduleSyncStart(targetSharedMs){
     // ---- ③ いつ動くかを決めます ----
 
     /*
-    実際に合わせる先は、③で合わせた**みんなの基準**です(v225)。
+    ⚠️⚠️ **スマホの時計は「どの拍で走り出すか」を選ぶのにしか使いません**
+       (v225でここを作り替えました)。
+
+    実際に合わせる先は、③で合わせた**みんなの基準**です。
 
         みんなの拍 ＝ 基準 ＋ 1拍 × n
 
-    開始時刻以降で最初の拍を1つ選び、その瞬間に合わせます。
+    押された時刻以降で最初の拍を1つ選び、その瞬間に合わせます。**2台の
+    時計がずれていても、選ぶ拍がいくつか違うだけ**で、拍そのものは同じ
+    瞬間に来るので足は揃います(何拍目かは、右足か左足かの違いと同じで無害)。
 
-    ⚠️ v226までは、開始時刻を**各スマホの時計**で測っていました。2台の
-       時計が数十msずれていても、選ぶ拍が1つ違うだけで足は揃いましたが、
-       v227からは**みんなの時計**で測ります。
-
-    【みんなの時計なら、全員が必ず同じ拍を選ぶ】
-
-    みんなの時計では、基準の瞬間がちょうど「音の間隔の倍数」に来るよう
-    丸めてあります(finishSyncClockMeasure)。音の間隔は1拍か2拍
-    ちょうどなので、**拍はすべて「1拍の倍数」の時刻に並びます。**
-    開始時刻(10秒刻み)以降で最初の「1拍の倍数」は、どのスマホで
-    計算しても同じ瞬間です。
+    ⚠️ ただし時計が1.8秒ずれていれば(竹弘の実機 2026-10-04)、曲の始まりも
+       約1.8秒ずれます。拍は揃います(冒頭の【v227の失敗と、v228の考え方】)。
+       v227で「みんなの時計」を使って始まりまで揃えようとしましたが、
+       時計のずれが0.4秒を超えると成り立たないので、v228でこの形に戻しました。
     */
     const beatMs = 60000 / syncState.pitch;
 
-    // 開始時刻を、performance.now() の物差しに直します
-    const targetPerfMs = syncAnchorPerfMs + (targetSharedMs - syncAnchorLabelMs);
+    // 押された時刻を、performance.now() の物差しに直します
+    const targetPerfMs = performance.now() + (targetWallMs - Date.now());
 
-    /*
-    その時刻以降で最初の「みんなの拍」(基準から何拍目か)。
-
-    開始時刻がちょうど拍の上に来た時に、小数の誤差でスマホごとに選ぶ拍が
-    分かれないよう、ほんのわずか(0.001拍)手前に寄せてから切り上げます
-    (SYNC_START_STEP_EPSILON のコメント)。
-    */
-    const stepCount = Math.ceil((targetSharedMs - syncAnchorLabelMs) / beatMs - SYNC_START_STEP_EPSILON);
+    // その時刻以降で最初の「みんなの拍」
+    const stepCount = Math.ceil((targetPerfMs - syncAnchorPerfMs) / beatMs);
 
     const gridPerfMs = syncAnchorPerfMs + stepCount * beatMs;
 
@@ -3775,31 +4171,25 @@ async function scheduleSyncStart(targetSharedMs){
 
     refreshSyncStartStep();
 
-    /*
-    ⚠️ 「開始時刻との差」は v227 から**全員のスマホで同じ値**になるはずです
-       (上の【みんなの時計なら、全員が必ず同じ拍を選ぶ】)。2台のログで
-       食い違っていたら、みんなの時計が揃っていない合図です。
-       「基準から何拍目」は、各自が叩いた音が違うので食い違って当然です。
-    */
     console.log(
-        "同期モード ③ スタートを予約しました : 開始 " + formatSyncClock(targetSharedMs) + "(みんなの時計)",
+        "同期モード ③ スタートを予約しました : 開始 " + formatSyncClock(targetWallMs),
         "/ 遅延 " + syncState.latencyMs + "ms ぶん早く送り出す",
         "/ " + plan.text,
         (plan.silenceMs > 0 ? "/ 頭の前の無音 " + plan.silenceMs.toFixed(0) + "ms" : ""),
         "/ ピッチ " + syncState.pitch,
-        "/ みんなの拍に合わせる(基準から " + stepCount + "拍目 / 開始時刻との差 " +
+        "/ みんなの拍に合わせる(基準から " + stepCount + "拍目 / 押された時刻との差 " +
         formatSyncSignedMs(gridPerfMs - targetPerfMs) + ")",
         "/ あと " + ((wPerfMs - performance.now()) / 1000).toFixed(1) + "秒"
     );
 
     /*
-    時計が狂っていないかの点検(v227)。実機で「スマホが眠ると指の時計が
+    拍がずれていないかの点検(v227)。実機で「スマホが眠ると指の時計が
     止まるのか」を確かめるため、スタートのたびに必ず出します。
     */
     console.log(
         "同期モード ③ 時計の点検 : スマホの時計と指の時計の差の動き " +
         formatSyncSignedMs(getSyncAnchorDriftMs()) +
-        "(±" + SYNC_SHARED_DRIFT_WARN_MS + "ms を超えたら狂ったおそれ)"
+        "(±" + SYNC_SHARED_DRIFT_WARN_MS + "ms を超えたら拍がずれたおそれ)"
     );
 
 }
@@ -4229,6 +4619,10 @@ function finishSyncStart(){
     stopSyncClock();
     stopSyncTempoSound();
     stopSyncMeasure();
+
+    // 拍ランプと、リードのカチッも止めます(v228)
+    stopSyncBeatLamp();
+    stopSyncClockBeeps();
 
     syncRuler.stop();
 
@@ -4767,6 +5161,13 @@ function stopSyncTempoSound(){
     if(syncCountdownCancelBtn){
         syncCountdownCancelBtn.addEventListener("click",function(){
             cancelSyncCountdown("");
+        });
+    }
+
+    // ④ リードだけの「もう一度カチッを鳴らす / カチッを止める」(v228)
+    if(syncReplayBtn){
+        syncReplayBtn.addEventListener("click",function(){
+            toggleSyncReplay();
         });
     }
 
