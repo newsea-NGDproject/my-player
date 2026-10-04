@@ -52,13 +52,19 @@
                     ・③の役割ボタンと「決定」の後に、確認のポップ
                     ・④の時刻ボタンを4つから1つに
           (v227) … ④の時計を「みんなの時計」にしようとした → 失敗
-          (v228) … 「みんなの拍を合わせる」に作り直し ← いまここ
+          (v228) … 「みんなの拍を合わせる」に作り直し
                     ・③の名前を「みんなの拍を合わせる」に
                     ・④の時計は「このスマホの時計」と正直に出す
                     ・④に「みんなの拍ランプ」(毎拍、強弱なし)
                     ・リードだけに「🔊 もう一度カチッを鳴らす」
                     ・開き直した時は①②を決めたまま開く
                     (下の【v227の失敗と、v228の考え方】)
+          (v229) … 拍合わせ画面と、②の穴 ← いまここ
+                    ・④の小さなランプを「👀 みんなの拍を見比べる」画面に
+                      (画面の縁が太く光る・DJ風モニタ・早める/遅らせるパッド)
+                    ・②③で12回に届かず止まった時に、黙って前の値に戻らない
+                    ・②③で盤の外を叩いたら一言出す
+                    (下の【v229 拍合わせ画面】)
      段④        … 薄暗いロック画面・走行タイマー・イヤホン操作・時刻からの再開
 
 ----------------------------------------------------------------------
@@ -143,6 +149,50 @@
     機種や明るさで違う)が消せず精度が落ちるので採らなかった
     (竹弘と合意、2026-10-04)。叩く方式には「②と③を同じ人が同じ癖で
     叩くので、早めに叩く癖が打ち消し合う」という長所もあります。
+
+----------------------------------------------------------------------
+
+【v229 拍合わせ画面】
+
+ 竹弘の要望(2026-10-04):
+
+     「拍のランプが小さくてわかりにくいので、一時的に画面遷移しても
+       構わないので、スマホ画面の縁を少し太めのラインで光らせる。
+       みんなでスマホを並べて、拍が合ってるかを確認する。
+       タップ補正と同じように微調整画面を用意して、遅延補正のボタンを
+       押し、スマホ同士の拍を完全に合わせる」
+     「デザインは、DJ風の大きいモニタとパッドボタンのみのテーブル」
+
+ → ④の「👀 みんなの拍を見比べる」で、全画面の拍合わせ画面を開きます。
+
+     画面の縁   … 聴き合わせた音の間隔(③と同じ。140なら0.86秒)ごとに光る
+                  (毎拍だと速すぎて、何台も同時に見比べられないため)
+     モニタ     … 拍の印が中央の線へ流れてくる(DJソフトの波形の見せ方)。
+                  線に重なった瞬間に縁が光る。③の位置は薄い印で残す
+     メーター   … ③で叩いた位置から、どれだけ早めた/遅らせたか
+     パッド     … ◀ 早める 50 / 10 、遅らせる 10 / 50 ▶(合わせる人だけ)
+                  「③の位置に戻す」で0に戻る
+
+ ⚠️ 正直な限界が2つあります(竹弘に説明済み)。
+    ・スマホは相手の拍を知らないので、「リードとの差」は表示できません。
+      見比べるのは人の目です。モニタが示すのは「自分がどれだけ動かしたか」
+    ・画面が光るまでの遅れはスマホごとに数十ms違うので、目で合わせられる
+      精度は ±20〜30ms くらい。叩き損ね(150〜200msずれる)を直すには十分
+
+ ⚠️⚠️ **縁が光るのは「③で叩いた瞬間」なので、その人の叩き癖が出ます。**
+    曲の拍は「②の遅延」と「③の基準」の両方に同じ叩き癖が入って打ち消し
+    合うので、**光が10〜30msずれていても、耳に届く曲の拍は揃っています。**
+    その小さなずれまで目で直すと、かえって曲がずれます(2台の模擬テストで
+    確かめた:叩き損ねを目で直すと、曲の差は2人の叩き癖の差30msぶん残る)。
+    → 画面には「ほんの少しのずれは普通。はっきりずれている時だけ直す」と
+      出しています。目で直すのは叩き損ね(大きなずれ)のためのものです。
+
+ ⚠️ 早める/遅らせるは、基準(syncAnchorPerfMs)そのものを動かします。
+    曲の送り出しもこの基準から決まるので、目で揃えた拍がそのまま
+    曲の拍になります。③で叩いた元の位置は syncAnchorTapPerfMs に残します。
+
+ ⚠️ リードランナーのスマホにはパッドを出しません(竹弘と合意)。リードは
+    基準なので、リードが動かすと全員が合わせ直しになるためです。
 ================================================================
 */
 
@@ -343,14 +393,36 @@ const SYNC_START_GRID_SEC = 10;
 const SYNC_CLOCK_TICK_MARGIN_MS = 15;
 
 /*
-「みんなの拍ランプ」を1回光らせる長さ(ms。v228)。
+拍合わせ画面の縁を1回光らせる長さ(ms。v228で「拍ランプ」として作り、
+v229で画面の縁に移した)。
 
-拍ごとに光って、この長さで消えます。140なら1拍は約430msなので、
-その3分の1くらいにしています(光っている時間が長すぎると、どこが
-拍の頭なのか見分けにくくなるため)。⚠️ c014.html の
-.sync-beat-lamp.sync-beat-on の animation の長さと同じ値にすること。
+光って、この長さで消えます。点滅の間隔(140なら0.86秒)に対して短めに
+しています(光っている時間が長すぎると、どこが拍の頭なのか見分けにくく
+なるため)。⚠️ c014.html の .sync-beat-frame.sync-beat-on の animation の
+長さと同じ値にすること。
 */
-const SYNC_LAMP_FLASH_MS = 140;
+const SYNC_LAMP_FLASH_MS = 160;
+
+/*
+拍合わせ画面のパッドで、1回に動かす量(ms。v229)。
+
+    SYNC_NUDGE_SMALL_MS … 「10」のパッド。細かく合わせる
+    SYNC_NUDGE_LARGE_MS … 「50」のパッド。叩き損ね(150〜200msずれる)を
+                          3〜4回で戻せる大きさ
+
+竹弘と決めた値です(2026-10-04)。±1 は目に見えない(人が光の一瞬を
+見分けられるのは20〜30msくらいから)ので置いていません。
+*/
+const SYNC_NUDGE_SMALL_MS = 10;
+const SYNC_NUDGE_LARGE_MS = 50;
+
+/*
+拍合わせ画面のモニタに、印を何周期ぶん見せるか(中央の線から左右それぞれ)。
+
+1.5周期なら、中央の線へ向かってくる印が常に1〜2個見えます。少なすぎると
+次の印が来るのが予想できず、多すぎると印が詰まって見分けにくくなります。
+*/
+const SYNC_FLOW_VIEW_PERIODS = 1.5;
 
 /*
 リードランナーに Bluetooth を切ってもらう時の説明(v228)。
@@ -650,10 +722,28 @@ let syncLeadGridPerfMs = null;
 let syncLeadGridPeriodMs = 0;
 
 /*
-「みんなの拍ランプ」を光らせる見回り係(setTimeout の受付番号。v228)。
-止まっている間は0。
+拍合わせ画面の縁を光らせる見回り係(setTimeout の受付番号。v228で
+「拍ランプ」として作り、v229で縁に移した)。止まっている間は0。
 */
 let syncLampTimerId = 0;
+
+/*
+③で叩いて求めた、元の基準(v229)。
+
+拍合わせ画面で「早める/遅らせる」を押すと、基準(syncAnchorPerfMs)
+そのものを動かします。動かす前の位置をここに残しておき、
+
+    syncAnchorPerfMs = syncAnchorTapPerfMs + syncAnchorNudgeMs
+
+の関係を保ちます。「③の位置に戻す」は syncAnchorNudgeMs を0にするだけです。
+*/
+let syncAnchorTapPerfMs = null;
+
+// 早めた(マイナス)/遅らせた(プラス)量の合計(ms。v229)
+let syncAnchorNudgeMs = 0;
+
+// 拍合わせ画面のモニタを描き続ける係(requestAnimationFrame の受付番号。v229)
+let syncFlowRafId = 0;
 
 // 叩いた時刻の並び
 let syncClockTaps = [];
@@ -886,17 +976,52 @@ v226で4つから1つに減らしましたが(c014.html の④の説明)、HTML�
 const syncTimeBtnEls = document.querySelectorAll("#sync-step-start .sync-time-btn");
 
 /*
-④の「みんなの拍ランプ」と、リードだけの「もう一度カチッを鳴らす」(v228)。
+④のリードだけの「もう一度カチッを鳴らす」(v228)。
 
-    #sync-beat-lamp    … 拍ごとに光るランプ(光り方は CSS の .sync-beat-on)
     #sync-replay-box   … リードだけに見せる枠(ボタンと説明)
     #sync-replay-btn   … 🔊 もう一度カチッを鳴らす / 🔇 カチッを止める
     #sync-replay-note  … その下の説明
+
+⚠️ v228の小さな「みんなの拍ランプ」(#sync-beat-lamp)は、v229で
+   拍合わせ画面(下)に置き換えました(竹弘「小さくてわかりにくい」)。
 */
-const syncBeatLampEl = document.getElementById("sync-beat-lamp");
 const syncReplayBoxEl = document.getElementById("sync-replay-box");
 const syncReplayBtn = document.getElementById("sync-replay-btn");
 const syncReplayNoteEl = document.getElementById("sync-replay-note");
+
+// ④の「👀 みんなの拍を見比べる」ボタン(v229)
+const syncBeatOpenBtn = document.getElementById("sync-beat-open-btn");
+
+/*
+拍合わせ画面(v229)。#sync-panel の中の全画面です。
+
+    #sync-beat-screen      … 画面ぜんたい
+    #sync-beat-frame       … 光る縁(光り方は CSS の .sync-beat-on)
+    #sync-beat-mon-bpm     … モニタの右上の「BPM70」
+    #sync-beat-flow        … 拍の印が流れる canvas
+    #sync-nudge-mark       … メーターの「今の位置」の印
+    #sync-nudge-value      … メーターの大きな数字(−30ms など)
+    #sync-nudge-caption    … その下の一言
+    #sync-nudge-box        … 合わせる人だけのパッドの枠
+    .sync-nudge-pad        … パッド(data-nudge に動かす量)
+    #sync-nudge-reset-btn  … ③の位置に戻す
+    #sync-beat-lead-box    … リードだけの枠(説明と「もう一度カチッを鳴らす」)
+    #sync-beat-replay-btn  … ④の #sync-replay-btn と同じ働きのボタン
+    #sync-beat-close-btn   … 終わる
+*/
+const syncBeatScreenEl = document.getElementById("sync-beat-screen");
+const syncBeatFrameEl = document.getElementById("sync-beat-frame");
+const syncBeatMonBpmEl = document.getElementById("sync-beat-mon-bpm");
+const syncBeatFlowEl = document.getElementById("sync-beat-flow");
+const syncNudgeMarkEl = document.getElementById("sync-nudge-mark");
+const syncNudgeValueEl = document.getElementById("sync-nudge-value");
+const syncNudgeCaptionEl = document.getElementById("sync-nudge-caption");
+const syncNudgeBoxEl = document.getElementById("sync-nudge-box");
+const syncNudgePadEls = document.querySelectorAll("#sync-beat-screen .sync-nudge-pad");
+const syncNudgeResetBtn = document.getElementById("sync-nudge-reset-btn");
+const syncBeatLeadBoxEl = document.getElementById("sync-beat-lead-box");
+const syncBeatReplayBtn = document.getElementById("sync-beat-replay-btn");
+const syncBeatCloseBtn = document.getElementById("sync-beat-close-btn");
 
 const syncCountdownTargetEl = document.getElementById("sync-countdown-target");
 const syncCountdownRestEl = document.getElementById("sync-countdown-rest");
@@ -1174,8 +1299,8 @@ function closeSyncPanel(){
 
     stopSyncClock();
 
-    // 拍ランプも止めます(v228。画面が隠れた後まで光り続けないように)
-    stopSyncBeatLamp();
+    // 拍合わせ画面も閉じます(v229。画面が隠れた後まで光り続けないように)
+    closeSyncBeatScreen();
 
     syncPanelEl.style.display = "none";
 
@@ -1485,9 +1610,13 @@ function refreshSyncLatencyStep(){
 
         /*
         途中で止まった時などの知らせがあれば、説明の代わりに出します。
+
+        「(このタップは数えません)」は v229 で足しました。測りはじめる
+        合図のタップを1回目と数えて「12回叩いたのに終わらない」となるのを
+        防ぐためです(竹弘の報告「測り直すと1回目が反映されない」の一因)。
         */
         sub = syncState.latencyNotice ||
-              "押すと ピッ が鳴り始めます。<br>" +
+              "押すと ピッ が鳴り始めます(このタップは数えません)。<br>" +
               "一緒に走る時のイヤホンで測ってください";
 
     }
@@ -1496,7 +1625,10 @@ function refreshSyncLatencyStep(){
         big = String(syncMeasureTaps.length);
         small = "/ " + SYNC_LATENCY_TAPS;
 
-        caption = "ピッに合わせてタップ";
+        // まだ1回も数えていない時は「ここから12回」と分かる言い方にします(v229)
+        caption = (syncMeasureTaps.length === 0)
+            ? "ピッが鳴ったら、ここから" + SYNC_LATENCY_TAPS + "回タップ"
+            : "ピッに合わせてタップ";
 
         /*
         v223で1行目を「音を待たずに、リズムに乗って」に変えました。
@@ -1510,8 +1642,10 @@ function refreshSyncLatencyStep(){
         「1〜4回目はならし」の案内は、左上のモニタ(WARM-UP / MEASURE)に
         移しました。
         */
-        sub = "音を待たずに、リズムに乗って叩いてください<br>" +
-              "画面は見ずに、耳だけで合わせましょう";
+        // 盤の外を叩いた時の一言があれば、そちらを出します(v229)
+        sub = syncState.latencyNotice ||
+              ("音を待たずに、リズムに乗って叩いてください<br>" +
+               "画面は見ずに、耳だけで合わせましょう");
 
     }
     else{
@@ -1527,7 +1661,20 @@ function refreshSyncLatencyStep(){
         caption = (syncState.latencyFromSaved ? "前回測った値は" : "あなたのBluetooth遅延の値は") +
                   "<br><b>" + syncState.latencyMs + "ms</b> です";
 
-        if(syncState.latencyFromSaved){
+        if(syncState.latencyNotice){
+
+            /*
+            測り直しが途中で止まり、前の値に戻った時(v229)。
+
+            ⚠️ v228までは、ここで知らせを出していませんでした。測り直しが
+               12回に届かずに止まると、**前の値の姿に黙って戻り**、新しく
+               測った結果が反映されなかったように見えました(竹弘の報告
+               2026-10-04「測り直すと1回目が反映されない」)。
+            */
+            sub = syncState.latencyNotice;
+
+        }
+        else if(syncState.latencyFromSaved){
 
             sub = "イヤホンが同じなら、<br>このまま使えます";
 
@@ -1796,7 +1943,25 @@ function isSyncPlatterHit(event){
  */
 function handleSyncPadPress(event){
 
-    if(!isSyncPlatterHit(event)){ return; }
+    if(!isSyncPlatterHit(event)){
+
+        /*
+        測っている最中に盤の外を叩いたら、数えないことを一言知らせます(v229)。
+        黙って数えないと、12回叩いたつもりで11回止まりになり、「測ったのに
+        反映されない」と見えるためです(竹弘の報告 2026-10-04)。
+        */
+        if(syncState.latencyPhase === "measuring" && !syncState.latencyDecided){
+
+            syncState.latencyNotice = "⚠️ 盤(丸いレコード)の上をタップしてください<br>" +
+                                      "盤の外は数えません";
+
+            refreshSyncLatencyStep();
+
+        }
+
+        return;
+
+    }
 
     if(syncState.latencyDecided){ return; }
 
@@ -1827,6 +1992,9 @@ function handleSyncPadPress(event){
     noteSyncClockOffset();
 
     syncMeasureTaps.push(tappedMs);
+
+    // 盤の上を叩けたので、「盤の外」の一言は消します(v229)
+    syncState.latencyNotice = "";
 
     /*
     叩いた手ごたえ(レコードの沈み + サンプラーの光)を出します。
@@ -1921,7 +2089,14 @@ function scheduleSyncBeeps(){
     */
     if(syncBeepCount >= SYNC_LATENCY_MAX_BEEPS){
 
-        abortSyncMeasure("途中で止まりました。<br>もう一度タップしてください");
+        /*
+        前の値がある時(測り直しの時)は、前の値の姿に戻ることをはっきり
+        伝えます(v229。refreshSyncLatencyStep の done の知らせ)。
+        */
+        abortSyncMeasure((syncState.latencyMs !== null)
+            ? "⚠️ 途中で止まりました(" + SYNC_LATENCY_TAPS + "回に届きませんでした)。<br>" +
+              "前の値のままです。もう一度「測り直す」を押してください"
+            : "途中で止まりました。<br>もう一度タップしてください");
 
         console.log("同期モード ② ピッが" + SYNC_LATENCY_MAX_BEEPS + "回鳴っても叩き終わらなかったので止めました");
 
@@ -2022,8 +2197,13 @@ function abortSyncMeasure(notice){
     syncState.latencyPhase = (syncState.latencyMs !== null) ? "done" : "idle";
 
     /*
-    知らせは「最初の姿」の時だけ出せます(値の姿では説明の欄を値の
-    説明に使うため)。値が無い時にしか途中で止まることは無いので十分です。
+    知らせは、最初の姿でも値の姿でも出します(v229)。
+
+    ⚠️ v228までは「知らせは最初の姿の時だけ出せる。値が無い時にしか途中で
+       止まることは無いので十分」としていましたが、**誤りでした。**
+       「測り直す」の後は前の値があるので、途中で止まると値の姿に戻り、
+       知らせが出ないまま前の値が表示されていました(竹弘の報告
+       2026-10-04「測り直すと1回目が反映されない」)。
     */
     syncState.latencyNotice = notice;
 
@@ -2278,6 +2458,9 @@ function decideSyncLatency(){
     if(syncState.latencyMs === null){ return; }
 
     syncState.latencyDecided = true;
+
+    // 「途中で止まりました」などの知らせは、決定したら役目を終えます(v229)
+    syncState.latencyNotice = "";
 
     refreshSyncLatencyStep();
 
@@ -2850,7 +3033,21 @@ function stopSyncClockBeeps(){
 function handleSyncClockPad(event){
 
     // 盤(プラッター)の上を押した時だけ反応します(v226。②と同じ)
-    if(!isSyncPlatterHit(event)){ return; }
+    if(!isSyncPlatterHit(event)){
+
+        // 叩いている最中なら、盤の外は数えないことを一言知らせます(v229。②と同じ)
+        if(syncState.clockPhase === "measuring" && !syncState.clockDecided){
+
+            syncState.clockNotice = "⚠️ 盤(丸いレコード)の上をタップしてください<br>" +
+                                    "盤の外は数えません";
+
+            refreshSyncClockStep();
+
+        }
+
+        return;
+
+    }
 
     if(syncState.clockDecided){ return; }
 
@@ -2882,6 +3079,9 @@ function handleSyncClockPad(event){
     if(last !== undefined && tappedMs - last < SYNC_LATENCY_DEBOUNCE_MS){ return; }
 
     syncClockTaps.push(tappedMs);
+
+    // 盤の上を叩けたので、「盤の外」の一言は消します(v229)
+    syncState.clockNotice = "";
 
     flashSyncDeck(syncClockPadEl,syncClockSamplerEls,syncClockTaps.length);
 
@@ -2930,6 +3130,10 @@ function finishSyncClockMeasure(){
     const result = computeSyncTapPhase(used,used[0],periodMs,-periodMs / 2);
 
     syncAnchorPerfMs = used[0] + result.phaseMs;
+
+    // 叩いた元の位置を残し、早める/遅らせるの量は0から(v229)
+    syncAnchorTapPerfMs = syncAnchorPerfMs;
+    syncAnchorNudgeMs = 0;
     syncAnchorPeriodMs = periodMs;
     syncAnchorTakenAtMs = Date.now();
 
@@ -3053,6 +3257,13 @@ function redoSyncClock(){
     syncAnchorPerfMs = null;
     syncAnchorPeriodMs = 0;
     syncAnchorTakenAtMs = 0;
+
+    // 叩いた元の位置と、早める/遅らせるの量も捨てます(v229)
+    syncAnchorTapPerfMs = null;
+    syncAnchorNudgeMs = 0;
+
+    // 基準が無いと拍合わせ画面は使えないので、開いていたら閉じます(v229)
+    closeSyncBeatScreen();
 
     // 「眠ったか」の点検の控えも捨てます(v227)
     syncAnchorWallOffsetMs = 0;
@@ -3240,8 +3451,10 @@ function refreshSyncClockStep(){
             ? "🔊 鳴らしています。みんなでタップ"
             : "👂 聴こえる音に合わせてタップ";
 
-        sub = "音を待たずに、リズムに乗って叩いてください<br>" +
-              "画面は見ずに、耳だけで合わせましょう";
+        // 盤の外を叩いた時の一言があれば、そちらを出します(v229)
+        sub = syncState.clockNotice ||
+              ("音を待たずに、リズムに乗って叩いてください<br>" +
+               "画面は見ずに、耳だけで合わせましょう");
 
     }
     else{
@@ -3718,16 +3931,18 @@ function refreshSyncStartStep(){
 
     }
 
-    // ---- みんなの拍ランプと、リードの「もう一度カチッを鳴らす」(v228) ----
+    // ---- 「👀 みんなの拍を見比べる」と、リードの「もう一度カチッを鳴らす」(v228・v229) ----
 
-    if(isSyncLampWanted()){
-        startSyncBeatLamp();
-    }
-    else{
-        stopSyncBeatLamp();
-    }
+    /*
+    カウントダウン中は拍合わせ画面を開けません。開くと時刻のボタンや
+    「やめる」が隠れてしまうためです。
+    */
+    if(syncBeatOpenBtn){ syncBeatOpenBtn.style.display = counting ? "none" : ""; }
 
     refreshSyncReplayBox(counting);
+
+    // 拍合わせ画面が開いていれば、その中の見た目も今の状態に合わせます
+    refreshSyncBeatScreen();
 
     if(syncStartGuideEl){
 
@@ -3793,39 +4008,279 @@ function refreshSyncAnchorLine(){
 
 }
 
+// ==========================================================
+// 5-3b. 拍合わせ画面(v229)
+// ==========================================================
+/*
+📘 何をする画面かは、冒頭の【v229 拍合わせ画面】。
+
+画面は #sync-panel の中に置いた全画面です(確認のポップと同じ考え方。
+中に置かないと暁色が届かない)。z-index はポップより1つ下にしてあるので、
+この画面から「もう一度カチッを鳴らす」を押した時のポップは手前に出ます。
+*/
+
 /**
- * 「みんなの拍ランプ」を光らせてよい状態か(v228)。
- *
- * 同期モードの画面が開いていて、④が出ていて(①②③が決まっている)、
- * 基準がある時だけです。画面を閉じた後まで光り続けないよう、光らせる
- * たびにここで確かめます。
+ * 拍合わせ画面が開いているか(v229)。
  */
-function isSyncLampWanted(){
+function isSyncBeatScreenOpen(){
 
     return !!syncPanelEl && syncPanelEl.style.display === "flex" &&
-           !!syncStepStartEl && syncStepStartEl.style.display !== "none" &&
-           syncAnchorPerfMs !== null;
+           !!syncBeatScreenEl && syncBeatScreenEl.style.display !== "none";
 
 }
 
 /**
- * 「みんなの拍ランプ」を光らせ始めます(v228)。
+ * 拍合わせ画面の縁を光らせてよい状態か(v228の「拍ランプ」から引き継ぎ)。
  *
- * 【何を見せるランプか】
+ * 拍合わせ画面が開いていて、基準がある時だけです。画面を閉じた後まで
+ * 光り続けないよう、光らせるたびにここで確かめます。
+ */
+function isSyncLampWanted(){
+
+    return isSyncBeatScreenOpen() && syncAnchorPerfMs !== null;
+
+}
+
+/**
+ * 拍合わせ画面を開きます(④の「👀 みんなの拍を見比べる」。v229)。
+ */
+function openSyncBeatScreen(){
+
+    if(!syncBeatScreenEl){ return; }
+
+    // ③が決まっていないと基準が無いので、開きません(ボタンも④の中にしかない)
+    if(syncAnchorPerfMs === null || !syncState.clockDecided){ return; }
+
+    syncBeatScreenEl.style.display = "flex";
+
+    // 前に開いた時のスクロール位置が残らないよう、先頭に戻します
+    const inner = syncBeatScreenEl.querySelector(".sync-beat-inner");
+
+    if(inner){ inner.scrollTop = 0; }
+
+    refreshSyncBeatScreen();
+
+    startSyncBeatLamp();
+
+    startSyncBeatFlow();
+
+    console.log(
+        "同期モード ④ 拍合わせ画面を開きました :",
+        (isSyncLeadPhone() ? "リードランナー(基準)" : "合わせる人"),
+        "/ 光る間隔 " + getSyncSharedPeriodMs().toFixed(1) + "ms",
+        "/ ③の位置から " + formatSyncSignedMs(syncAnchorNudgeMs)
+    );
+
+}
+
+/**
+ * 拍合わせ画面を閉じます(「終わる」・✕で画面ごと閉じた時・スタートした時など)。
+ */
+function closeSyncBeatScreen(){
+
+    if(!syncBeatScreenEl){ return; }
+
+    const wasOpen = (syncBeatScreenEl.style.display !== "none");
+
+    syncBeatScreenEl.style.display = "none";
+
+    stopSyncBeatLamp();
+
+    stopSyncBeatFlow();
+
+    if(wasOpen){
+        console.log("同期モード ④ 拍合わせ画面を閉じました : ③の位置から " + formatSyncSignedMs(syncAnchorNudgeMs));
+    }
+
+}
+
+/**
+ * 拍合わせ画面の見た目を、今の状態に合わせて書き換えます(v229)。
  *
- * ③で合わせた拍(基準 + 1拍 × n)のたびに、同じ強さで1回光ります。
- * 全員のスマホを並べて、**リードランナーのランプと一緒に光っていれば、
- * 拍は合っています。** ずれて光る人は、③の叩き方がうまくいかなかったので、
- * 「合わせ直す」で叩き直してもらいます(竹弘の案、2026-10-04)。
+ * 閉じている時は何もしません(refreshSyncStartStep から毎回呼ばれるため)。
+ */
+function refreshSyncBeatScreen(){
+
+    if(!isSyncBeatScreenOpen()){ return; }
+
+    const lead = isSyncLeadPhone();
+
+    // パッドは合わせる人だけ。リードは基準なので動かさない(竹弘と合意)
+    if(syncNudgeBoxEl){ syncNudgeBoxEl.style.display = lead ? "none" : ""; }
+    if(syncBeatLeadBoxEl){ syncBeatLeadBoxEl.style.display = lead ? "" : "none"; }
+
+    if(syncBeatMonBpmEl){ syncBeatMonBpmEl.textContent = "BPM" + getSyncSharedBpm().toFixed(0); }
+
+    /*
+    ---- メーター ----
+
+    真ん中の線が「③で叩いた位置」、印が「今の位置」です。左右の端が
+    動かせる限界(getSyncNudgeLimitMs)。
+
+        印の位置(%) = 50 + (ずらした量 ÷ 限界) × 50
+    */
+    const limitMs = getSyncNudgeLimitMs();
+
+    const ratio = (limitMs > 0) ? (syncAnchorNudgeMs / limitMs) : 0;
+
+    if(syncNudgeMarkEl){ syncNudgeMarkEl.style.left = (50 + ratio * 50) + "%"; }
+
+    if(syncNudgeValueEl){
+        syncNudgeValueEl.textContent = (syncAnchorNudgeMs === 0) ? "±0ms" : formatSyncSignedMs(syncAnchorNudgeMs);
+    }
+
+    if(syncNudgeCaptionEl){
+
+        syncNudgeCaptionEl.textContent = lead
+            ? "あなたの拍が、みんなの基準です"
+            : (syncAnchorNudgeMs === 0) ? "③で叩いた位置のままです"
+            : (syncAnchorNudgeMs < 0)   ? "③より " + (-syncAnchorNudgeMs) + "ms 早めています"
+            :                             "③より " + syncAnchorNudgeMs + "ms 遅らせています";
+
+    }
+
+    /*
+    ---- パッド ----
+
+    限界まで動かした向きのパッドは薄くします(押しても動かないため)。
+    「③の位置に戻す」は、動かしていない時は押す意味が無いので薄くします。
+    */
+    syncNudgePadEls.forEach(function(pad){
+
+        const delta = Number(pad.dataset.nudge);
+
+        pad.disabled = (delta < 0) ? (syncAnchorNudgeMs <= -limitMs) : (syncAnchorNudgeMs >= limitMs);
+
+    });
+
+    if(syncNudgeResetBtn){ syncNudgeResetBtn.disabled = (syncAnchorNudgeMs === 0); }
+
+    // ---- リードの「もう一度カチッを鳴らす」(④の同じボタンと同じ見た目) ----
+
+    if(syncBeatReplayBtn){
+
+        const replaying = (syncClockBeepTimerId !== 0);
+
+        syncBeatReplayBtn.textContent = replaying ? "🔇 カチッを止める" : "🔊 もう一度カチッを鳴らす";
+
+        syncBeatReplayBtn.classList.toggle("sync-btn-primary",replaying);
+
+    }
+
+}
+
+/**
+ * 早める/遅らせるで動かせる限界(ms。プラスマイナスそれぞれ。v229)。
+ *
+ * 縁が光る間隔(聴き合わせる音の間隔)の半分です。それより動かすと、
+ * 隣の光の方が近くなり、「どちらの光と比べているのか」が分からなく
+ * なります。10ms単位に切り下げます(パッドの刻みとそろえるため)。
+ *
+ *     ピッチ140 … 間隔857ms → 半分428ms → 420ms
+ *     ピッチ250 … 間隔480ms → 半分240ms → 240ms
+ */
+function getSyncNudgeLimitMs(){
+
+    return Math.floor(getSyncSharedPeriodMs() / 2 / SYNC_NUDGE_SMALL_MS) * SYNC_NUDGE_SMALL_MS;
+
+}
+
+/**
+ * パッドが押された時、拍を早めたり遅らせたりします(v229)。
+ *
+ * 基準(syncAnchorPerfMs)そのものを動かします。曲の送り出しもこの基準から
+ * 決まるので、目で揃えた拍が、そのまま曲の拍になります。
+ *
+ *     早める(マイナス) … 縁が早く光る。曲も早く送り出す
+ *     遅らせる(プラス) … 縁が遅く光る。曲も遅く送り出す
+ *
+ * @param {number} deltaMs - 動かす量(ms。早めるならマイナス)
+ */
+function nudgeSyncBeat(deltaMs){
+
+    if(syncAnchorPerfMs === null || syncAnchorTapPerfMs === null){ return; }
+
+    // リードは基準なので動かしません(パッドも出していませんが念のため)
+    if(isSyncLeadPhone()){ return; }
+
+    /*
+    カウントダウン中は動かしません。スタートの予約はもう古い基準で
+    入っているので、ここで動かすと画面の光と曲の拍が食い違います。
+    */
+    if(syncCountdown){ return; }
+
+    const limitMs = getSyncNudgeLimitMs();
+
+    const nextMs = Math.max(-limitMs,Math.min(limitMs,syncAnchorNudgeMs + deltaMs));
+
+    if(nextMs === syncAnchorNudgeMs){ return; }
+
+    applySyncNudge(nextMs);
+
+    console.log(
+        "同期モード ④ 拍を" + (deltaMs < 0 ? "早めました" : "遅らせました") + " :",
+        formatSyncSignedMs(deltaMs),
+        "(③の位置から " + formatSyncSignedMs(syncAnchorNudgeMs) + ")"
+    );
+
+}
+
+/**
+ * 「③の位置に戻す」(v229)。
+ */
+function resetSyncNudge(){
+
+    if(syncAnchorTapPerfMs === null || syncAnchorNudgeMs === 0){ return; }
+
+    if(syncCountdown){ return; }
+
+    applySyncNudge(0);
+
+    console.log("同期モード ④ 拍を③の位置に戻しました");
+
+}
+
+/**
+ * ずらした量を基準に当てて、光り方と見た目を新しくします(v229)。
+ *
+ * @param {number} nudgeMs - ③の位置からずらす量の合計(ms)
+ */
+function applySyncNudge(nudgeMs){
+
+    syncAnchorNudgeMs = nudgeMs;
+
+    syncAnchorPerfMs = syncAnchorTapPerfMs + syncAnchorNudgeMs;
+
+    // 次に光る時刻は古い基準で予約してあるので、新しい基準で予約し直します
+    stopSyncBeatLamp();
+    startSyncBeatLamp();
+
+    refreshSyncBeatScreen();
+
+}
+
+/**
+ * 縁を光らせ始めます(v228の「拍ランプ」から引き継ぎ、v229で縁に移した)。
+ *
+ * 【何を見せる光か】
+ *
+ * ③で合わせた基準から、聴き合わせた音の間隔ごとに、同じ強さで1回
+ * 光ります。全員のスマホを並べて、**リードランナーと一緒に光っていれば、
+ * 拍は合っています。**
+ *
+ * ⚠️ 光る間隔は「聴き合わせた音の間隔」(140なら0.86秒)です(v229)。
+ *    v228は毎拍(0.43秒)でしたが、竹弘の判断「点滅が速すぎると複数の
+ *    端末を同時に見るのが難しいので、今まで通り確認しやすいBPMに」で
+ *    ③と同じ間隔にしました。③の基準は全員がこの間隔の上にいるので、
+ *    合っていれば全員が同じ瞬間に光ります。
  *
  * ⚠️ 強弱は付けません(竹弘の判断:「拍は合っているのに強弱のタイミングが
  *    合っていないと、強弱も合わせないとと不安になる。右足・左足から
  *    踏み出すかは重要でないのと同じ」)。
  *
  * ⚠️ ②の「ピッに合わせて画面を光らせてはいけない」とは別の話です。
- *    あちらは測っている最中に目で合わせてしまうのを防ぐためで、④は
- *    測り終わった後なので光らせて構いません。ただし③を叩き直す人には
- *    「画面は見ずに、耳だけで」と出しています(人のランプに目で合わせない)。
+ *    あちらは測っている最中に目で合わせてしまうのを防ぐためで、この画面は
+ *    測り終わった後なので光らせて構いません。
  */
 function startSyncBeatLamp(){
 
@@ -3836,34 +4291,34 @@ function startSyncBeatLamp(){
 }
 
 /**
- * 次の拍に光るよう、1回だけ予約します(v228)。
+ * 次に光る瞬間に、1回だけ予約します。
  *
- * 【次の拍の求め方】
+ * 【次に光る瞬間の求め方】
  *
- *     基準から今までに何拍ぶん進んだか = (今 − 基準) ÷ 1拍
- *     それを四捨五入して1を足したものが、次に光らせる拍の番号
+ *     基準から今までに何周期ぶん進んだか = (今 − 基準) ÷ 光る間隔
+ *     それを四捨五入して1を足したものが、次に光らせる番号
  *
  * 四捨五入にしているのは、光らせた直後に呼ばれた時のためです。タイマーは
- * 待ち時間を整数msに切り捨てるので、拍の瞬間よりわずかに早く起きることが
- * あります。切り捨て(Math.floor)で数えると「まだ同じ拍の手前」と数えて、
- * 同じ拍で2回光ってしまいます。
+ * 待ち時間を整数msに切り捨てるので、光る瞬間よりわずかに早く起きることが
+ * あります。切り捨て(Math.floor)で数えると「まだ同じ周期の手前」と数えて、
+ * 同じ瞬間に2回光ってしまいます。
  */
 function scheduleSyncBeatLamp(){
 
-    const beatMs = 60000 / syncState.pitch;
+    const periodMs = getSyncSharedPeriodMs();
 
     const nowMs = performance.now();
 
-    const index = Math.round((nowMs - syncAnchorPerfMs) / beatMs) + 1;
+    const index = Math.round((nowMs - syncAnchorPerfMs) / periodMs) + 1;
 
-    const nextMs = syncAnchorPerfMs + index * beatMs;
+    const nextMs = syncAnchorPerfMs + index * periodMs;
 
     syncLampTimerId = setTimeout(flashSyncBeatLamp,Math.max(0,nextMs - nowMs));
 
 }
 
 /**
- * ランプを1回光らせて、次の拍を予約します(v228)。
+ * 縁を1回光らせて、次を予約します。
  *
  * 光り方は CSS のアニメーション(.sync-beat-on)に任せます。同じ印を
  * 付け直してもアニメーションは最初からやり直さないので、いったん外して、
@@ -3876,13 +4331,13 @@ function flashSyncBeatLamp(){
 
     if(!isSyncLampWanted()){ return; }
 
-    if(syncBeatLampEl){
+    if(syncBeatFrameEl){
 
-        syncBeatLampEl.classList.remove("sync-beat-on");
+        syncBeatFrameEl.classList.remove("sync-beat-on");
 
-        void syncBeatLampEl.offsetWidth;
+        void syncBeatFrameEl.offsetWidth;
 
-        syncBeatLampEl.classList.add("sync-beat-on");
+        syncBeatFrameEl.classList.add("sync-beat-on");
 
     }
 
@@ -3891,7 +4346,7 @@ function flashSyncBeatLamp(){
 }
 
 /**
- * ランプを止めます(v228。画面を閉じた時・スタートした時など)。
+ * 縁の光を止めます(画面を閉じた時・スタートした時など)。
  */
 function stopSyncBeatLamp(){
 
@@ -3903,7 +4358,151 @@ function stopSyncBeatLamp(){
 
     }
 
-    if(syncBeatLampEl){ syncBeatLampEl.classList.remove("sync-beat-on"); }
+    if(syncBeatFrameEl){ syncBeatFrameEl.classList.remove("sync-beat-on"); }
+
+}
+
+/**
+ * モニタの「流れる拍の印」を描き始めます(v229)。
+ *
+ * DJソフトの波形と同じ見せ方です。拍の印が右から中央の線へ流れてきて、
+ * 線に重なった瞬間に縁が光ります。光の一瞬だけを見比べるより、
+ * 「どのスマホの印が先に線に着くか」の方が目で分かりやすいためです。
+ *
+ * 【requestAnimationFrame とは】
+ *
+ * 「次に画面を描き直す直前に、この関数を呼んで」と頼む書き方です。
+ * 画面の描き直し(ふつう1秒に60回)と同じ速さで呼ばれるので、印が
+ * なめらかに流れます。画面が隠れている間はブラウザが呼ぶのを休むので、
+ * 電池も無駄に使いません。
+ */
+function startSyncBeatFlow(){
+
+    if(syncFlowRafId){ return; }
+
+    const step = function(){
+
+        syncFlowRafId = 0;
+
+        if(!isSyncLampWanted()){ return; }
+
+        drawSyncBeatFlow();
+
+        syncFlowRafId = requestAnimationFrame(step);
+
+    };
+
+    syncFlowRafId = requestAnimationFrame(step);
+
+}
+
+/** 流れる拍の印を止めます(v229)。 */
+function stopSyncBeatFlow(){
+
+    if(!syncFlowRafId){ return; }
+
+    cancelAnimationFrame(syncFlowRafId);
+
+    syncFlowRafId = 0;
+
+}
+
+/**
+ * モニタに、流れる拍の印を1コマぶん描きます(v229)。
+ *
+ * 【印の位置の求め方】
+ *
+ *     中央の線 … 「今」
+ *     右側     … これから来る拍。時間がたつと左へ流れて、線に重なる
+ *     印の横の位置 = 中央 + (その拍の時刻 − 今) × 1msあたりの幅
+ *
+ * 明るい印が「今の位置」、薄い印が「③で叩いた位置」です(早めたり
+ * 遅らせたりした時だけ出ます)。早めると明るい印が薄い印より左(先に
+ * 線に着く側)へ、遅らせると右へずれるので、動かした向きが目で分かります。
+ *
+ * ⚠️ canvas は「CSSで見えている大きさ」と「中の絵の細かさ」が別物です。
+ *    高解像度のスマホ(1pxを2〜3個の点で描く)でぼやけないよう、
+ *    中の絵の細かさを devicePixelRatio 倍にしています。
+ */
+function drawSyncBeatFlow(){
+
+    const canvas = syncBeatFlowEl;
+
+    if(!canvas || typeof canvas.getContext !== "function"){ return; }
+
+    const cssW = canvas.clientWidth;
+    const cssH = canvas.clientHeight;
+
+    if(cssW <= 0 || cssH <= 0){ return; }
+
+    const dpr = window.devicePixelRatio || 1;
+
+    const w = Math.round(cssW * dpr);
+    const h = Math.round(cssH * dpr);
+
+    // 大きさが変わった時だけ設定し直します(毎回設定すると絵が消えて重くなる)
+    if(canvas.width !== w){ canvas.width = w; }
+    if(canvas.height !== h){ canvas.height = h; }
+
+    const ctx = canvas.getContext("2d");
+
+    if(!ctx){ return; }
+
+    ctx.clearRect(0,0,w,h);
+
+    /*
+    色は CSS の暁色の決まり(--theme-color / --dusk-gold)から読みます
+    (色の値をここに書き写さない。2か所に書くと片方だけ直し忘れるため)。
+    */
+    const style = window.getComputedStyle(syncPanelEl);
+    const themeColor = style.getPropertyValue("--theme-color").trim() || "#ff8c42";
+    const goldColor = style.getPropertyValue("--dusk-gold").trim() || "#ffc46b";
+
+    const periodMs = getSyncSharedPeriodMs();
+    const nowMs = performance.now();
+
+    const centerX = w / 2;
+    const viewMs = periodMs * SYNC_FLOW_VIEW_PERIODS;
+    const pxPerMs = centerX / viewMs;
+
+    // 真ん中の横線(印が流れる道)
+    ctx.fillStyle = "rgba(255,255,255,0.10)";
+    ctx.fillRect(0,h / 2 - dpr / 2,w,dpr);
+
+    /*
+    基準から間隔ごとに並ぶ印を、見えている範囲のぶんだけ描きます。
+    Math.ceil / Math.floor で「見えている範囲に入る最初と最後の番号」を出します。
+    */
+    const drawMarks = function(anchorMs,color,barW,barRatio){
+
+        const firstN = Math.ceil((nowMs - viewMs - anchorMs) / periodMs);
+        const lastN = Math.floor((nowMs + viewMs - anchorMs) / periodMs);
+
+        ctx.fillStyle = color;
+
+        for(let n = firstN; n <= lastN; n++){
+
+            const x = centerX + (anchorMs + n * periodMs - nowMs) * pxPerMs;
+            const bw = barW * dpr;
+            const bh = h * barRatio;
+
+            ctx.fillRect(x - bw / 2,(h - bh) / 2,bw,bh);
+
+        }
+
+    };
+
+    // ③で叩いた位置(動かした時だけ。薄い印)
+    if(syncAnchorTapPerfMs !== null && syncAnchorNudgeMs !== 0){
+        drawMarks(syncAnchorTapPerfMs,"rgba(255,255,255,0.30)",3,0.5);
+    }
+
+    // 今の位置(明るい印)
+    drawMarks(syncAnchorPerfMs,goldColor,6,0.8);
+
+    // 中央の線(「今」。印がここに重なった瞬間に縁が光る)
+    ctx.fillStyle = themeColor;
+    ctx.fillRect(centerX - 1.5 * dpr,0,3 * dpr,h);
 
 }
 
@@ -3945,7 +4544,7 @@ function refreshSyncReplayBox(counting){
         syncReplayNoteEl.innerHTML = replaying
             ? "合わせ直す人が叩き終わったら<br>止めてください"
             : (syncState.replayNotice ||
-               "ランプが合わない人がいたら押してください。<br>" +
+               "光り方が合わない人がいたら押してください。<br>" +
                "その人は ③ の「合わせ直す」で叩き直します");
 
     }
@@ -3974,7 +4573,7 @@ function toggleSyncReplay(){
 
         refreshSyncClockStep();
 
-        openSyncEarphoneDialog("ランプが合っているか、<br>もう一度確かめてください");
+        openSyncEarphoneDialog("光り方が合っているか、<br>もう一度確かめてください");
 
         console.log("同期モード ④ もう一度鳴らしたカチッを止めました");
 
@@ -4620,8 +5219,8 @@ function finishSyncStart(){
     stopSyncTempoSound();
     stopSyncMeasure();
 
-    // 拍ランプと、リードのカチッも止めます(v228)
-    stopSyncBeatLamp();
+    // 拍合わせ画面と、リードのカチッも止めます(v228。v229で拍合わせ画面に)
+    closeSyncBeatScreen();
     stopSyncClockBeeps();
 
     syncRuler.stop();
@@ -5167,6 +5766,43 @@ function stopSyncTempoSound(){
     // ④ リードだけの「もう一度カチッを鳴らす / カチッを止める」(v228)
     if(syncReplayBtn){
         syncReplayBtn.addEventListener("click",function(){
+            toggleSyncReplay();
+        });
+    }
+
+    // ---- 拍合わせ画面(v229) ----
+
+    if(syncBeatOpenBtn){
+        syncBeatOpenBtn.addEventListener("click",function(){
+            openSyncBeatScreen();
+        });
+    }
+
+    if(syncBeatCloseBtn){
+        syncBeatCloseBtn.addEventListener("click",function(){
+            closeSyncBeatScreen();
+        });
+    }
+
+    /*
+    パッド。押した量は各パッドの data-nudge に書いてあります
+    (−50 / −10 / 10 / 50)。HTMLの並びを変えてもJSは直さずに済みます。
+    */
+    syncNudgePadEls.forEach(function(pad){
+        pad.addEventListener("click",function(){
+            nudgeSyncBeat(Number(pad.dataset.nudge));
+        });
+    });
+
+    if(syncNudgeResetBtn){
+        syncNudgeResetBtn.addEventListener("click",function(){
+            resetSyncNudge();
+        });
+    }
+
+    // リードの「もう一度カチッを鳴らす」(④のボタンと同じ働き)
+    if(syncBeatReplayBtn){
+        syncBeatReplayBtn.addEventListener("click",function(){
             toggleSyncReplay();
         });
     }
