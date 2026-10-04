@@ -424,6 +424,108 @@ const CONNECT_SILENCE_BEATS = 0;
 */
 const CONNECT_RESEEK_THRESHOLD_SEC = 0.03;
 
+/*
+================================================================
+助走の「追いかけ補正」の決めごと(v230)
+================================================================
+
+【何のための仕組みか】
+
+後続曲は「接続点でちょうど0拍目に着く位置」から鳴らし始めます
+(startPreRoll の逆算)。ところが **鳴らし始めてから、実際に曲が
+進み出すまでに時間がかかります。** その間も先行曲は進んでいるので、
+後続曲はそのぶん遅れたまま接続点を迎えます。
+
+    竹弘の実機ログ(2026-10-04、XPERIA SO-05K)
+        曲の途中から鳴らすMP3  … 画面ON 37〜76ms / 画面OFF 80〜178ms の遅れ
+        曲の頭近くから鳴らす曲 … 10〜28ms
+        Galaxy(m4a)            … どの場合も 14ms 以内
+
+遅れの量は端末・ファイルの形式・画面のON/OFFで変わるので、
+**先に決め打ちで差し引くことはできません。**
+
+→ 助走の間(音量0で誰にも聞こえない十数秒)に、後続曲が「いま
+  居るべき位置」とどれだけずれているかを測り、**速さをほんの少し
+  変えて追いつかせます。** 遅れていれば少し速く、進みすぎていれば
+  少し遅く。音量0なので、速さが変わっても誰にも聞こえません。
+
+動きの詳しい説明は startDeckChase() のコメントにあります。
+⚠️ 同期モードのスタート(js/sync.js)も、同じ関数を使っています。
+*/
+
+/*
+何msごとに測り直すか。
+
+短いほど細かく直せますが、そのぶんJSが何度も起きます。0.2秒なら
+助走の14秒で70回ほど。1回の仕事は「位置を読んで速さを1つ書く」だけ
+なので、ほとんど負担になりません。
+*/
+const CHASE_TICK_MS = 200;
+
+/*
+ずれを縮める速さ(秒)。
+
+「ずれ ÷ この秒数」だけ速さを変えます。0.8秒なら、ずれが80msの時に
+10%速く(遅く)します。ずれが小さくなるほど変え方も小さくなるので、
+行き過ぎずに、すっと止まります。
+*/
+const CHASE_TAU_SEC = 0.8;
+
+/*
+速さを変える上限(±10%)。
+
+音量0なので20%変えても聞こえませんが、大きく変えるほど「測った
+直後のわずかな誤差」も大きく効いてしまいます。10%あれば1秒で
+100msぶん取り返せるので、実測の遅れ(最大178ms)には十分です。
+*/
+const CHASE_MAX_RATE_DEV = 0.10;
+
+/*
+「直し始める」境目と「直し終える」境目(実秒)。
+
+    CHASE_DEADBAND_SEC … ずれがこれ(5ms)を超えたら直し始める
+    CHASE_SETTLE_SEC   … 直し始めたら、これ(1ms)以内まで詰めて終える
+
+曲の位置の読み取りにも数msの誤差があります。それを追いかけて
+速さをいじり続けないように、5ms以内なら直しには行きません。
+
+【なぜ境目を2つにしたのか】
+
+最初は5msの1つだけでした。すると、遅れを取り返してきた曲は
+**5msに入った瞬間に止まる**ので、いつも「ちょうど -5ms」が残りました
+(検証ページで確認)。いったん直し始めたら1msまで詰めることで、
+残るずれをほぼ0にしています。
+(エアコンが「設定温度を少し外れたら動き、ぴったりで止まる」のと同じ考え方)
+*/
+const CHASE_DEADBAND_SEC = 0.005;
+const CHASE_SETTLE_SEC = 0.001;
+
+/*
+速さでは取り返せないほどずれていた時だけ、位置を置き直します。
+
+    CHASE_RESEEK_SEC          … ずれがこれ以上(0.3秒)で
+    CHASE_RESEEK_MIN_WORK_SEC … しかも残りがこれ以上(3秒)ある時
+    CHASE_MAX_RESEEKS         … 1回の助走で、置き直すのは2回まで
+
+XPERIAで見つかった「再生が0.4〜0.9秒止まる」現象が助走中に起きた時の
+保険です。置き直すとまた鳴り出しの遅れが生まれますが、それは
+残りの時間で速さを変えて取り返します。回数を決めているのは、
+置き直しを繰り返して永久に終わらない事態を防ぐためです。
+*/
+const CHASE_RESEEK_SEC = 0.3;
+const CHASE_RESEEK_MIN_WORK_SEC = 3;
+const CHASE_MAX_RESEEKS = 2;
+
+/*
+接続点の何秒前で補正を終えて、本来の速さに戻すか(実秒)。
+
+**接続点の瞬間には、必ず本来の速さに戻っていなければなりません。**
+速さを変えたまま繋ぐと、聞こえ始めた後続曲のテンポがずれます。
+測るのは0.2秒ごとなので、余裕を持って1秒前に終えます。
+(万一それより遅れても、doConnect() が繋ぐ前に必ず戻します)
+*/
+const CONNECT_CHASE_END_SEC = 1.0;
+
 
 // ==========================================================
 // 2. 今どういう状態か
@@ -439,6 +541,7 @@ const CONNECT_RESEEK_THRESHOLD_SEC = 0.03;
     beat0AtSec     … 後続曲の0拍目(後続曲の曲内秒)
     timerId        … 接続の瞬間の予約(setTimeoutの番号)
     fadeOutTimerId … 先行曲フェードアウト開始の予約(無音モードのみ)
+    chase          … 助走の追いかけ補正(v230。startDeckChase の戻り値)
 
 ⚠️ 無音モードのフェードインだけは、ここに番号を持ちません。
    接続の瞬間(doConnect)にこの状態を空にしてから予約するためです。
@@ -1771,7 +1874,8 @@ async function startPreRoll(nextTrackId,remainSec){
         connectAtSec  : connectAtSec,
         beat0AtSec    : beat0AtSec,
         timerId       : null,
-        fadeOutTimerId: null
+        fadeOutTimerId: null,
+        chase         : null
     };
 
     // 接続の瞬間を予約します
@@ -1783,11 +1887,397 @@ async function startPreRoll(nextTrackId,remainSec){
     */
     scheduleFadeOut();
 
+    /*
+    【v230】鳴り出しの遅れを、音量0のうちに打ち消します。
+
+    上で置いた位置は「今すぐ鳴り出せば、接続点でちょうど0拍目に着く」
+    位置です。ところが実際には、play() してから曲が進み出すまでに
+    時間がかかり、そのぶん後続曲は遅れます(CHASE_TICK_MS の上の
+    【何のための仕組みか】)。
+
+    その遅れを、接続点の1秒前までに速さの微調整で取り返します。
+    「居るべき位置」の式は rescheduleConnect() とまったく同じです。
+
+        居るべき位置 = 0拍目 − 接続点までの残り(実秒) × 後続曲の再生速度
+
+    ⚠️ 2つの関数を、この助走の connectState に結び付けておきます
+       (chaseState)。竹弘が曲を選び直すと connectState は別物になるので、
+       「まだ自分の助走か」をそれで見分けます。
+    */
+    const chaseState = connectState;
+
+    // 接続点まで、あと何秒(実秒)か。先行曲の今の位置から求めます
+    const getChaseRemainSec = function(){
+
+        const fromTrack = getDeckTrack(chaseState.fromDeck);
+
+        if(!fromTrack){ return 0; }
+
+        return (chaseState.connectAtSec - chaseState.fromDeck.currentTime) /
+               getTrackRate(fromTrack);
+
+    };
+
+    connectState.chase = startDeckChase({
+
+        deck  : toDeck,
+        label : "助走の追いかけ補正",
+        endSec: CONNECT_CHASE_END_SEC,
+
+        getRemainSec: getChaseRemainSec,
+
+        getExpectedSec: function(toRate){
+
+            /*
+            先行曲が止まっていたら(一時停止の直後など)、居るべき位置が
+            決まりません。null を返すと、その回は直さずに見送ります。
+            */
+            if(chaseState.fromDeck.paused){ return null; }
+
+            return chaseState.beat0AtSec - getChaseRemainSec() * toRate;
+
+        },
+
+        isAlive: function(){
+
+            // 別の助走に替わった・すでに繋いで主役になった時は、もう追いかけません
+            return connectState === chaseState && toDeck !== audioPlayer;
+
+        }
+
+    });
+
     console.log(
         "助走を開始しました :",nextTrack.file_name,
         "/ 接続まで " + preRollSec.toFixed(2) + "秒",
         "/ 開始位置 " + startAtSec.toFixed(2) + "秒"
     );
+
+}
+
+
+// ==========================================================
+// 5-3. 助走の追いかけ補正(v230)
+// ==========================================================
+/**
+ * 音量0で鳴らしているデッキを、「いま居るべき位置」へ追いつかせます(v230)。
+ *
+ * ------------------------------------------------------------
+ * 【なぜ「位置を置き直す」のではなく「速さを変える」のか】
+ *
+ * 遅れの正体は「鳴らし始めてから、実際に曲が進み出すまでの待ち」です。
+ * 位置を置き直す(currentTime を書き換える)と、**その待ちがもう一度
+ * 起きます。** 直したつもりで、また同じだけ遅れるわけです。
+ *
+ * 速さを変えるだけなら、曲は止まらずに進み続けます。だから新しい
+ * 遅れが生まれません。
+ *
+ *     遅れている     → 少し速く鳴らす(例:1.30倍 → 1.37倍)
+ *     進みすぎている → 少し遅く鳴らす
+ *     揃った         → 本来の速さに戻す
+ *
+ * 音量0のデッキなので、速さが変わっても誰にも聞こえません。
+ * (接続の助走では、音程維持も切ってあります。v176)
+ *
+ * ------------------------------------------------------------
+ * 【0.2秒ごとにやること】
+ *
+ *   1. まだ続けてよいか確かめる(取りやめ・接続済みなら終わる)
+ *   2. 揃えたい瞬間まで endSec 秒を切ったら、本来の速さに戻して終わる
+ *   3. 曲が進み出しているかを確かめる(鳴り始めの待ちの間は測らない)
+ *   4. ずれ = (今の位置 − 居るべき位置) ÷ 本来の速さ  ← 実秒に直す
+ *   5. ずれ ÷ CHASE_TAU_SEC だけ速さを変える(±10%まで)
+ *
+ * ------------------------------------------------------------
+ * 【⚠️ 本来の速さに戻すのは「自分が変えた値のままの時」だけ】
+ *
+ * 走りながら定規でテンポを変えると、rescheduleConnect() が
+ * applyPitchToDeck() で新しい速さを入れます。その後で、こちらが古い
+ * 速さに「戻して」しまうと、テンポの変更を打ち消してしまいます。
+ *
+ * そこで、最後に自分が入れた速さを覚えておき、**デッキの速さが
+ * まだその値のままの時だけ**戻します。誰かが書き換えていたら、
+ * そちらが正しいので手を出しません。どこから止められても安全です。
+ *
+ * @param  {Object}           opts
+ * @param  {HTMLAudioElement} opts.deck           - 追いかけさせるデッキ(音量0で鳴っていること)
+ * @param  {string}           opts.label          - 🐛パネルに出す名前
+ * @param  {number}           opts.endSec         - 揃えたい瞬間の何秒前で終えるか(実秒)
+ * @param  {Function}         opts.getRemainSec   - 揃えたい瞬間まであと何秒か(実秒)
+ * @param  {Function}         opts.getExpectedSec - (本来の速さ)を受け取り、いま居るべき位置
+ *                                                  (曲内秒)を返す。決まらない時は null
+ * @param  {Function}         opts.isAlive        - まだ続けてよいなら true
+ * @return {Object} 補正の係。stop(理由) で止める(理由を渡すと結果を🐛パネルへ)
+ */
+function startDeckChase(opts){
+
+    const deck = opts.deck;
+
+    const chase = {
+        stopped   : false,
+        timerId   : null,
+        lastPosSec: null,  // 前回測った位置(曲が進み出したかを見るため)
+        firstErrMs: null,  // 最初に測ったずれ(ms)
+        lastErrMs : null,  // 最後に測ったずれ(ms)
+        samples   : 0,     // 測った回数
+        maxDev    : 0,     // 速さを最大どれだけ変えたか(0.05 = 5%)
+        reseeks   : 0,     // 位置を置き直した回数
+        correcting: false, // いま直している最中か(CHASE_SETTLE_SEC のコメント)
+        setRate   : null,  // 自分が最後に入れた速さ
+        baseRate  : null,  // その時の本来の速さ
+        stop      : null
+    };
+
+    /*
+    自分が入れた速さのままなら、本来の速さへ戻します
+    (上の【本来の速さに戻すのは「自分が変えた値のままの時」だけ】)。
+    */
+    const undoNudge = function(){
+
+        if(chase.setRate !== null && deck.playbackRate === chase.setRate){
+
+            deck.playbackRate = chase.baseRate;
+
+        }
+
+        chase.setRate = null;
+
+    };
+
+    // ミリ秒を「+12ms」「-3ms」の形にします(ログ用)
+    const formatMs = function(ms){
+
+        const rounded = Math.round(ms);
+
+        return (rounded >= 0 ? "+" : "") + rounded + "ms";
+
+    };
+
+    /*
+    【開発用調査ログ】補正の結果を🐛パネルに出します。
+
+    「始め」が鳴り出しの遅れそのもの、「終わり」が補正した後に残った
+    ずれです。接続の瞬間の本当のずれは、doConnect() の「★接続の瞬間」
+    の行で確かめます(物差しは同じ currentTime)。
+    */
+    const report = function(why){
+
+        if(chase.samples === 0){
+
+            console.log(opts.label + " : 一度も測れませんでした(" + why + ")");
+
+            return;
+
+        }
+
+        console.log(
+            opts.label + " : ずれ 始め " + formatMs(chase.firstErrMs) +
+            " → 終わり " + formatMs(chase.lastErrMs),
+            "/ 速さの変更 最大 " + (chase.maxDev >= 0 ? "+" : "") + (chase.maxDev * 100).toFixed(1) + "%",
+            "/ 置き直し " + chase.reseeks + "回",
+            "/ 測った回数 " + chase.samples,
+            "(" + why + ")",
+            "※プラスは進みすぎ、マイナスは遅れ"
+        );
+
+    };
+
+    chase.stop = function(why){
+
+        if(chase.stopped){ return; }
+
+        chase.stopped = true;
+
+        if(chase.timerId !== null){
+
+            clearTimeout(chase.timerId);
+
+            chase.timerId = null;
+
+        }
+
+        undoNudge();
+
+        if(why){ report(why); }
+
+    };
+
+    const next = function(){
+
+        chase.timerId = setTimeout(tick,CHASE_TICK_MS);
+
+    };
+
+    const tick = function(){
+
+        chase.timerId = null;
+
+        if(chase.stopped){ return; }
+
+        // ---- 1. まだ続けてよいか ----
+        if(!opts.isAlive()){
+
+            chase.stop(null);
+
+            return;
+
+        }
+
+        // ---- 2. 揃えたい瞬間が近づいたら、本来の速さに戻して終わる ----
+        const remainSec = opts.getRemainSec();
+
+        if(!(remainSec > opts.endSec)){
+
+            chase.stop("揃える瞬間の" + opts.endSec + "秒前で終了");
+
+            return;
+
+        }
+
+        const track = getDeckTrack(deck);
+
+        if(!track){
+
+            chase.stop(null);
+
+            return;
+
+        }
+
+        // 本来の速さ。applyPitchToDeck() と同じ式です(どちらも getTrackRate の中身)
+        const baseRate = getTrackRate(track);
+
+        // ---- 3. 曲が進み出しているか ----
+        /*
+        止まっている・位置を移している最中・データが足りない間は、
+        位置が正しく読めません。測らずに次の回へ回します。
+        */
+        if(deck.paused || deck.seeking || deck.readyState < 3){
+
+            chase.lastPosSec = null;
+
+            next();
+
+            return;
+
+        }
+
+        const posSec = deck.currentTime;
+
+        /*
+        前の回より進んでいなければ、まだ「鳴り始めの待ち」の最中です。
+        この間に測ると、待ちの途中のずれを見て速さを変えてしまいます。
+        進み出したのを確かめてから測ります(最初の1回は記録だけ)。
+        */
+        const advanced = (chase.lastPosSec !== null && posSec > chase.lastPosSec);
+
+        chase.lastPosSec = posSec;
+
+        if(!advanced){
+
+            next();
+
+            return;
+
+        }
+
+        const expectedSec = opts.getExpectedSec(baseRate);
+
+        if(expectedSec === null || !isFinite(expectedSec)){
+
+            // 居るべき位置が決まらない間は、変えた速さも戻しておきます
+            undoNudge();
+
+            next();
+
+            return;
+
+        }
+
+        // ---- 4. ずれ(実秒)。プラスは進みすぎ、マイナスは遅れ ----
+        const errSec = (posSec - expectedSec) / baseRate;
+
+        const absErrSec = Math.abs(errSec);
+
+        chase.samples++;
+
+        if(chase.firstErrMs === null){ chase.firstErrMs = errSec * 1000; }
+
+        chase.lastErrMs = errSec * 1000;
+
+        // 速さを変えてよい残り時間(実秒)
+        const workSec = remainSec - opts.endSec;
+
+        /*
+        速さでは取り返せないほどずれていたら、位置を置き直します
+        (CHASE_RESEEK_SEC のコメント)。
+
+        「取り返せない」= 上限の速さで残り時間いっぱい頑張っても届かない。
+        8割で見ているのは、ぎりぎりまで粘って間に合わないのを避けるためです。
+        */
+        if(absErrSec > CHASE_RESEEK_SEC &&
+           absErrSec > CHASE_MAX_RATE_DEV * workSec * 0.8 &&
+           workSec >= CHASE_RESEEK_MIN_WORK_SEC &&
+           chase.reseeks < CHASE_MAX_RESEEKS &&
+           expectedSec >= 0){
+
+            undoNudge();
+
+            deck.currentTime = expectedSec;
+
+            chase.reseeks++;
+
+            // 置き直した後は、また「進み出したか」の確認からやり直します
+            chase.lastPosSec = null;
+
+            console.log(opts.label + " : ずれが大きいので位置を置き直しました(" + formatMs(errSec * 1000) + ")");
+
+            next();
+
+            return;
+
+        }
+
+        // ---- 5. 速さを変える ----
+        /*
+        直している最中なら1msまで詰め、そうでなければ5msを超えた時だけ
+        直し始めます(CHASE_DEADBAND_SEC / CHASE_SETTLE_SEC のコメント)。
+        */
+        chase.correcting = absErrSec > (chase.correcting ? CHASE_SETTLE_SEC : CHASE_DEADBAND_SEC);
+
+        let dev = 0;
+
+        if(chase.correcting){
+
+            /*
+            遅れている(errSec がマイナス)なら dev はプラス = 速くする。
+            進みすぎ(プラス)ならマイナス = 遅くする。
+            */
+            dev = -errSec / CHASE_TAU_SEC;
+
+            dev = Math.max(-CHASE_MAX_RATE_DEV,Math.min(CHASE_MAX_RATE_DEV,dev));
+
+        }
+
+        deck.playbackRate = baseRate * (1 + dev);
+
+        /*
+        入れた値を、デッキから読み戻して覚えます。後で「まだ自分の値の
+        ままか」を === で比べるので、ブラウザが丸めていても食い違わない
+        ようにするためです。
+        */
+        chase.setRate = deck.playbackRate;
+        chase.baseRate = baseRate;
+
+        if(Math.abs(dev) > Math.abs(chase.maxDev)){ chase.maxDev = dev; }
+
+        next();
+
+    };
+
+    next();
+
+    return chase;
 
 }
 
@@ -1842,6 +2332,12 @@ function scheduleConnect(){
  * 接続点・フェードアウト・フェードインの3つを、まとめて消します。
  * **1つでも消し忘れると、後からその時刻に発火して音量を勝手に
  * いじられます。** 増やした時はここにも必ず足すこと。
+ *
+ * ⚠️ 助走の追いかけ補正(connectState.chase。v230)は、**わざと
+ *    ここに入れていません。** この関数は scheduleConnect() の頭でも
+ *    呼ばれる(テンポを変えるたびに予約を取り直す)ので、ここに入れると
+ *    定規に触れただけで補正が止まってしまうためです。補正を止めるのは
+ *    doConnect() と cancelConnect() の2か所です。
  */
 function clearConnectTimer(){
 
@@ -1979,6 +2475,20 @@ function doConnect(){
 
     connectState = null;
     isPreRolling = false;
+
+    /*
+    【v230】助走の追いかけ補正を止めます(ここが最後の砦)。
+
+    ふだんは接続点の1秒前に終わって、本来の速さに戻っています
+    (CONNECT_CHASE_END_SEC)。ただ、スマホが忙しくて補正の回が
+    遅れると、速さを変えたまま接続点を迎えることがありえます。
+    **聞こえ始める後続曲のテンポがずれる**ので、繋ぐ前に必ず止めて
+    本来の速さに戻します(もう終わっていれば何もしません)。
+
+    ⚠️ 状態を空にした後に置いています。stop() は自分を呼び出す処理に
+       触れないので、上の【この形を崩さないこと】の約束は守られます。
+    */
+    if(state.chase){ state.chase.stop("接続の瞬間まで補正していた"); }
 
     const fromDeck    = state.fromDeck;
     const toDeck      = state.toDeck;
@@ -2503,6 +3013,13 @@ function startFade(deck,fromVol,toVol,durationSec){
 function cancelConnect(){
 
     clearConnectTimer();
+
+    /*
+    助走の追いかけ補正も止めます(v230)。止めないと、取りやめた後も
+    0.2秒ごとに起きて、裏のデッキの速さをいじり続けます。
+    (理由を渡さないので🐛パネルには何も出しません)
+    */
+    if(connectState && connectState.chase){ connectState.chase.stop(null); }
 
     /*
     まだ発火していないフェードインの予約を無効にします。

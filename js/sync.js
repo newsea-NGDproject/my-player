@@ -457,22 +457,66 @@ const SYNC_SHARED_DRIFT_WARN_MS = 100;
 
 🎬頭出し接続と同じ考え方です。いきなり鳴らし始めると、鳴り出すまでの
 時間(数十ms、端末や曲で違う)が読めません。**先に鳴らして通り道を
-温めておき、その時刻には「位置を動かすだけ」にします。** 位置を動かす
-だけなら、かかる時間はほぼ決まっています(下の SYNC_SEEK_LEAD_MS)。
+温めておきます。**
+
+v229までは3秒でした。v230から、この間に「鳴り出しの遅れ」を速さの
+微調整で取り返す(syncWarmup の【2つのやり方】)ので、取り返す時間を
+確保するため6秒にしました。XPERIAの実測の遅れ(約0.26秒)でも、
+4秒ほどで揃います。
 */
-const SYNC_WARMUP_SEC = 3;
+const SYNC_WARMUP_SEC = 6;
 
 /*
 狙いの位置へ動かす命令(頭出し)を、何ms早く出すか。
 
-頭出しは命令してから終わるまでに時間がかかります。竹弘の実機で
-🎬頭出し接続の待ち時間を21回測った値(v203の🐛ログ)が 10〜16ms、
-平均14ms でした。その平均の分だけ早く命令して、ちょうどの時刻に
-終わるようにします。
-⚠️ 実際に何msで終わったかは、スタートのたびに🐛パネルへ出します。
-   端末によって違えば、この値を見直します。
+⚠️ v230から、これは「試し頭出しで測れなかった時の予備の値」です。
+   ふだんは、その場で測った値(syncProbeSeekLag)を使います。
+
+v224〜v229は、🎬頭出し接続の待ち時間(seeked が届くまで)を21回測った
+平均14ms を使っていました。ところが竹弘の2台テスト(2026-09-27、10-04)で、
+**seeked が届いた後も、曲が実際に進み出すまでにさらに時間がかかる**ことが
+分かりました(スタート位置の実測が Galaxy で約-160ms / XPERIAで約-250ms)。
+14ms はその一部しか見ていなかったことになります。
 */
 const SYNC_SEEK_LEAD_MS = 14;
+
+/*
+「追いかけて揃える」やり方で、開始の何秒前に補正を終えて本来の
+速さに戻すか(実秒。v230)。
+
+**音量を上げる瞬間には、必ず本来の速さに戻っていなければなりません。**
+補正は0.2秒ごとなので、余裕を持って0.5秒前に終えます。
+(万一それより遅れても、syncFire() が音量を上げる前に必ず戻します)
+*/
+const SYNC_CHASE_END_SEC = 0.5;
+
+/*
+「追いかけて揃える」やり方を使うのに、開始まで最低何秒ほしいか(v230)。
+
+予約が遅れたり、開始の直前に準備が終わったりして、先に鳴らし始めた
+時点で残りが少ないと、取り返す時間がありません。その時は
+「頭出しで揃える」やり方に回します。
+*/
+const SYNC_CHASE_MIN_SEC = 2;
+
+/*
+「頭出しで揃える」やり方で使う、試し頭出しの決めごと(v230)。
+
+    SYNC_PROBE_LEAD_MS           … 開始の何ms前に、試しの頭出しをするか
+    SYNC_PROBE_SAMPLE_START_MS   … 試し頭出しから何ms後に測り始めるか
+    SYNC_PROBE_SAMPLE_COUNT      … 何回測って平均するか
+    SYNC_PROBE_SAMPLE_INTERVAL_MS… 測る間隔
+    SYNC_PROBE_MAX_LAG_MS        … これより大きい待ちは「測り損ね」とみなす
+
+試しの結果が出るのは開始の 1800 − 500 − 100×2 = 1100ms 前です。本番の
+頭出しは「開始 − 待ち」に命令するので、待ちが1100msより短ければ
+間に合います。上限を600msにしてあるので、必ず間に合います。
+*/
+const SYNC_PROBE_LEAD_MS = 1800;
+const SYNC_PROBE_SAMPLE_START_MS = 500;
+const SYNC_PROBE_SAMPLE_COUNT = 3;
+const SYNC_PROBE_SAMPLE_INTERVAL_MS = 100;
+const SYNC_PROBE_MAX_LAG_MS = 600;
 
 /*
 ⚠️ v224の途中まで、ここに SYNC_SPIN_MS(最後の40msを「時計を見張って
@@ -814,6 +858,12 @@ let syncClockTimerId = 0;
     planText       … 画面に出す説明(曲名入り)
     wPerfMs        … 狙いの位置が鳴り始める瞬間(performance.now の物差し)
     warmStarted    … 音量0で先に鳴らし始めたか
+
+    ---- v230 で足したもの(syncWarmup の【2つのやり方】) ----
+    mode           … "chase"(追いかけて揃える)/ "seek"(頭出しで揃える)
+    chase          … 追いかけ補正の係(js/connect.js の startDeckChase の戻り値)
+    seekLeadMs     … 頭出しを何ms早く命令するか(seek のみ。試し頭出しで測る)
+    fireTimerId    … その瞬間の予約(試し頭出しの結果で取り直すため、番号を持つ)
 */
 let syncCountdown = null;
 
@@ -3695,7 +3745,9 @@ performance.now()(ページを開いてからの経過時間)の方が確かな�
                🎬頭出し接続と同じく、0〜1拍未満の無音のあとに曲の頭が
                来るよう、無音の長さで拍に合わせます(竹弘の案)
 
-【どうやって「ちょうど」に始めるか ―― 🎬頭出し接続と同じ手順】
+【どうやって「ちょうど」に始めるか】
+
+v229までは🎬頭出し接続と同じ手順でした:
 
     ① 開始の3秒前から、曲を「消音・音量0」で先に鳴らしておく
        (いきなり鳴らすと、鳴り出すまでの時間が読めないため)
@@ -3703,9 +3755,16 @@ performance.now()(ページを開いてからの経過時間)の方が確かな�
     ③ 頭出しが終わったら、消音を戻して30msで音量を上げる
        (v202-v203で「ブチ」を消した手順そのもの)
 
+⚠️ ところが②の頭出しの後、曲が実際に進み出すまでにさらに時間がかかり
+   (Galaxy約0.16秒 / XPERIA約0.25秒)、スタートが遅れていました。
+   → **v230で①を6秒にし、2つのやり方に分けました**(syncWarmup の
+     【2つのやり方】)。続きから鳴らす時は、①の間に速さの微調整で
+     位置を揃えておき、②の頭出しをしません。頭から鳴らす時は、
+     試しの頭出しで待ちを測って、②をそのぶん早く命令します。
+
 ⚠️⚠️ **拍が揃うかどうかは「その時刻に曲がどの位置にあるか」だけで
    決まります。** 音量を上げるのが数ms遅れても、拍の位置はずれません
-   (聞こえ始めが一瞬遅れるだけ)。だから大事なのは②の頭出しの時刻です。
+   (聞こえ始めが一瞬遅れるだけ)。だから大事なのは曲の位置です。
 
 ⚠️ 先に鳴らす間(①)は消音にしています。ノリノリアシストは消音中は
    鳴らない決まり(v193)なので、**開始前にバラバラのカチッが鳴る**のも
@@ -4657,7 +4716,11 @@ async function scheduleSyncStart(targetWallMs){
         plan:null,
         planText:"",
         wPerfMs:0,
-        warmStarted:false
+        warmStarted:false,
+        mode:null,
+        chase:null,
+        seekLeadMs:SYNC_SEEK_LEAD_MS,
+        fireTimerId:0
     };
 
     syncState.startNotice = "";
@@ -4754,19 +4817,27 @@ async function scheduleSyncStart(targetWallMs){
     syncCountdown.planText = plan.text;
     syncCountdown.wPerfMs = wPerfMs;
 
-    // 先に鳴らし始める予約(3秒前)。もう3秒を切っていたら、すぐに
+    // 先に鳴らし始める予約(6秒前)。もう6秒を切っていたら、すぐに
     const warmDelayMs = Math.max(0,wPerfMs - SYNC_WARMUP_SEC * 1000 - performance.now());
 
     syncStartTimerIds.push(setTimeout(syncWarmup,warmDelayMs));
 
     /*
-    頭出しの予約。命令を出すべき瞬間 = 狙いの瞬間の14ms前(頭出しに
-    かかる時間)。setTimeout が遅れた分は、syncFire() が狙う位置を
-    先へずらして打ち消します(syncFire の【遅れの打ち消し】)。
+    その瞬間の予約。命令を出す瞬間 = 狙いの瞬間の14ms前。
+
+    ⚠️ v230から、これは仮の予約です。「頭出しで揃える」やり方では、
+       試し頭出しで測った待ちの長さで取り直します(syncProbeSeekLag)。
+       そのために受付番号を fireTimerId にも覚えておきます。
+       「追いかけて揃える」やり方では、このまま音量を上げる合図になります。
+
+    setTimeout が遅れた分は、syncFire() が狙う位置を先へずらして
+    打ち消します(syncFire の【遅れの打ち消し】)。
     */
     const fireDelayMs = Math.max(0,wPerfMs - SYNC_SEEK_LEAD_MS - performance.now());
 
-    syncStartTimerIds.push(setTimeout(syncFire,fireDelayMs));
+    syncCountdown.fireTimerId = setTimeout(syncFire,fireDelayMs);
+
+    syncStartTimerIds.push(syncCountdown.fireTimerId);
 
     refreshSyncStartStep();
 
@@ -5046,31 +5117,78 @@ async function loadSyncTrackSilently(trackId){
 }
 
 /**
- * 開始の3秒前:曲を「消音・音量0」で先に鳴らし始めます。
+ * 開始の6秒前:曲を「消音・音量0」で先に鳴らし始めます。
  *
- * 狙いの位置の3秒手前から鳴らしておくと、頭出し(②)の時に動かす距離が
- * 短くて済みます(頭から鳴らす時は、曲の頭から)。
+ * ------------------------------------------------------------
+ * 【v230】2つのやり方
+ *
+ * v229までは「3秒前から先に鳴らし、その瞬間に狙いの位置へ頭出し」
+ * でした。ところが頭出しの後、曲が実際に進み出すまでに時間がかかり、
+ * そのぶんスタートが遅れていました。
+ *
+ *     竹弘の2台テストの「スタート位置の実測」
+ *         Galaxy … 約 -160ms / XPERIA … 約 -250ms(どちらも遅れ)
+ *
+ * 遅れの量がスマホごとに違うので、2台の間にも差(約90ms)が出ます。
+ * そこで v230 から、次の2つを使い分けます。
+ *
+ *   ① 追いかけて揃える("chase")… 狙いの位置の6秒手前に曲がある時
+ *      (続きから鳴らす時など)。
+ *      6秒前に「居るべき位置」から鳴らし始め、音量0のうちに速さの
+ *      微調整でずれを取り返します。接続の助走とまったく同じ仕組みです
+ *      (js/connect.js の startDeckChase)。
+ *      **その瞬間は頭出しせず、音量を上げるだけ。** 頭出しをしないので、
+ *      鳴り出しの遅れそのものが起きません。
+ *
+ *   ② 頭出しで揃える("seek")… 手前に6秒ない時(曲の頭から鳴らす時など)。
+ *      曲の頭より前には戻れないので、追いかけは使えません。代わりに、
+ *      開始の1.8秒前に**試しの頭出し**をして「頭出しから進み出すまでの
+ *      待ち」をその場で測り、本番の頭出しをそのぶん早く命令します
+ *      (syncProbeSeekLag)。同じ曲・同じスマホ・同じ操作なので、待ちは
+ *      ほぼ同じになります(実測で1回の中のばらつきは±5ms)。
+ *
+ * ⚠️ 先に鳴らしている間は消音なので、ノリノリアシストも鳴りません
+ *    (js/metronome.js が「🔇 消音中」として止める)。速さを変えても
+ *    アシストのカチッがよれることはありません。
  */
 function syncWarmup(){
 
     if(!syncCountdown || !syncCountdown.plan || syncCountdown.warmStarted){ return; }
 
-    const plan = syncCountdown.plan;
+    const countdown = syncCountdown;
+    const plan = countdown.plan;
+    const deck = audioPlayer;
 
-    syncCountdown.warmStarted = true;
+    countdown.warmStarted = true;
 
     // 竹弘の消音の状態を覚えてから、消音にします(スタートの時に戻します)
-    syncMutedBefore = audioPlayer.muted;
+    syncMutedBefore = deck.muted;
 
     setBothDecksMuted(true);
 
-    setDeckVolume(audioPlayer,0);
+    setDeckVolume(deck,0);
 
-    const rate = audioPlayer.playbackRate || 1;
+    const rate = getSyncDeckBaseRate(deck);
 
-    audioPlayer.currentTime = Math.max(0,plan.targetSec - SYNC_WARMUP_SEC * rate);
+    /*
+    開始まで、あと何秒か。ふつうは6秒ですが、準備に手間取って予約が
+    遅れた時は短くなります。**その時の残りで位置を決める**のが要です
+    (いつも6秒と決め打ちすると、遅れたぶん位置がずれます)。
+    */
+    const remainSec = (countdown.wPerfMs - performance.now()) / 1000;
 
-    const playing = audioPlayer.play();
+    // 居るべき位置 = 狙いの位置 − 残り × 再生速度
+    const startAtSec = plan.targetSec - remainSec * rate;
+
+    /*
+    追いかけて揃えるには、居るべき位置が曲の中にあり(0秒以上)、
+    取り返す時間が残っている必要があります。
+    */
+    countdown.mode = (startAtSec >= 0 && remainSec >= SYNC_CHASE_MIN_SEC) ? "chase" : "seek";
+
+    deck.currentTime = Math.max(0,startAtSec);
+
+    const playing = deck.play();
 
     if(playing && typeof playing.catch === "function"){
 
@@ -5082,7 +5200,220 @@ function syncWarmup(){
 
     }
 
-    console.log("同期モード ③ 開始の" + SYNC_WARMUP_SEC + "秒前 : 消音・音量0で先に鳴らし始めました");
+    if(countdown.mode === "chase"){
+
+        countdown.chase = startDeckChase({
+
+            deck  : deck,
+            label : "同期モード ③ 先に鳴らす間の追いかけ補正",
+            endSec: SYNC_CHASE_END_SEC,
+
+            getRemainSec: function(){
+
+                return (countdown.wPerfMs - performance.now()) / 1000;
+
+            },
+
+            /*
+            居るべき位置 = 狙いの位置 + (今 − 狙いの瞬間) × 再生速度
+            狙いの瞬間より前はマイナスになり、狙いの位置より手前を指します。
+            measureSyncAlignment() の「予定の位置」と同じ式です(同じ物差し)。
+            */
+            getExpectedSec: function(baseRate){
+
+                return plan.targetSec + (performance.now() - countdown.wPerfMs) / 1000 * baseRate;
+
+            },
+
+            isAlive: function(){
+
+                // やめた・スタートし終えた・別の曲に替わった時は、もう追いかけません
+                return syncCountdown === countdown && deck === audioPlayer;
+
+            }
+
+        });
+
+    }
+    else if(countdown.wPerfMs - performance.now() > SYNC_PROBE_LEAD_MS){
+
+        // 頭出しで揃える:開始の1.8秒前に、試しの頭出しを予約します
+        syncStartTimerIds.push(setTimeout(
+            syncProbeSeekLag,
+            countdown.wPerfMs - SYNC_PROBE_LEAD_MS - performance.now()
+        ));
+
+    }
+    else{
+
+        console.log(
+            "同期モード ③ 試し頭出しの時間がありません : 予備の値 " + SYNC_SEEK_LEAD_MS + "ms で頭出しします"
+        );
+
+    }
+
+    console.log(
+        "同期モード ③ 開始の" + remainSec.toFixed(1) + "秒前 : 消音・音量0で先に鳴らし始めました",
+        "/ " + (countdown.mode === "chase"
+            ? "追いかけて揃えます(その瞬間は頭出しなし)"
+            : "頭出しで揃えます(試し頭出しで待ちを測る)")
+    );
+
+}
+
+/**
+ * デッキの「本来の」再生速度を返します(v230)。
+ *
+ * ⚠️ deck.playbackRate は、先に鳴らしている間は追いかけ補正で少し
+ *    変わっていることがあります。だから曲のテンポとピッチから計算し
+ *    直します(applyPitchToDeck と同じ式。js/connect.js の getTrackRate)。
+ *
+ * @param  {HTMLAudioElement} deck
+ * @return {number} 再生速度
+ */
+function getSyncDeckBaseRate(deck){
+
+    const track = getDeckTrack(deck);
+
+    if(track){ return getTrackRate(track); }
+
+    return deck.playbackRate || 1;
+
+}
+
+/**
+ * 試しの頭出し:頭出しから曲が進み出すまでの待ちを、その場で測ります(v230)。
+ *
+ * 「頭出しで揃える」やり方(syncWarmup の【2つのやり方】②)でだけ使います。
+ * 消音・音量0で鳴らしている最中なので、試しに頭出ししても聞こえません。
+ *
+ * ------------------------------------------------------------
+ * 【測り方】
+ *
+ * 試しの頭出しを命令した時刻を t0 とします。曲が「待ち」のあと進み
+ * 出したなら、
+ *
+ *     位置 = 狙いの位置 + (今 − t0 − 待ち) × 再生速度
+ *
+ * なので、式を入れ替えて
+ *
+ *     待ち = (今 − t0) − (位置 − 狙いの位置) ÷ 再生速度
+ *
+ * これを3回測って平均します。結果で本番の頭出しの予約を取り直します。
+ *
+ *     本番の頭出しの命令 = 狙いの瞬間 − 待ち
+ *     → 待ちのあと、ちょうど狙いの瞬間に狙いの位置から進み出す
+ *
+ * ⚠️ 測れなかった時は、予約を取り直さずに予備の値(14ms)のままにします。
+ *    v229までと同じ動きになるだけで、スタートできなくなることはありません。
+ */
+function syncProbeSeekLag(){
+
+    const countdown = syncCountdown;
+
+    if(!countdown || !countdown.plan || countdown.mode !== "seek"){ return; }
+
+    const deck = audioPlayer;
+    const plan = countdown.plan;
+
+    if(deck.paused){
+
+        console.log("同期モード ③ 試し頭出し : 曲が止まっていたので見送り(予備の値 " + SYNC_SEEK_LEAD_MS + "ms)");
+
+        return;
+
+    }
+
+    const rate = getSyncDeckBaseRate(deck);
+
+    const probeAtMs = performance.now();
+
+    deck.currentTime = plan.targetSec;
+
+    const lags = [];
+
+    let attempts = 0;
+
+    const sample = function(){
+
+        // やめた・スタートし終えた時は、何もしません
+        if(syncCountdown !== countdown){ return; }
+
+        attempts++;
+
+        /*
+        進み出しているかを確かめてから測ります(狙いの位置から30ms以上
+        進んでいること)。まだ待ちの最中に測ると、待ちを短く見積もります。
+        */
+        if(!deck.paused && !deck.seeking && deck.currentTime > plan.targetSec + 0.03 * rate){
+
+            lags.push((performance.now() - probeAtMs) - (deck.currentTime - plan.targetSec) / rate * 1000);
+
+        }
+
+        if(attempts < SYNC_PROBE_SAMPLE_COUNT){
+
+            syncStartTimerIds.push(setTimeout(sample,SYNC_PROBE_SAMPLE_INTERVAL_MS));
+
+            return;
+
+        }
+
+        applyResult();
+
+    };
+
+    const applyResult = function(){
+
+        if(lags.length === 0){
+
+            console.log("同期モード ③ 試し頭出し : 測れませんでした(予備の値 " + SYNC_SEEK_LEAD_MS + "ms)");
+
+            return;
+
+        }
+
+        const meanMs = lags.reduce(function(a,b){ return a + b; },0) / lags.length;
+
+        /*
+        ありえない値は使いません。マイナスに少しだけ出るのは読み取りの
+        誤差なので0として扱い、それより大きくマイナス・上限超えは捨てます。
+        */
+        if(meanMs < -20 || meanMs > SYNC_PROBE_MAX_LAG_MS){
+
+            console.log(
+                "同期モード ③ 試し頭出し : 測った待ち " + Math.round(meanMs) + "ms は範囲外なので使いません",
+                "(予備の値 " + SYNC_SEEK_LEAD_MS + "ms)"
+            );
+
+            return;
+
+        }
+
+        const lagMs = Math.max(0,meanMs);
+
+        countdown.seekLeadMs = lagMs;
+
+        // 本番の頭出しの予約を取り直します(狙いの瞬間 − 待ち)
+        clearTimeout(countdown.fireTimerId);
+
+        countdown.fireTimerId = setTimeout(
+            syncFire,
+            Math.max(0,countdown.wPerfMs - lagMs - performance.now())
+        );
+
+        syncStartTimerIds.push(countdown.fireTimerId);
+
+        console.log(
+            "同期モード ③ 試し頭出し : 頭出しから進み出すまで " + Math.round(lagMs) + "ms",
+            "(" + lags.length + "回の平均 / " +
+            Math.round(Math.min.apply(null,lags)) + "〜" + Math.round(Math.max.apply(null,lags)) + "ms)",
+            "→ 本番の頭出しを、そのぶん早く命令します"
+        );
+
+    };
+
+    syncStartTimerIds.push(setTimeout(sample,SYNC_PROBE_SAMPLE_START_MS));
 
 }
 
@@ -5115,6 +5446,17 @@ function syncWarmup(){
  *
  *    ただし頭から鳴らす時は、ずらしたぶん曲の頭がわずかに欠けます
  *    (10ms遅れなら頭の10ms)。耳では分からない長さです。
+ *
+ * ------------------------------------------------------------
+ * 【v230】「追いかけて揃える」やり方では頭出ししません
+ *
+ * 先に鳴らしている間に、曲はもう「居るべき位置」に揃っています
+ * (syncWarmup の【2つのやり方】①)。ここで頭出しすると、せっかく
+ * 揃えた位置にまた鳴り出しの遅れが入るので、**音量を上げるだけ**に
+ * します(syncRaiseChased)。
+ *
+ * 「頭出しで揃える」やり方では、上の説明どおり頭出しします。命令を
+ * 早める量は、試し頭出しで測った待ち(countdown.seekLeadMs)です。
  */
 function syncFire(){
 
@@ -5127,12 +5469,33 @@ function syncFire(){
     // 万一、先に鳴らし始めるのが間に合っていなかったら、ここで
     if(!countdown.warmStarted){ syncWarmup(); }
 
+    if(countdown.mode === "chase"){
+
+        if(!deck.paused){
+
+            syncRaiseChased(countdown);
+
+            return;
+
+        }
+
+        /*
+        追いかけている間に、何かの理由で曲が止められていました。
+        止まった曲の位置はもう居るべき位置ではないので、補正を止めて、
+        下の「頭出しで揃える」やり方で鳴らします(予備の値14msで)。
+        */
+        if(countdown.chase){ countdown.chase.stop("曲が止まっていた"); }
+
+        countdown.mode = "seek";
+
+    }
+
     const issuedAtMs = performance.now();
 
-    // 本来の命令の瞬間(狙いの14ms前)から、どれだけ遅れたか
-    const lateMs = issuedAtMs - (countdown.wPerfMs - SYNC_SEEK_LEAD_MS);
+    // 本来の命令の瞬間(狙いの瞬間 − 頭出しの待ち)から、どれだけ遅れたか
+    const lateMs = issuedAtMs - (countdown.wPerfMs - countdown.seekLeadMs);
 
-    const rate = deck.playbackRate || 1;
+    const rate = getSyncDeckBaseRate(deck);
 
     /*
     遅れたぶん、狙う位置を先へずらします(上の【遅れの打ち消し】)。
@@ -5173,6 +5536,8 @@ function syncFire(){
 
         console.log(
             "同期モード ③ スタートしました : 頭出しの待ち " + (doneAtMs - issuedAtMs).toFixed(0) + "ms(" + why + ")",
+            "/ 頭出しを " + Math.round(countdown.seekLeadMs) + "ms 早く命令" +
+            (countdown.seekLeadMs === SYNC_SEEK_LEAD_MS ? "(予備の値)" : "(試し頭出しで測った値)"),
             "/ 命令の遅れ " + formatSyncSignedMs(lateMs) + "(位置をずらして打ち消し済み)"
         );
 
@@ -5199,6 +5564,45 @@ function syncFire(){
 }
 
 /**
+ * 「追いかけて揃える」やり方のスタート:音量を上げるだけです(v230)。
+ *
+ * 先に鳴らしている間に、曲はもう居るべき位置に揃っています。ここで
+ * やるのは次の2つだけで、**曲の位置には一切触りません。**
+ *
+ *   1. 追いかけ補正を止めて、本来の速さに戻す
+ *      (ふつうは0.5秒前に終わっていて、何もしない)
+ *   2. 消音を戻して、30msで音量を上げる(頭出しの時と同じ上げ方)
+ *
+ * @param {Object} countdown - syncCountdown(この約束)
+ */
+function syncRaiseChased(countdown){
+
+    const deck = audioPlayer;
+    const plan = countdown.plan;
+
+    // 1. 補正を止めて、本来の速さに戻します(音量を上げる前に必ず)
+    if(countdown.chase){ countdown.chase.stop("開始の瞬間まで補正していた"); }
+
+    const issuedAtMs = performance.now();
+
+    // 2. 消音を元に戻して、30msで音量を上げます
+    setBothDecksMuted(syncMutedBefore);
+
+    startFade(deck,0,1,CONNECT_HEAD_FADE_SEC);
+
+    console.log(
+        "同期モード ③ スタートしました : 頭出しなし(追いかけて揃えた曲の音量を上げるだけ)",
+        "/ 音量を上げた時刻 狙いの瞬間から " + formatSyncSignedMs(issuedAtMs - countdown.wPerfMs),
+        "(位置はもう揃っているので、ずれても聞こえ始めが前後するだけ)"
+    );
+
+    finishSyncStart();
+
+    measureSyncAlignment(deck,plan.targetSec,countdown.wPerfMs);
+
+}
+
+/**
  * スタートした後の片付けです。同期モードの画面を閉じて、🕺ノリノリRunの
  * 画面を見せます(竹弘の指定「曲が再生開始されたら『ノリノリRun』
  * 再生画面を表示」)。
@@ -5207,6 +5611,12 @@ function syncFire(){
  *    閉じ方で、開いた時に鳴っていた曲を鳴らし直してしまうためです。
  */
 function finishSyncStart(){
+
+    /*
+    追いかけ補正が残っていたら止めます(v230。ふつうは止まっています)。
+    速さを変えたまま走り出すと、テンポがずれるためです。
+    */
+    if(syncCountdown && syncCountdown.chase){ syncCountdown.chase.stop(null); }
 
     syncStartTimerIds.forEach(function(id){ clearTimeout(id); });
     syncStartTimerIds = [];
@@ -5251,7 +5661,8 @@ function finishSyncStart(){
  */
 function measureSyncAlignment(deck,targetSec,wPerfMs){
 
-    const rate = deck.playbackRate || 1;
+    // 本来の速さで測ります(v230。追いかけ補正の途中の値を拾わないため)
+    const rate = getSyncDeckBaseRate(deck);
 
     const errors = [];
 
@@ -5326,6 +5737,12 @@ function cancelSyncCountdown(notice){
     if(!syncCountdown){ return; }
 
     const countdown = syncCountdown;
+
+    /*
+    追いかけ補正を止めて、本来の速さに戻します(v230)。
+    ⚠️ 戻し忘れると、次に▶を押した時に**少し速い(遅い)まま鳴ります。**
+    */
+    if(countdown.chase){ countdown.chase.stop(null); }
 
     syncCountdown = null;
 
