@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v227)ノリRun
+        (v228)ノリRun
         メインメニュー
 
     </title>
@@ -5669,6 +5669,79 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         }
 
         /* ======================================================
+           同期モード ④ みんなの拍ランプ・もう一度カチッを鳴らす(v228)
+        ====================================================== */
+        /*
+        ランプは、③で合わせた拍ごとに1回光ります(js/sync.js の
+        flashSyncBeatLamp が .sync-beat-on を付け直す)。全員のスマホを
+        並べて、リードランナーと一緒に光るかを目で確かめるためのものです。
+
+        ⚠️ 強弱は付けません(竹弘の判断。毎拍、同じ光り方)。
+        ⚠️ 光っている長さ(animation の 140ms)は js/sync.js の
+           SYNC_LAMP_FLASH_MS と同じ値にすること。
+
+        消えている時もうっすら丸が見えるようにしています(どこが光るのか、
+        光る前から分かるように)。並べて見比べやすいよう、大きめの丸です。
+        */
+        #sync-panel .sync-beat-row{
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            gap:12px;
+
+            margin:4px 0 6px 0;
+        }
+
+        #sync-panel .sync-beat-lamp{
+            width:34px;
+            height:34px;
+            border-radius:50%;
+
+            background:rgba(var(--theme-rgb),0.15);
+            box-shadow:inset 0 0 0 2px rgba(var(--theme-rgb),0.35);
+        }
+
+        #sync-panel .sync-beat-lamp.sync-beat-on{
+            animation:sync-beat-flash 140ms ease-out;
+        }
+
+        /*
+        @keyframes は「アニメーションの途中の姿」を決める書き方です。
+        0% が光った瞬間、100% が消え終わった姿(ふだんの薄い丸)です。
+        */
+        @keyframes sync-beat-flash{
+            0%{
+                background:var(--theme-color);
+                box-shadow:
+                    0 0 18px rgba(var(--theme-rgb),0.9),
+                    inset 0 0 0 2px var(--theme-color);
+            }
+            100%{
+                background:rgba(var(--theme-rgb),0.15);
+                box-shadow:inset 0 0 0 2px rgba(var(--theme-rgb),0.35);
+            }
+        }
+
+        #sync-panel .sync-beat-label{
+            font-size:0.9rem;
+            font-weight:bold;
+
+            color:var(--theme-color);
+        }
+
+        /* リードだけの「もう一度カチッを鳴らす」は横いっぱい(ほかのボタンと縦の線をそろえる) */
+        #sync-panel .sync-replay-btn{
+            width:100%;
+            margin-top:10px;
+        }
+
+        /* 「このスマホの時計」の下の一言は、時刻ボタンとの間を少し空けます */
+        #sync-panel .sync-clock-note{
+            text-align:center;
+            margin:-4px 0 12px 0;
+        }
+
+        /* ======================================================
            同期モードの確認ポップ(v226)
         ====================================================== */
         /*
@@ -8384,13 +8457,15 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
         -->
         <section class="sync-step" id="sync-step-clock" style="display:none;">
 
-            <p class="connect-heading">③ みんなの時計を合わせる</p>
+            <!-- v228で「みんなの時計を合わせる」から改名(合わせられるのは拍だけのため。js/sync.js 冒頭) -->
+            <p class="connect-heading">③ みんなの拍を合わせる</p>
 
             <p class="connect-note">
                 リードランナーが1人だけ「音を出す」を押します。<br>
                 全員がその音に合わせて、レコードを<br>
                 12回タップしてください。<br>
-                イヤホンは、合わせる間だけ外します。
+                イヤホンは、合わせる間だけ外します。<br>
+                リードランナーは Bluetooth も切ります。
             </p>
 
             <div class="sync-step-body">
@@ -8408,7 +8483,7 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
                 </div>
 
                 <!-- ②と同じターンテーブル(idだけ別) -->
-                <button type="button" id="sync-clock-pad" class="sync-deck" data-phase="idle" aria-label="タップしてみんなの時計を合わせる">
+                <button type="button" id="sync-clock-pad" class="sync-deck" data-phase="idle" aria-label="タップしてみんなの拍を合わせる">
                     <span class="sync-deck-stage">
 
                         <span class="sync-monitor">
@@ -8544,12 +8619,12 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
                (10なら10〜20秒後の時刻を出す)。ボタンを足す時は
                この形の <button> を1つ足すだけで、JSは直さずに済みます。
 
-            ⚠️ v227から、時計は各スマホの時計ではなく「みんなの時計」
-               (③で合わせた、リードランナーの時計)です。全員のスマホで
-               同じ時刻が出て、同じ瞬間に秒がめくれます。竹弘の実機報告
-               (2026-10-04)「nowの時計が合って見えないと、③がうまく
-               いっていないと間違えて混乱を招く」への対策です。
-               仕組みは js/sync.js 冒頭の【みんなの時計】。
+            ⚠️ v228から、時計は「このスマホの時計」と正直に出します。
+               v227で「みんなの時計」(リードの時計)に揃えようとしましたが、
+               スマホの時計は数秒ずれることがあり(竹弘の実機で XPERIA が
+               1.8秒遅れ)、揃えられませんでした。合わせられるのは拍だけ
+               なので、拍は「みんなの拍ランプ」で目で確かめてもらいます。
+               仕組みは js/sync.js 冒頭の【v227の失敗と、v228の考え方】。
         -->
         <section class="sync-step" id="sync-step-start" style="display:none;">
 
@@ -8561,24 +8636,57 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
                 待っている間は、画面を消さないでください。
             </p>
 
-            <p class="connect-note">
-                時計は ③で合わせた「みんなの時計」です。<br>
-                全員のスマホで、同じ瞬間に秒が進みます。
-            </p>
-
             <!-- ③で合わせた基準の状態(js/sync.js が書き換えます) -->
             <p class="connect-note sync-anchor-line">
                 <span id="sync-anchor-state"></span>
             </p>
 
+            <!--
+                みんなの拍ランプ(v228。竹弘の案「ランプで拍を確認できるようにして、
+                それがリードランナーと合っているかを確認してもらう」)。
+
+                ③で合わせた拍ごとに、同じ強さで光ります(js/sync.js の
+                flashSyncBeatLamp)。⚠️ 強弱は付けない(竹弘の判断。右足・左足と
+                同じで、合わせる必要のないものを見せると不安にさせるため)。
+            -->
+            <div class="sync-beat-row">
+                <span class="sync-beat-lamp" id="sync-beat-lamp"></span>
+                <span class="sync-beat-label">みんなの拍</span>
+            </div>
+
+            <p class="connect-note">
+                リードランナーのスマホと並べて、<br>
+                ランプが一緒に光るか確かめてください。<br>
+                ずれて光る人は、③の「合わせ直す」で叩き直します。
+            </p>
+
+            <!--
+                リードランナーだけに見せる「もう一度カチッを鳴らす」(v228)。
+                ランプが合わない人が叩き直すための音です。最初と同じリズムの
+                位置で鳴ります(js/sync.js の startSyncLeadClicks)。
+                見せる・隠すは js/sync.js の refreshSyncReplayBox。
+            -->
+            <div id="sync-replay-box" style="display:none;">
+                <button type="button" id="sync-replay-btn" class="sync-btn sync-replay-btn">🔊 もう一度カチッを鳴らす</button>
+                <p class="connect-note sync-guide" id="sync-replay-note"></p>
+            </div>
+
             <!-- 時刻を選ぶ姿 -->
             <div id="sync-start-choose">
 
-                <!-- v227で「NOW」から「みんなの時計」に(各スマホの時計ではないことを示すため) -->
+                <!--
+                    v228で「このスマホの時計」に(v226までは「NOW」、v227だけ「みんなの時計」)。
+                    スマホごとに数秒ずれることがあるので、そのことを下に添えます。
+                -->
                 <div class="sync-clock">
-                    <span class="sync-clock-label">みんなの時計</span>
+                    <span class="sync-clock-label">このスマホの時計</span>
                     <span class="sync-clock-time" id="sync-clock-time">--:--:--</span>
                 </div>
+
+                <p class="connect-note sync-clock-note">
+                    時計はスマホごとに数秒ずれることがあります。<br>
+                    曲の始まりがずれても、拍は揃います。
+                </p>
 
                 <div class="sync-time-list">
                     <button type="button" class="sync-time-btn" data-min-sec="10">
