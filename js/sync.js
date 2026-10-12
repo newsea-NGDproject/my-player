@@ -59,12 +59,16 @@
                     ・リードだけに「🔊 もう一度カチッを鳴らす」
                     ・開き直した時は①②を決めたまま開く
                     (下の【v227の失敗と、v228の考え方】)
-          (v229) … 拍合わせ画面と、②の穴 ← いまここ
+          (v229) … 拍合わせ画面と、②の穴
                     ・④の小さなランプを「👀 みんなの拍を見比べる」画面に
                       (画面の縁が太く光る・DJ風モニタ・早める/遅らせるパッド)
                     ・②③で12回に届かず止まった時に、黙って前の値に戻らない
                     ・②③で盤の外を叩いたら一言出す
                     (下の【v229 拍合わせ画面】)
+          (v230) … 先に鳴らす間に「鳴り出しの遅れ」を打ち消す
+                    (追いかけ補正 / 試し頭出し。syncWarmup の【2つのやり方】)
+          (v232) … 音の出口を休ませない・先に鳴らす間は消音を使わない ← いまここ
+                    (下の【v232 音の出口と消音】)
      段④        … 薄暗いロック画面・走行タイマー・イヤホン操作・時刻からの再開
 
 ----------------------------------------------------------------------
@@ -193,6 +197,59 @@
 
  ⚠️ リードランナーのスマホにはパッドを出しません(竹弘と合意)。リードは
     基準なので、リードが動かすと全員が合わせ直しになるためです。
+
+----------------------------------------------------------------------
+
+【v232 音の出口と消音】
+
+ 竹弘の実機の確認(2026-10-12。アプリは v231 のまま)で、時刻を合わせたい
+ 音が「ずれる仕組み」が2つ見つかりました。
+
+ ---- ① 音の出口が休んでいると、約0.2秒の引っかかりが入る ----
+
+ Chrome は、アプリの音が30秒ほど無音のままだと、電池のために本物の
+ 「音の出口」(スピーカー・イヤホンへの通り道)を休ませます(のりの理解)。
+ 次に音を出した瞬間に起こし直しますが、起きるまでの約0.2秒が、
+ 時刻の合わせ方に入り込みます。
+
+     確認A … ②を5回。40秒以上 無音だった回だけ高く出た
+             GALAXY 131 / -56 / -41 / 146 / -32ms(高い回は +175〜190ms)
+             XPERIA 158 / -59 / -45 / 172 / -49ms(高い回は +210〜220ms)
+     確認B … スタートの直前に約80秒無音 → スタート位置の実測 -171ms
+             約11秒無音(リードのカチッの後)→ +60ms(差は 231ms)
+
+ v229 までは、②も同期スタートも「無音の後」に来ることが多かったので、
+ ②が高く出たぶん早く送り出し、スタートが遅れたぶんと**偶然打ち消し
+ 合って**、耳では揃っていました(2台の数字が食い違うのに耳では揃って
+ いた、の正体)。でも打ち消し合う量は機種で違い、無音だったかどうかで
+ 毎回変わります。
+
+ → 同期モードの画面を開いている間、**聞こえないごく小さな信号**を流して、
+   出口を休ませないようにしました(startSyncKeepAwake。5-3c節)。
+   ②も③もスタートも、いつも「起きている出口」で測って鳴らします。
+
+ ---- ② 鳴っている曲の消音を戻すと、曲の位置が約60ms先へ跳ぶ ----
+
+     確認B 後半 … 出口は起きている・スタートで消音を戻す → +60ms
+     確認C      … 出口は起きている・🔇のままスタート     → -1ms
+
+ v231 までは、先に鳴らす6秒の間は曲を「消音・音量0」にして、スタートの
+ 瞬間に消音を戻していました。その瞬間に曲の位置が跳んでいました
+ (確認C の後、竹弘が鳴っている曲の🔇を戻した10秒間だけ、曲の進みが
+ 35〜55ms 多かったのも同じ現象。GALAXY で確認)。
+
+ → v232 から、先に鳴らす間は**音量0(音量つまみ)だけ**にして、消音は
+   使いません(接続の助走と同じ形。あちらは同じ追いかけ補正で ±5ms に
+   収まっている)。竹弘が自分で🔇にしている時は、そのまま触りません。
+
+ ⚠️ 消音は「先に鳴らす間、ノリノリアシストを鳴らさない」役目も兼ねて
+    いました。その役目は js/metronome.js の「同期スタートの準備中」に
+    移しました(isSyncWarmingUp)。
+
+ ⚠️ 見張り:走っている途中で🔈を押して消音を戻すと、その人の曲だけ
+    約50ms先へずれます(GALAXY)。同期モードでは段④のロック画面で🔈を
+    押せなくする予定です。1人で走る時は、アシストも曲の位置から刻むので
+    困りません。
 ================================================================
 */
 
@@ -453,7 +510,8 @@ const SYNC_BLUETOOTH_OFF_TEXT =
 const SYNC_SHARED_DRIFT_WARN_MS = 100;
 
 /*
-開始の何秒前から、曲を「音量0・消音」で先に鳴らしておくか。
+開始の何秒前から、曲を「音量0」で先に鳴らしておくか。
+(v231までは「音量0・消音」。v232から消音は使いません。冒頭の【v232 音の出口と消音】)
 
 🎬頭出し接続と同じ考え方です。いきなり鳴らし始めると、鳴り出すまでの
 時間(数十ms、端末や曲で違う)が読めません。**先に鳴らして通り道を
@@ -546,6 +604,38 @@ const SYNC_MEASURE_DELAY_MS = 300;
 画面が消えてタイマーが止められた時などの保険です。
 */
 const SYNC_LATE_GIVEUP_MS = 2000;
+
+/*
+---- 音の出口を休ませない「聞こえない小さな信号」(v232) ----
+
+    SYNC_KEEP_AWAKE_LEVEL          … 信号の大きさ(ずっと同じ値の「直流」。1が最大)
+    SYNC_KEEP_AWAKE_RAMP_SEC       … 流し始め・止める時に、何秒かけて0から
+                                     その大きさへ(その大きさから0へ)変えるか
+    SYNC_KEEP_AWAKE_AFTER_START_MS … スタートした後、何ms流し続けてから止めるか
+
+【なぜ 0.0001 なのか】
+
+    大きすぎると … Chrome が「この画面は音を鳴らしている」と見なし、ほかの
+                   アプリの音を小さくさせたり、通知に「再生中」を出したり
+                   するおそれがあります。目安の境目は約 −72dB(のりの理解)
+    0 だと      … 「無音」と見なされ、出口を休ませる判定に掛かってしまう
+                   (Chrome はぴったり0かどうかで無音を見ている、とのりは理解)
+
+ 0.0001 は −80dB です。境目より小さく、0でもありません。しかも直流(振動
+ しない信号)なので、スピーカーもイヤホンも音として鳴らしません。
+
+⚠️ 「本当に出口が休まなくなったか」は、実機で②を無音の後に測って確かめる
+   (確認A のやり直し)。休んでしまうようなら、この値を見直します。
+
+【なぜスタートの後も3秒流すのか】
+
+ スタートの瞬間からは曲が鳴るので、もう信号は要りません。ただ、曲の音量は
+ 30msかけて上がり、スタート直後の位置の実測(約1.3秒)も続いています。その間に
+ 万一にも出口が休まないよう、少しだけ重ねてから止めます。
+*/
+const SYNC_KEEP_AWAKE_LEVEL = 0.0001;
+const SYNC_KEEP_AWAKE_RAMP_SEC = 0.05;
+const SYNC_KEEP_AWAKE_AFTER_START_MS = 3000;
 
 /*
 ---- ③ みんなの時計を合わせる(v225) ----
@@ -870,11 +960,23 @@ let syncCountdown = null;
 // カウントダウン中に予約した setTimeout の受付番号(やめる時に全部取り消す)
 let syncStartTimerIds = [];
 
-// 先に鳴らす間だけ消音にするので、元の消音の状態を覚えておきます
-let syncMutedBefore = false;
+/*
+⚠️ v231まではここに syncMutedBefore(先に鳴らす間だけ消音にするので、元の
+   消音の状態を覚えておく値)がありました。v232で消音を使わなくなったので
+   消しました(冒頭の【v232 音の出口と消音】)。
+*/
 
 // 画面を消さないための「お願い」(Wake Lock)。持っていない時は null
 let syncWakeLock = null;
+
+/*
+音の出口を休ませない信号を出している部品(v232。ConstantSourceNode)。
+流していない時は null。詳しくは 5-3c節の startSyncKeepAwake()。
+*/
+let syncKeepAwakeNode = null;
+
+// スタートした後に信号を止める予約(setTimeout の受付番号)。予約していない時は0
+let syncKeepAwakeStopTimerId = 0;
 
 // ---- ② の測定中だけ使うもの ----
 
@@ -1198,6 +1300,24 @@ async function openSyncPanel(){
     }
 
     /*
+    ---- 音の出口を休ませない信号を流し始めます(v232) ----
+
+    この画面では、②のピッ・③のカチッ・④のスタートと、時刻を正確に
+    合わせたい音が続きます。出口が休んでいると、そのたびに起こし直しの
+    引っかかり(約0.2秒)が入るので、**開いた時から休ませません**
+    (冒頭の【v232 音の出口と消音】)。
+
+    曲を一度も鳴らさずに開いた時は、音の回路がまだ無いので、ここで作ります。
+    ⚠️ 作れるのは「人が画面に触れた操作の中」だけ(ブラウザの決まり)です。
+       この関数は⚙️のメニューを押した操作から呼ばれ、ここはまだ最初の
+       await より前なので、その操作の中に入っています。
+    */
+    ensureDeckAudioGraph();
+    resumeDeckAudio();
+
+    startSyncKeepAwake();
+
+    /*
     ---- 走っている途中で開き直したか(v228) ----
 
     ③の基準が残っていれば、みんなで走っている途中です(基準はページを
@@ -1351,6 +1471,9 @@ function closeSyncPanel(){
 
     // 拍合わせ画面も閉じます(v229。画面が隠れた後まで光り続けないように)
     closeSyncBeatScreen();
+
+    // 出口を休ませない信号も止めます(v232。もう時刻を合わせる音は無いため)
+    stopSyncKeepAwake();
 
     syncPanelEl.style.display = "none";
 
@@ -2089,6 +2212,12 @@ function startSyncMeasure(){
         return;
 
     }
+
+    /*
+    出口を休ませない信号が止まっていたら、ここで流し始めます(v232)。
+    ふつうは画面を開いた時から流れていて、この1行は何もしません。
+    */
+    startSyncKeepAwake();
 
     if(!syncBeepGainNode){
 
@@ -2835,6 +2964,9 @@ function startSyncLeadClicks(){
     resumeDeckAudio();
 
     if(!deckAudioCtx){ return false; }
+
+    // 出口を休ませない信号が止まっていたら、ここで流し始めます(v232。ふつうは何もしない)
+    startSyncKeepAwake();
 
     stopSyncClockBeeps();
 
@@ -3766,9 +3898,15 @@ v229までは🎬頭出し接続と同じ手順でした:
    決まります。** 音量を上げるのが数ms遅れても、拍の位置はずれません
    (聞こえ始めが一瞬遅れるだけ)。だから大事なのは曲の位置です。
 
-⚠️ 先に鳴らす間(①)は消音にしています。ノリノリアシストは消音中は
-   鳴らない決まり(v193)なので、**開始前にバラバラのカチッが鳴る**のも
-   これで防げます。
+⚠️ v231までは、先に鳴らす間(①)は消音にしていました。ノリノリアシストは
+   消音中は鳴らない決まり(v193)なので、**開始前にバラバラのカチッが鳴る**
+   のもこれで防いでいました。
+   → v232から、消音は使わず音量0だけにしました(消音を戻す瞬間に曲の位置が
+     約60ms跳ぶため。冒頭の【v232 音の出口と消音】)。アシストは
+     js/metronome.js の「同期スタートの準備中」で止めます(isSyncWarmingUp)。
+
+⚠️ v232から、この画面を開いている間は「聞こえない小さな信号」を流して、
+   音の出口を休ませません(5-3c節)。①の6秒の間も、出口は起きたままです。
 */
 
 /**
@@ -4734,6 +4872,13 @@ async function scheduleSyncStart(targetWallMs){
     ensureDeckAudioGraph();
     resumeDeckAudio();
 
+    /*
+    出口を休ませない信号が止まっていたら、ここで流し始めます(v232)。
+    ふつうは画面を開いた時から流れていて、何もしません。万一ここで初めて
+    流れた時も、出口を起こし直す引っかかりは開始より10秒以上前に済みます。
+    */
+    startSyncKeepAwake();
+
     // ---- ① 🕺ノリノリRun再生に入り、みんなのピッチにします ----
 
     if(!isNoriRunMode){
@@ -5079,6 +5224,13 @@ function findSyncTopTrackId(){
  * おき、鳴った直後に止めて音量を0にします。消音なので何も聞こえません。
  * 消音は元の状態に戻します(竹弘が🔈で消音していたら、消音のまま)。
  *
+ * ⚠️ v232で「鳴っている曲の消音を戻すと、曲の位置が約60ms先へ跳ぶ」と
+ *    分かりましたが(冒頭の【v232 音の出口と消音】)、ここは**止めてから**
+ *    消音を戻すので、そのまま残しています。しかもこの後、先に鳴らす時
+ *    (syncWarmup)に位置を置き直す(頭出しする)ので、跳びが残っていても
+ *    そこで消えるはずです。⚠️ 未確認。頭から鳴らすスタートの「スタート位置の
+ *    実測」で見張ること。
+ *
  * @param  {string} trackId
  * @return {Promise<boolean>} 載せられたら true
  */
@@ -5117,7 +5269,36 @@ async function loadSyncTrackSilently(trackId){
 }
 
 /**
- * 開始の6秒前:曲を「消音・音量0」で先に鳴らし始めます。
+ * 同期スタートのために、曲を先に鳴らしている最中かを返します(v232)。
+ *
+ * 開始の6秒前(syncWarmup)から、音量を上げる瞬間までが「最中」です。
+ * 音量を上げると finishSyncStart() が、やめると cancelSyncCountdown() が
+ * syncCountdown を null に戻すので、どちらでも自然に「最中でない」に戻ります。
+ *
+ * 【誰が使うのか】
+ *
+ * js/metronome.js の findMetronomeBlockReason() です。この間はノリノリアシストを
+ * 鳴らしません(まだ聞こえない曲に合わせて、カチッだけが先に鳴り出さないように)。
+ * v231までは、この間は曲を🔇消音にしていたので、アシストも「🔇 消音中」で
+ * 止まっていました。v232で消音をやめたので、代わりにこの関数で知らせます
+ * (冒頭の【v232 音の出口と消音】)。
+ *
+ * ⚠️ js/metronome.js は、このファイルより**先に**読み込まれます。それでも
+ *    困らないのは、アシストがこの関数を呼ぶのが「曲が鳴っている時」だけで、
+ *    その頃には全部のファイルを読み終わっているためです(読み込んだその場で
+ *    使うと困る。CLAUDE.md の⑩の「読み込み順の罠」)。
+ *
+ * @return {boolean} 先に鳴らしている最中なら true
+ */
+function isSyncWarmingUp(){
+
+    return syncCountdown !== null && syncCountdown.warmStarted === true;
+
+}
+
+/**
+ * 開始の6秒前:曲を「音量0」で先に鳴らし始めます。
+ * (v231までは「消音・音量0」。v232から消音は使いません)
  *
  * ------------------------------------------------------------
  * 【v230】2つのやり方
@@ -5147,9 +5328,10 @@ async function loadSyncTrackSilently(trackId){
  *      (syncProbeSeekLag)。同じ曲・同じスマホ・同じ操作なので、待ちは
  *      ほぼ同じになります(実測で1回の中のばらつきは±5ms)。
  *
- * ⚠️ 先に鳴らしている間は消音なので、ノリノリアシストも鳴りません
- *    (js/metronome.js が「🔇 消音中」として止める)。速さを変えても
+ * ⚠️ 先に鳴らしている間は、ノリノリアシストも鳴りません(js/metronome.js が
+ *    「同期スタートの準備中」として止める。isSyncWarmingUp)。速さを変えても
  *    アシストのカチッがよれることはありません。
+ *    (v231までは曲を消音にして、アシストは「🔇 消音中」で止まっていました)
  */
 function syncWarmup(){
 
@@ -5159,13 +5341,25 @@ function syncWarmup(){
     const plan = countdown.plan;
     const deck = audioPlayer;
 
+    /*
+    「先に鳴らしている最中」の印です。**曲を鳴らす(play)より前に**立てます。
+    鳴り始めた瞬間にアシストが見に来ても、もう止まるようにするためです
+    (isSyncWarmingUp)。
+    */
     countdown.warmStarted = true;
 
-    // 竹弘の消音の状態を覚えてから、消音にします(スタートの時に戻します)
-    syncMutedBefore = deck.muted;
+    /*
+    ⚠️ v232から、消音(🔇)は使わず、音量0だけにします。
 
-    setBothDecksMuted(true);
+    v231までは「消音・音量0」で先に鳴らし、スタートの瞬間に消音を戻して
+    いました。ところが**鳴っている曲の消音を戻すと、曲の位置が約60ms先へ
+    跳ぶ**ことが竹弘の実機で分かりました(冒頭の【v232 音の出口と消音】の
+    確認B・確認C)。音量0なら、スタートの瞬間は音量を上げるだけで、曲の
+    位置には何も起きません(接続の助走と同じ形)。
 
+    竹弘が自分で🔇にしている時は、そのまま触りません(消音のまま走り出す)。
+    音量は <audio> ではなく音量つまみ(GainNode)が持っています(js/deck.js)。
+    */
     setDeckVolume(deck,0);
 
     const rate = getSyncDeckBaseRate(deck);
@@ -5253,7 +5447,7 @@ function syncWarmup(){
     }
 
     console.log(
-        "同期モード ③ 開始の" + remainSec.toFixed(1) + "秒前 : 消音・音量0で先に鳴らし始めました",
+        "同期モード ③ 開始の" + remainSec.toFixed(1) + "秒前 : 音量0で先に鳴らし始めました",
         "/ " + (countdown.mode === "chase"
             ? "追いかけて揃えます(その瞬間は頭出しなし)"
             : "頭出しで揃えます(試し頭出しで待ちを測る)")
@@ -5285,7 +5479,7 @@ function getSyncDeckBaseRate(deck){
  * 試しの頭出し:頭出しから曲が進み出すまでの待ちを、その場で測ります(v230)。
  *
  * 「頭出しで揃える」やり方(syncWarmup の【2つのやり方】②)でだけ使います。
- * 消音・音量0で鳴らしている最中なので、試しに頭出ししても聞こえません。
+ * 音量0で鳴らしている最中なので、試しに頭出ししても聞こえません。
  *
  * ------------------------------------------------------------
  * 【測り方】
@@ -5518,9 +5712,11 @@ function syncFire(){
 
         const doneAtMs = performance.now();
 
-        // 消音を元に戻して、30msで音量を上げます(🎬と同じ上げ方)
-        setBothDecksMuted(syncMutedBefore);
-
+        /*
+        30msで音量を上げます(🎬と同じ上げ方)。
+        ⚠️ v232から消音には触りません(先に鳴らす間も消音を使っていないため。
+           syncWarmup のコメント)。
+        */
         startFade(deck,0,1,CONNECT_HEAD_FADE_SEC);
 
         // 何かの理由で止められていた時の保険
@@ -5571,7 +5767,11 @@ function syncFire(){
  *
  *   1. 追いかけ補正を止めて、本来の速さに戻す
  *      (ふつうは0.5秒前に終わっていて、何もしない)
- *   2. 消音を戻して、30msで音量を上げる(頭出しの時と同じ上げ方)
+ *   2. 30msで音量を上げる(頭出しの時と同じ上げ方)
+ *
+ * ⚠️ v231までは2.で「消音を戻して」いました。その瞬間に曲の位置が約60ms先へ
+ *    跳んでいたので(確認B 後半 +60ms / 🔇のままなら確認C -1ms)、v232から
+ *    消音は使いません(冒頭の【v232 音の出口と消音】)。
  *
  * @param {Object} countdown - syncCountdown(この約束)
  */
@@ -5585,9 +5785,7 @@ function syncRaiseChased(countdown){
 
     const issuedAtMs = performance.now();
 
-    // 2. 消音を元に戻して、30msで音量を上げます
-    setBothDecksMuted(syncMutedBefore);
-
+    // 2. 30msで音量を上げます(v232から消音には触らない)
     startFade(deck,0,1,CONNECT_HEAD_FADE_SEC);
 
     console.log(
@@ -5634,6 +5832,14 @@ function finishSyncStart(){
     stopSyncClockBeeps();
 
     syncRuler.stop();
+
+    /*
+    出口を休ませない信号は、少し重ねてから止めます(v232)。
+    ここからは曲が鳴るので要りませんが、音量を上げる途中やスタート直後の
+    位置の実測の間に、万一にも出口が休まないようにするためです
+    (SYNC_KEEP_AWAKE_AFTER_START_MS のコメント)。
+    */
+    stopSyncKeepAwakeLater();
 
     if(syncPanelEl){ syncPanelEl.style.display = "none"; }
 
@@ -5727,8 +5933,13 @@ function formatSyncSignedMs(ms){
 /**
  * カウントダウンを取りやめます(「やめる」・✕・①②の選び直し・時間切れ)。
  *
- * 先に鳴らし始めていたら止め、消音と音量を元に戻します。
+ * 先に鳴らし始めていたら止め、音量を元に戻します。
  * ⚠️ 音量を1に戻し忘れると、次に▶を押した時に**無音のまま鳴ります。**
+ * (v231までは消音も元に戻していました。v232から先に鳴らす間も消音を
+ *  使わないので、戻すものがありません)
+ *
+ * ⚠️ 出口を休ませない信号(v232)は止めません。同期モードの画面は開いた
+ *    ままで、すぐにもう一度時刻ボタンを押すことがあるためです。
  *
  * @param {string} notice - ③の下に出す知らせ(空なら出さない)
  */
@@ -5752,8 +5963,6 @@ function cancelSyncCountdown(notice){
     if(countdown.warmStarted){
 
         audioPlayer.pause();
-
-        setBothDecksMuted(syncMutedBefore);
 
     }
 
@@ -5806,6 +6015,229 @@ function releaseSyncWakeLock(){
     syncWakeLock = null;
 
     lock.release().catch(function(){ /* すでに外れていても構いません */ });
+
+}
+
+
+// ==========================================================
+// 5-3c. 音の出口を休ませない(v232)
+// ==========================================================
+/*
+【何のための仕組みか】
+
+Chrome は、アプリの音が30秒ほど無音のままだと、電池のために本物の
+「音の出口」(スピーカー・イヤホンへの通り道)を休ませ、代わりの
+タイマーで「音の時計」だけを進めます(のりの理解)。次に音を出した
+瞬間に本物の出口を起こしますが、起きるまでの約0.2秒、作った音は
+列に並んで待たされ、その間は音の時計も曲の位置も止まります。
+
+竹弘の実機(2026-10-12)で、これが2か所に入り込んでいると分かりました
+(冒頭の【v232 音の出口と消音】)。
+
+    ② Bluetooth遅延 … 無音の後の1回目だけ、約0.2秒高く出る
+    同期スタート    … 無音の後のスタートは、曲の位置が約0.2秒遅れる
+
+→ 同期モードの画面を開いている間、**聞こえないごく小さな信号**を
+  流し続けて、出口を休ませません。
+
+【流す信号】
+
+ずっと同じ値を出し続けるだけの「直流」です。ConstantSourceNode という
+部品(決まった値を出し続ける Web Audio の部品)を使います。大きさは
+SYNC_KEEP_AWAKE_LEVEL(0.0001 = −80dB)。なぜこの値かは、その定数の
+コメントにあります。
+
+⚠️⚠️ **ConstantSourceNode の値は、何もしないと1(最大)です。**
+   必ず0から始めて、ゆっくり SYNC_KEEP_AWAKE_LEVEL まで上げること。
+   間違えると「ボン」という大きな音が出ます。
+
+【いつ流すか】
+
+    流し始める … 同期モードの画面を開いた時(openSyncPanel)。
+                 ②の測定・③のカチッ・④の時刻ボタンでも念のため呼ぶ
+                 (流れていれば何もしない)
+    止める     … ✕で閉じた時 / スタートして3秒後 / 画面が隠れた時
+                 (電源ボタンで消した・別のアプリに切り替えた)
+    また流す   … 画面が見えるようになった時(同期モードの画面が開いていれば)
+
+画面が隠れた時に止めるのは、同期モードの画面を開いたままスマホを
+しまっても、出口を動かし続けて電池を使い続けないようにするためです。
+
+⚠️ close() は使いません(v157:音の回路を閉じると、次に音を出す時に
+   「ブッ」というノイズが出た)。止めるのは信号の部品だけで、
+   音の回路(deckAudioCtx)はそのままです。
+*/
+
+/**
+ * 出口を休ませない信号を流し始めます(v232)。
+ *
+ * すでに流していれば何もしません(何度呼んでも1本だけ)。音の回路
+ * (deckAudioCtx)がまだ無い時も何もしません。回路は人が画面に触れた
+ * 操作の中でしか作れないので、その時にもう一度呼ばれます。
+ */
+function startSyncKeepAwake(){
+
+    // スタート後の「3秒後に止める」予約が残っていたら取り消します(また使うので)
+    if(syncKeepAwakeStopTimerId){
+
+        clearTimeout(syncKeepAwakeStopTimerId);
+
+        syncKeepAwakeStopTimerId = 0;
+
+    }
+
+    if(syncKeepAwakeNode || !deckAudioCtx){ return; }
+
+    /*
+    ConstantSourceNode が無い古いブラウザでは、何もしません。
+    その時は v231 までと同じ動き(出口が休むことがある)になるだけで、
+    同期モードそのものは使えます。
+    */
+    if(typeof deckAudioCtx.createConstantSource !== "function"){
+
+        console.warn("同期モード : この端末では、音の出口を休ませない信号を流せません(今までどおり動きます)");
+
+        return;
+
+    }
+
+    try{
+
+        const node = deckAudioCtx.createConstantSource();
+
+        const now = deckAudioCtx.currentTime;
+
+        /*
+        ⚠️ 最初は1(最大)なので、鳴らし始める前に必ず0にします。
+        そこから SYNC_KEEP_AWAKE_RAMP_SEC 秒かけて、ゆっくり上げます。
+
+            setValueAtTime(値,時刻)            … その時刻に、その値にする
+            linearRampToValueAtTime(値,時刻)   … その時刻までに、まっすぐ
+                                                  その値へ近づける
+        */
+        node.offset.value = 0;
+        node.offset.setValueAtTime(0,now);
+        node.offset.linearRampToValueAtTime(SYNC_KEEP_AWAKE_LEVEL,now + SYNC_KEEP_AWAKE_RAMP_SEC);
+
+        node.connect(deckAudioCtx.destination);
+
+        node.start();
+
+        syncKeepAwakeNode = node;
+
+        // 【開発用調査ログ】(v232)実機で「開いた時から流れていたか」を確かめるため
+        console.log("同期モード : 音の出口を休ませないよう、聞こえない小さな信号を流し始めました");
+
+    }
+    catch(error){
+
+        // 流せなくても、同期モードそのものは今までどおり使えます
+        console.error("同期モード : 音の出口を休ませない信号を流せませんでした :",error.name,error.message);
+
+    }
+
+}
+
+/**
+ * 出口を休ませない信号を止めます(v232)。
+ *
+ * いきなり0にせず、SYNC_KEEP_AWAKE_RAMP_SEC 秒かけて0まで下げてから止めます
+ * (ごく小さな値でも、段差は「プツ」の元になりうるため)。下げきる時刻に
+ * 止める予約をするだけなので、ここで待つことはありません。
+ */
+function stopSyncKeepAwake(){
+
+    if(syncKeepAwakeStopTimerId){
+
+        clearTimeout(syncKeepAwakeStopTimerId);
+
+        syncKeepAwakeStopTimerId = 0;
+
+    }
+
+    if(!syncKeepAwakeNode){ return; }
+
+    const node = syncKeepAwakeNode;
+
+    syncKeepAwakeNode = null;
+
+    try{
+
+        const now = deckAudioCtx.currentTime;
+
+        /*
+        予約してある変化(上げている途中など)を取り消し、今の値から
+        0へ下げます。cancelScheduledValues は「この時刻より後の予約を
+        取り消す」命令です。
+        */
+        node.offset.cancelScheduledValues(now);
+        node.offset.setValueAtTime(node.offset.value,now);
+        node.offset.linearRampToValueAtTime(0,now + SYNC_KEEP_AWAKE_RAMP_SEC);
+
+        // 下げきった少し後に止め、止まったら配線を外します(部品を残さない)
+        node.onended = function(){ node.disconnect(); };
+
+        node.stop(now + SYNC_KEEP_AWAKE_RAMP_SEC + 0.01);
+
+    }
+    catch(error){
+
+        // 止める予約に失敗しても、配線だけは外しておきます(鳴り続けないように)
+        try{ node.disconnect(); }catch(ignore){ /* すでに外れていても構いません */ }
+
+    }
+
+    // 【開発用調査ログ】(v232)
+    console.log("同期モード : 聞こえない小さな信号を止めました");
+
+}
+
+/**
+ * スタートした後、少し待ってから信号を止めます(v232)。
+ *
+ * 待つ長さは SYNC_KEEP_AWAKE_AFTER_START_MS(3秒)。その間にもう一度
+ * 同期モードの画面を開いた時は、startSyncKeepAwake() がこの予約を
+ * 取り消すので、信号は流れたままになります。
+ */
+function stopSyncKeepAwakeLater(){
+
+    if(syncKeepAwakeStopTimerId){ clearTimeout(syncKeepAwakeStopTimerId); }
+
+    syncKeepAwakeStopTimerId = setTimeout(function(){
+
+        syncKeepAwakeStopTimerId = 0;
+
+        stopSyncKeepAwake();
+
+    },SYNC_KEEP_AWAKE_AFTER_START_MS);
+
+}
+
+/**
+ * 画面が隠れた・見えるようになった時に呼ばれます(v232)。
+ *
+ *     隠れた時       … 信号を止める(開いたまましまっても電池を使わない)
+ *     見えた時       … 同期モードの画面が開いていれば、また流す
+ *
+ * ⚠️ 見えた直後は出口が休んでいることがあり、流し始めた瞬間に起こし直し
+ *    (約0.2秒)が入ります。②を測る・時刻ボタンを押すのは人の操作なので、
+ *    ふつうはそれより後になります。
+ */
+function handleSyncKeepAwakeVisibility(){
+
+    if(document.visibilityState === "hidden"){
+
+        stopSyncKeepAwake();
+
+        return;
+
+    }
+
+    if(syncPanelEl && syncPanelEl.style.display === "flex"){
+
+        startSyncKeepAwake();
+
+    }
 
 }
 
@@ -6236,5 +6668,14 @@ function stopSyncTempoSound(){
             closeSyncDialog();
         });
     }
+
+    /*
+    画面が隠れた・見えるようになった時(v232)。
+    出口を休ませない信号を、隠れている間は止め、見えたら(同期モードの
+    画面が開いていれば)また流します。handleSyncKeepAwakeVisibility のコメント。
+    */
+    document.addEventListener("visibilitychange",function(){
+        handleSyncKeepAwakeVisibility();
+    });
 
 })();
