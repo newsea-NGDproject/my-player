@@ -67,8 +67,10 @@
                     (下の【v229 拍合わせ画面】)
           (v230) … 先に鳴らす間に「鳴り出しの遅れ」を打ち消す
                     (追いかけ補正 / 試し頭出し。syncWarmup の【2つのやり方】)
-          (v232) … 音の出口を休ませない・先に鳴らす間は消音を使わない ← いまここ
+          (v232) … 音の出口を休ませない・先に鳴らす間は消音を使わない
                     (下の【v232 音の出口と消音】)
+          (v233) … スタートの1拍目からノリノリアシストのカチッを鳴らす ← いまここ
+                    (下の【v233 1拍目のカチッ】)
      段④        … 薄暗いロック画面・走行タイマー・イヤホン操作・時刻からの再開
 
 ----------------------------------------------------------------------
@@ -250,6 +252,43 @@
     約50ms先へずれます(GALAXY)。同期モードでは段④のロック画面で🔈を
     押せなくする予定です。1人で走る時は、アシストも曲の位置から刻むので
     困りません。
+
+----------------------------------------------------------------------
+
+【v233 1拍目のカチッ】
+
+ 竹弘の実機(2026-10-12、宿題12):「曲再生と同時にはならない。拍に合った
+ 音が2拍目から鳴りだす感じ」。録音で確かめると、曲の鳴り始めからちょうど
+ 1拍後に最初のカチッが鳴っていました(1拍目だけ無い。2拍目からは格子どおり)。
+
+ ---- なぜ1拍目を逃していたのか ----
+
+ ノリノリアシスト(js/metronome.js)の見張りは0.5秒おきに起きて、「その時の
+ 曲の位置より先の拍」を2秒先まで予約します。
+
+     先に鳴らす6秒の間 … 見張りは起きているが「同期スタートの準備中」で黙っている
+     音量を上げる瞬間  … 印が外れる(1拍目はその14ms後)
+     次に見張りが起きる … 0〜0.5秒後。その時には1拍目が過ぎている → 2拍目から予約
+
+ 曲をタップした時は「待たずにすぐ1回目を予約する」が効いて1拍目を逃しません
+ (startMetronomeTimer)。同期スタートでは見張りがもう起きていて、印で黙って
+ いただけなので、その「すぐ1回目」がありませんでした(v231 から同じ)。
+
+ ---- v233 の直し方(metronome.js は触らない。今ある予約の命令を呼ぶだけ) ----
+
+     続きから … 追いかけ補正は開始の0.5秒前に終わり、そこからは曲が予定の位置を
+                本来の速さで進んでいる。そこで**開始の0.4拍前**に印を外して、
+                すぐ予約させる(releaseSyncMetronome)。1拍目は少し前に予約される。
+                1つ前の拍は1拍前なので、スタート前にカチッは鳴らない
+     頭から   … 開始の瞬間に曲を頭出しし直すので、それまでの曲の位置は当てに
+                ならない。**開始の15ms後**(曲が予定の位置から進み出した後)まで
+                印を外さず、外した瞬間にすぐ予約させる(holdSyncMetronomeUntilStart)
+     やめる   … 印を外した後なら、すぐ見張りを1回動かして予約を取り消させる
+
+ ⚠️ 「頭から」は v232 まで、音量を上げる瞬間(開始の約0.15秒前。試し頭出しで測った
+    待ちのぶん早い)に印が外れていました。その間に見張りが起きると、止まって
+    いる曲の位置から拍を計算して、1拍目を早めに予約してしまうおそれがありました。
+    v233 で「開始の15ms後まで外さない」にしたので、この穴も一緒に塞がります。
 ================================================================
 */
 
@@ -638,6 +677,41 @@ const SYNC_KEEP_AWAKE_RAMP_SEC = 0.05;
 const SYNC_KEEP_AWAKE_AFTER_START_MS = 3000;
 
 /*
+---- スタートの1拍目からアシストを鳴らす(v233) ----
+
+    SYNC_METRONOME_RELEASE_BEATS … 「続きから」のスタートで、開始の何拍前に
+                                   アシストの「準備中」の印を外すか
+    SYNC_METRONOME_KICK_AFTER_MS … 「頭から」のスタートで、開始の何ms後に
+                                   印を外してすぐ予約させるか
+
+【なぜ 0.4拍前なのか】
+
+ 次の2つを、ピッチ100〜250のどれでも満たす値です。
+
+   ① 追いかけ補正が終わった後であること
+      補正は「開始の0.5秒前」の見回り(0.2秒おき)で終わるので、遅くとも
+      0.3秒前には本来の速さに戻っています。0.4拍はいちばん遅いピッチ100
+      (1拍0.6秒)でも0.24秒なので、必ずその後になります
+   ② 1つ前の拍が、もう過ぎていること
+      1つ前の拍は開始の1拍前です。0.4拍前なら、それはもう過ぎているので、
+      予約されるのは開始の瞬間の拍(1拍目)からになります。スタート前に
+      カチッが鳴ることはありません
+
+ いちばん速いピッチ250(1拍0.24秒)でも、1拍目の約0.1秒前に予約できます
+ (予約は数msあれば間に合う)。
+
+【なぜ「頭から」は開始の15ms後なのか】
+
+ 頭出しで揃える時は、開始の瞬間まで曲は止まっていて(頭出しの待ち)、そこから
+ 予定の位置で進み出します。進み出す前に予約させると、止まった位置から計算して
+ 拍を早めに予約してしまうので、進み出した後(15ms後)にします。
+ 曲の最初の拍がそれより後なら、1拍目から鳴ります(頭から鳴らす時の最初の拍は
+ ふつう曲の頭から少し後にある)。
+*/
+const SYNC_METRONOME_RELEASE_BEATS = 0.4;
+const SYNC_METRONOME_KICK_AFTER_MS = 15;
+
+/*
 ---- ③ みんなの時計を合わせる(v225) ----
 
     SYNC_CLOCK_TAPS   … 叩いてもらう回数(②と同じ12回)
@@ -954,8 +1028,21 @@ let syncClockTimerId = 0;
     chase          … 追いかけ補正の係(js/connect.js の startDeckChase の戻り値)
     seekLeadMs     … 頭出しを何ms早く命令するか(seek のみ。試し頭出しで測る)
     fireTimerId    … その瞬間の予約(試し頭出しの結果で取り直すため、番号を持つ)
+
+    ---- v233 で足したもの(冒頭の【v233 1拍目のカチッ】) ----
+    metronomeReleased … ノリノリアシストの「準備中」の印を外したか
+                        (続きからで、開始の0.4拍前。releaseSyncMetronome)
+                        ⚠️ 最初の形(scheduleSyncStart)には書いていません。
+                           書いていない間は undefined で、「まだ外していない」と同じ扱い
 */
 let syncCountdown = null;
+
+/*
+「頭から」のスタートで、ノリノリアシストを黙らせておく期限(v233)。
+performance.now() の物差しのミリ秒で、0 なら期限なし。
+holdSyncMetronomeUntilStart() が入れ、isSyncWarmingUp() が見ます。
+*/
+let syncMetronomeHoldUntilMs = 0;
 
 // カウントダウン中に予約した setTimeout の受付番号(やめる時に全部取り消す)
 let syncStartTimerIds = [];
@@ -5275,6 +5362,13 @@ async function loadSyncTrackSilently(trackId){
  * 音量を上げると finishSyncStart() が、やめると cancelSyncCountdown() が
  * syncCountdown を null に戻すので、どちらでも自然に「最中でない」に戻ります。
  *
+ * 【v233】1拍目からカチッを鳴らすため、印を外す時刻を2つ変えました
+ * (冒頭の【v233 1拍目のカチッ】)。
+ *
+ *     続きから … 開始の0.4拍前に外す(countdown.metronomeReleased)
+ *     頭から   … 開始の15ms後まで外さない(syncMetronomeHoldUntilMs)。
+ *                音量を上げた後(syncCountdown が null になった後)も続く
+ *
  * 【誰が使うのか】
  *
  * js/metronome.js の findMetronomeBlockReason() です。この間はノリノリアシストを
@@ -5292,7 +5386,101 @@ async function loadSyncTrackSilently(trackId){
  */
 function isSyncWarmingUp(){
 
-    return syncCountdown !== null && syncCountdown.warmStarted === true;
+    // ① 先に鳴らしている最中(続きからは、開始の0.4拍前に印を外す。v233)
+    if(syncCountdown !== null && syncCountdown.warmStarted === true && syncCountdown.metronomeReleased !== true){
+
+        return true;
+
+    }
+
+    // ② 頭から鳴らした直後で、曲がまだ予定の位置から進み出していない間(v233)
+    return performance.now() < syncMetronomeHoldUntilMs;
+
+}
+
+/**
+ * ノリノリアシストの見張りを、すぐ1回動かします(v233)。
+ *
+ * 見張り(js/metronome.js の scheduleMetronomeBeats)は0.5秒おきに起きますが、
+ * スタートの1拍目に間に合わせるため、印を外した瞬間に「今すぐ」1回動かします。
+ * 曲をタップした時の startMetronomeTimer() の「待たずに1回目を予約します」と
+ * 同じことを、同期スタートでもするということです。
+ *
+ * 見張りは何度動かしても困らない作りです(前回どこまで予約したかを覚えていて、
+ * 同じ拍を二度予約しない)。鳴らせない時(曲が止まっている等)は、予約を
+ * 取り消すだけで終わります。
+ *
+ * ⚠️ js/metronome.js は消しても動くように作ってあるので(ファイルを消すだけで
+ *    アシストを丸ごと外せる)、関数があるかを typeof で確かめてから呼びます。
+ *
+ * @param {string} why - 🐛パネルに出す理由
+ */
+function kickSyncMetronome(why){
+
+    if(typeof scheduleMetronomeBeats !== "function"){ return; }
+
+    scheduleMetronomeBeats();
+
+    // 【開発用調査ログ】(v233)1拍目に間に合ったかを、実機のログで確かめるため
+    console.log("同期モード ③ ノリノリアシストの見張りを、すぐ1回動かしました(" + why + ")");
+
+}
+
+/**
+ * 「続きから」のスタートで、開始の0.4拍前にアシストの印を外します(v233)。
+ *
+ * syncWarmup() が予約します。外した瞬間に見張りを1回動かすので、
+ * 開始の瞬間の拍(1拍目)が約0.4拍前に予約されます。
+ *
+ * @param {Object} countdown - 予約した時の syncCountdown(この約束)
+ */
+function releaseSyncMetronome(countdown){
+
+    // やめた・スタートし終えた・別の約束になった時は、何もしません
+    if(syncCountdown !== countdown){ return; }
+
+    /*
+    追いかけている間に曲が止められて「頭出しで揃える」に回った時は、
+    頭からと同じく、開始の後に任せます(syncFire → holdSyncMetronomeUntilStart)。
+    */
+    if(countdown.mode !== "chase"){ return; }
+
+    countdown.metronomeReleased = true;
+
+    kickSyncMetronome("続きから・開始の" + SYNC_METRONOME_RELEASE_BEATS + "拍前");
+
+}
+
+/**
+ * 「頭から」のスタートで、開始の15ms後までアシストを黙らせ、その瞬間に
+ * すぐ予約させます(v233)。
+ *
+ * 頭出しで揃える時は、音量を上げる瞬間(開始の約0.15秒前)にはまだ曲が
+ * 止まっていて、開始の瞬間に予定の位置から進み出します。止まっている間に
+ * 見張りが起きると、止まった位置から拍を計算して早めに予約してしまうので、
+ * 進み出すまで待ちます(冒頭の【v233 1拍目のカチッ】の⚠️)。
+ *
+ * ⚠️ finishSyncStart() より**前に**呼ぶこと。あちらが syncCountdown を null に
+ *    した瞬間に印が外れないよう、先に期限を入れておくためです。
+ *
+ * @param {number} wPerfMs - 開始の瞬間(performance.now の物差し)
+ */
+function holdSyncMetronomeUntilStart(wPerfMs){
+
+    const untilMs = wPerfMs + SYNC_METRONOME_KICK_AFTER_MS;
+
+    syncMetronomeHoldUntilMs = untilMs;
+
+    setTimeout(function(){
+
+        // 期限が入れ替わっていたら(次のスタートが来た等)、そちらに任せます
+        if(syncMetronomeHoldUntilMs !== untilMs){ return; }
+
+        syncMetronomeHoldUntilMs = 0;
+
+        kickSyncMetronome("頭から・開始の" + SYNC_METRONOME_KICK_AFTER_MS + "ms後");
+
+    },Math.max(0,untilMs - performance.now()));
 
 }
 
@@ -5427,6 +5615,21 @@ function syncWarmup(){
             }
 
         });
+
+        /*
+        【v233】開始の0.4拍前に、ノリノリアシストの印を外してすぐ予約させます
+        (releaseSyncMetronome。冒頭の【v233 1拍目のカチッ】)。
+
+        1拍の長さはみんなのピッチから出します(scheduleSyncStart と同じ式)。
+        受付番号は syncStartTimerIds に入れるので、やめた時・スタートし終えた時に
+        ほかの予約と一緒に取り消されます。
+        */
+        const beatMs = 60000 / syncState.pitch;
+
+        syncStartTimerIds.push(setTimeout(
+            function(){ releaseSyncMetronome(countdown); },
+            Math.max(0,countdown.wPerfMs - SYNC_METRONOME_RELEASE_BEATS * beatMs - performance.now())
+        ));
 
     }
     else if(countdown.wPerfMs - performance.now() > SYNC_PROBE_LEAD_MS){
@@ -5737,6 +5940,13 @@ function syncFire(){
             "/ 命令の遅れ " + formatSyncSignedMs(lateMs) + "(位置をずらして打ち消し済み)"
         );
 
+        /*
+        【v233】曲が予定の位置から進み出す(開始の15ms後)まで、ノリノリアシストを
+        黙らせておき、その瞬間にすぐ予約させます(holdSyncMetronomeUntilStart)。
+        ⚠️ finishSyncStart() より前に呼ぶこと(その関数のコメント)。
+        */
+        holdSyncMetronomeUntilStart(countdown.wPerfMs);
+
         finishSyncStart();
 
         measureSyncAlignment(deck,plan.targetSec,countdown.wPerfMs);
@@ -5787,6 +5997,20 @@ function syncRaiseChased(countdown){
 
     // 2. 30msで音量を上げます(v232から消音には触らない)
     startFade(deck,0,1,CONNECT_HEAD_FADE_SEC);
+
+    /*
+    【v233】ふつうは開始の0.4拍前に、アシストの印をもう外してあります
+    (releaseSyncMetronome)。スマホが忙しくてその予約が間に合わなかった時の
+    保険に、ここで外してすぐ予約させます。1拍目(14ms後)に間に合わなくても、
+    2拍目からは0.5秒待たずに予約されます。
+    */
+    if(countdown.metronomeReleased !== true){
+
+        countdown.metronomeReleased = true;
+
+        kickSyncMetronome("続きから・開始の瞬間(0.4拍前の予約が間に合わなかった)");
+
+    }
 
     console.log(
         "同期モード ③ スタートしました : 頭出しなし(追いかけて揃えた曲の音量を上げるだけ)",
@@ -5963,6 +6187,22 @@ function cancelSyncCountdown(notice){
     if(countdown.warmStarted){
 
         audioPlayer.pause();
+
+    }
+
+    /*
+    【v233】ノリノリアシストの印をもう外していたら(続きからで、開始の0.4拍前を
+    過ぎていたら)、1拍目のカチッがもう予約されています。曲を止めた今、すぐ
+    見張りを1回動かして取り消させます(曲が止まっているので、見張りは予約を
+    取り消して終わる)。
+    アシストは曲の 'pause' の知らせでも予約を取り消しますが(js/metronome.js の
+    bindDeckEvent("pause"))、知らせは少し後に届きます。開始の直前にやめた時、
+    その前に1拍目の時刻が来ないよう、念のためここですぐ取り消させます。
+    ⚠️ 曲を止めた**後**に呼ぶこと。止める前だと、まだ鳴らしてよいと判断されます。
+    */
+    if(countdown.metronomeReleased === true){
+
+        kickSyncMetronome("やめたので、予約したカチッを取り消す");
 
     }
 
