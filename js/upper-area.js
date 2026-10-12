@@ -564,7 +564,6 @@ stopBtn.addEventListener("click",function(){
     else{
 
         intentionalPause = true;
-        audioPlayer.pause();
 
         /*
         繋ぐ準備をしていたら取りやめます(v170)。
@@ -577,8 +576,17 @@ stopBtn.addEventListener("click",function(){
            助走がやり直されます(js/connect.js が timeupdate で
            見張っているため)。取りやめても、繋がらなくなるわけでは
            ありません。
+
+        【v236】取りやめは、主役を止める**前に**します。裏で鳴っている曲
+        (助走中の後続曲・クロスフェード中の先行曲)も先に止めます
+        (js/connect.js の prepareUserPause。中で cancelConnect() を呼びます)。
+        v235 までの「止める → 取りやめ」の順だと、助走中・クロスフェード中に
+        止めた後、イヤホンの ▶ で一時停止を解除できませんでした(Chrome の
+        決まり。詳しくは prepareUserPause のコメント)。
         */
-        cancelConnect();
+        prepareUserPause();
+
+        audioPlayer.pause();
 
     }
 

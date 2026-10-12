@@ -200,6 +200,18 @@ if(mediaSessionSupported){
         */
         intentionalPause = true;
 
+        /*
+        【v236】主役を止める**前に**、裏で鳴っている曲を止めて、繋ぐ準備を
+        取りやめます(js/connect.js の prepareUserPause)。
+
+        竹弘の実機(2026-10-12、テスト8):助走中に ⏸ で止めると、イヤホンの ▶ で
+        一時停止を解除できなかった / クロスフェード中に止めると、先行曲が
+        聞こえ続けた。2曲が同時に鳴っている時に主役を先に止めると、Chrome が
+        イヤホン・通知の操作の相手を手放してしまうためです(詳しくは
+        prepareUserPause のコメント)。■ボタンも同じ止め方です。
+        */
+        prepareUserPause();
+
         audioPlayer.pause();
 
     });
