@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v234)ノリRun
+        (v235)ノリRun
         メインメニュー
 
     </title>
@@ -697,6 +697,13 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
                計算し直しても同じ値になるので、効かない時があったのだと思います。
                害は無いので、そのまま残しています。
             ⚠️ インストール版(アドレスバーが無い)では、100% と 100dvh は同じです。
+
+            ⚠️⚠️ 竹弘の答え(2026-10-12 夕方):「ブラウザ版でも、アドレスバーが消える
+               ことは、どのモードに入っても基本ない」。→ **上の見立ては外れている
+               可能性が高い**です。この1行は、アドレスバーが出ている時は今までと
+               1pxも変わらないので、害は無く残しています。本当の原因はまだ分かって
+               いません(これまで2回だけ)。v235 で、🐛を開いた瞬間の画面の状態を
+               1行残すようにしました(開発用デバッグログパネルの measureScreenSnapshot)。
             */
             height:100dvh;
 
@@ -9373,7 +9380,30 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
     }
 
     toggleBtn.onclick = function(){
-        setMinimized(!panel.classList.contains("minimized"));
+
+        if(panel.classList.contains("minimized")){
+
+            /*
+            【開発用】開く**前に**画面の状態を測っておき、開いてから1行残します(v235)。
+            下の measureScreenSnapshot のコメントを参照。
+
+            開いてから書くのは、ログをいちばん下まで送って、この行がすぐ目に
+            入るようにするためです(たたんでいる間に書くと、ログの箱が隠れて
+            いて送れません)。
+            */
+            const snapshot = measureScreenSnapshot();
+
+            setMinimized(false);
+
+            console.log("画面の状態(🐛を開いた) : " + snapshot);
+
+        }
+        else{
+
+            setMinimized(true);
+
+        }
+
     };
 
     // 起動時は最小化。ログを見たい時だけ右下の🐛をタップして開きます。
@@ -9422,6 +9452,108 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
 
     // 起動した時の高さ(#app などがまだ無ければ、少し後にもう一度)
     setTimeout(function(){ logScreenHeights("起動"); },1000);
+
+    /*
+    【開発用】いまの画面の状態を、1行の文字にまとめます(v235)。
+
+    竹弘の報告(2026-10-12)「画面下が表示されない事象」(曲一覧の下の丸角が
+    見えず、その下に何も無い帯が出る)は、これまで2回だけです。上の
+    logScreenHeights は「高さが変わった時」にしか書かないので、原因が別の
+    所にあると、3回目が出ても何も残りません。
+
+    そこで🐛を開いた瞬間に、画面の様子をまるごと1行残します。下が切れて
+    いるのに気づいたら、**ほかを触らずに🐛を開いて「コピー」**するだけで、
+    どこがおかしいかを絞れます。
+
+        ブラウザ版 / インストール版 … どちらで起きたか
+        見えている     … window.innerHeight(いま見えている高さ)
+        外枠           … window.outerHeight(アドレスバーなども含めた高さ。
+                         見えている高さとの差で、アドレスバーが出ているか分かる)
+        visualViewport … 実際に見えている範囲の高さと、上からのずれ
+                         (指で拡大した時・キーボードが出た時に変わる)
+        基準           … height:100% が測る高さ(アドレスバーが出ている時の高さ)
+        ページ         … html の上端〜下端と、ページ全体のずれ(scrollTop)。
+                         overflow:hidden でも、プログラムからはずらせるため
+        #app           … アプリの画面の上端〜下端
+        曲一覧         … 下半分のカード(#list-area)の上端〜下端。
+                         ふだんは、見えている高さより10px上(#app の余白)
+
+    おかしな所があれば ⚠️ を付けて、どこがおかしいかを書き足します。
+
+    ⚠️ getBoundingClientRect() は「いま画面のどこに描かれているか」を返す
+       命令です(top が上端、bottom が下端。画面の左上が0)。
+    */
+    function measureScreenSnapshot(){
+
+        // 小数1けたに丸めます(731.96 → 732、31.55 → 31.6)
+        const r = function(value){ return Math.round(value * 10) / 10; };
+
+        const htmlEl = document.documentElement;
+        const appEl = document.getElementById("app");
+        const listEl = document.getElementById("list-area");
+
+        // ページ全体のずれを持っている要素(ふつうは html)
+        const scrollEl = document.scrollingElement || htmlEl;
+
+        const vv = window.visualViewport;
+
+        const seen = window.innerHeight;
+        const outer = window.outerHeight;
+        const vvHeight = vv ? vv.height : seen;
+        const vvTop = vv ? vv.offsetTop : 0;
+
+        /*
+        ⚠️ html の clientHeight は、html の高さではなく「基準の高さ」
+           (height:100% が測る高さ)を返す決まりです。html そのものの
+           高さは getBoundingClientRect() で測ります。
+        */
+        const base = htmlEl.clientHeight;
+        const htmlRect = htmlEl.getBoundingClientRect();
+        const shift = scrollEl.scrollTop;
+
+        /*
+        getComputedStyle は「最終的に効いている見た目」を返します。#app が
+        display:none(のり注入・マイピッチ設定の間)なら、上端・下端は測れません。
+        */
+        const appShown = !!appEl && getComputedStyle(appEl).display !== "none";
+        const appRect = appShown ? appEl.getBoundingClientRect() : null;
+        const listRect = (appShown && listEl) ? listEl.getBoundingClientRect() : null;
+
+        // #app に高さが直接書かれたまま残っていないか(v189 の refreshAppHeight が一瞬だけ書く)
+        const appInline = (appEl && appEl.style.height) ? "(高さの直書き " + appEl.style.height + ")" : "";
+
+        const standalone = !!(window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+
+        const text =
+            (standalone ? "インストール版" : "ブラウザ版") +
+            " / 見えている " + r(seen) +
+            "(外枠 " + r(outer) + "・visualViewport " + r(vvHeight) + " 上から " + r(vvTop) + ")" +
+            " / 基準 " + r(base) +
+            " / ページ " + r(htmlRect.top) + "〜" + r(htmlRect.bottom) + "(ずれ " + r(shift) + ")" +
+            " / #app " + (appRect ? r(appRect.top) + "〜" + r(appRect.bottom) + appInline : "隠れています") +
+            (listRect ? " / 曲一覧 " + r(listRect.top) + "〜" + r(listRect.bottom) : "");
+
+        const notes = [];
+
+        if(htmlRect.bottom < seen - 1){ notes.push("ページの下に " + r(seen - htmlRect.bottom) + "px の隙間"); }
+        if(shift > 0.5){ notes.push("ページが " + r(shift) + "px ずれている"); }
+        if(vvTop > 0.5){ notes.push("見えている所が上から " + r(vvTop) + "px ずれている"); }
+        if(vvHeight < seen - 1){ notes.push("見えている所が " + r(seen - vvHeight) + "px 狭い"); }
+
+        if(appRect){
+            if(appRect.top < -0.5){ notes.push("#app の上が画面の外に " + r(-appRect.top) + "px"); }
+            if(appRect.bottom > seen + 1){ notes.push("#app の下が画面の外に " + r(appRect.bottom - seen) + "px"); }
+            if(appRect.bottom < seen - 1){ notes.push("#app の下に " + r(seen - appRect.bottom) + "px の隙間"); }
+        }
+
+        if(listRect){
+            if(listRect.bottom > seen + 1){ notes.push("曲一覧の下が画面の外に " + r(listRect.bottom - seen) + "px"); }
+            else if(seen - listRect.bottom > 20){ notes.push("曲一覧の下に " + r(seen - listRect.bottom) + "px の隙間"); }
+        }
+
+        return text + (notes.length > 0 ? " ⚠️ " + notes.join("・") : " ✅ おかしな所なし");
+
+    }
 })();
 </script>
 <!-- ================================================================
