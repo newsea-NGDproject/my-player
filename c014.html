@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v233)ノリRun
+        (v234)ノリRun
         メインメニュー
 
     </title>
@@ -664,6 +664,42 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             追い出されて押せなくなります。
             */
             height:100%;
+
+            /*
+            【v234】ページの高さも「今まさに見えている高さ」(100dvh)にします。
+
+            竹弘の報告(2026-10-12):「まだ画面下が表示されない事象が発生する
+            時がある」(デバッグログを閉じた時。以前、のり注入から戻った時にも)。
+            写真では、下半分の曲一覧の丸角が見えず、その下に何も無い帯が
+            出ていました(v189 の「下に不思議な余白」と同じ形)。
+
+            【本当の原因(のりの見立て)】
+
+            スマホの Chrome(ブラウザ版)は、画面の中を指でスクロールすると
+            アドレスバーを引っ込めることがあります(のり注入・同期モード・
+            デバッグログの画面は、中をスクロールできます)。その時、
+
+                height:100%   … アドレスバーが**出ている**時の高さのまま(伸びない)
+                height:100dvh … 今見えている高さ。アドレスバーのぶん**伸びる**
+
+            ここ(ページ)は 100%、#app は 100dvh だったので、#app だけが
+            アドレスバーのぶん(約60px)伸び、はみ出した下の部分がこの
+            overflow:hidden で**切り取られて**いました。切り取られた下には
+            ページが無いので、何も無い帯が見えます。
+
+            → ページも 100dvh にして、#app といつも同じ高さにします。
+              アドレスバーが出ている時は 100% と同じ値なので、今までと
+              1pxも変わりません。dvh を知らない古いブラウザは、上の
+              100% のまま(後の行が勝つCSSの決まり。#app と同じ書き方)。
+
+            ⚠️ v189 の refreshAppHeight()(js/config.js)は「#app を隠して戻した
+               時に高さを計算し直す」直しでした。アドレスバーが引っ込んだままだと
+               計算し直しても同じ値になるので、効かない時があったのだと思います。
+               害は無いので、そのまま残しています。
+            ⚠️ インストール版(アドレスバーが無い)では、100% と 100dvh は同じです。
+            */
+            height:100dvh;
+
             overflow:hidden;
 
             /*
@@ -9342,6 +9378,50 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
 
     // 起動時は最小化。ログを見たい時だけ右下の🐛をタップして開きます。
     setMinimized(true);
+
+    /*
+    【開発用】画面の高さが変わるたびに、高さを記録します(v234)。
+
+    竹弘の報告(2026-10-12)「画面下が表示されない事象」を確かめるためです。
+    見立ては「ブラウザ版でアドレスバーが引っ込むと、#app(100dvh)だけが
+    伸びて、ページ(height:100%)から下がはみ出し、切り取られていた」で、
+    v234 でページも 100dvh にしました(html,body のCSSのコメント)。
+
+        見えている … window.innerHeight(いま見えている高さ)
+        ページ     … html の高さ
+        #app       … アプリの画面の高さ
+
+    3つが同じなら正常です。#app がページより高いと、下が切り取られます
+    (その時は ⚠️ を付けます)。値が変わった時だけ記録します
+    (アドレスバーが出たり引っ込んだりした時に、resize の知らせが来ます)。
+    */
+    let lastHeightText = "";
+
+    function logScreenHeights(why){
+
+        const appEl = document.getElementById("app");
+
+        const seen = window.innerHeight;
+        const page = document.documentElement.clientHeight;
+        const app = appEl ? appEl.offsetHeight : 0;
+
+        const text = "見えている " + seen + " / ページ " + page + " / #app " + app;
+
+        if(text === lastHeightText){ return; }
+
+        lastHeightText = text;
+
+        console.log(
+            "画面の高さ(" + why + ") : " + text +
+            (app > page + 1 ? " ⚠️ #app の下が切り取られています" : "")
+        );
+
+    }
+
+    window.addEventListener("resize",function(){ logScreenHeights("変わった"); });
+
+    // 起動した時の高さ(#app などがまだ無ければ、少し後にもう一度)
+    setTimeout(function(){ logScreenHeights("起動"); },1000);
 })();
 </script>
 <!-- ================================================================
