@@ -69,8 +69,10 @@
                     (追いかけ補正 / 試し頭出し。syncWarmup の【2つのやり方】)
           (v232) … 音の出口を休ませない・先に鳴らす間は消音を使わない
                     (下の【v232 音の出口と消音】)
-          (v233) … スタートの1拍目からノリノリアシストのカチッを鳴らす ← いまここ
+          (v233) … スタートの1拍目からノリノリアシストのカチッを鳴らす
                     (下の【v233 1拍目のカチッ】)
+          (v235) … カウントダウンをやめた時は、曲を止めていた位置へ戻す ← いまここ
+                    (下の【v235 やめた時の曲の位置】)
      段④        … 薄暗いロック画面・走行タイマー・イヤホン操作・時刻からの再開
 
 ----------------------------------------------------------------------
@@ -289,6 +291,37 @@
     待ちのぶん早い)に印が外れていました。その間に見張りが起きると、止まって
     いる曲の位置から拍を計算して、1拍目を早めに予約してしまうおそれがありました。
     v233 で「開始の15ms後まで外さない」にしたので、この穴も一緒に塞がります。
+
+----------------------------------------------------------------------
+
+【v235 やめた時の曲の位置】
+
+ 竹弘の実機(2026-10-12、テスト5)で、カウントダウンを「やめる」と、曲の位置が
+ 止めていた所より3.4秒手前に戻っていました(76.73秒 → 73.35秒)。▶ を押すと、
+ もう聴いた所をもう一度聴くことになります。竹弘「直しておきたい」。
+
+ ---- なぜ手前に戻っていたのか ----
+
+ 「続きから」のスタートは、開始の6秒前に、狙いの位置より6秒ぶん手前
+ (テスト5の曲で約7.4秒手前)から音量0で先に鳴らし始めます(syncWarmup の
+ 【2つのやり方】①)。やめると、その途中の位置で止まったままでした。
+ やめるのが早いほど大きく戻ります(最大7秒くらい)。
+ (v229 までは、止めた所から先へ鳴らしていたので、逆に数秒先へ進んでいたはず)
+
+ ---- v235 の直し方 ----
+
+ 先に鳴らし始める直前の位置(= 曲を止めていた位置)を覚えておき、やめた時は
+ 曲を止めてから、そこへ戻します(restoreSyncPausedPosition)。
+
+     続きから … 止めていた位置へ戻る(テスト5なら 76.73秒)
+     頭から   … 頭から鳴らす準備をする前の位置へ戻る
+                (一覧のトップの曲を載せた時は、載せた所 = 曲の頭)
+     ✕で閉じた時も同じです。開いた時に鳴っていた曲は、止めた所から続きが鳴ります
+
+ ⚠️ 先に鳴らし始める前(開始の6秒より前)にやめた時は、曲の位置にまだ触って
+    いないので、何もしません。
+ ⚠️ 戻すのは、同じデッキに同じ曲が載っている時だけです(別の曲に替わって
+    いたら、覚えた位置はその曲の位置ではないため)。
 ================================================================
 */
 
@@ -4945,7 +4978,15 @@ async function scheduleSyncStart(targetWallMs){
         mode:null,
         chase:null,
         seekLeadMs:SYNC_SEEK_LEAD_MS,
-        fireTimerId:0
+        fireTimerId:0,
+
+        /*
+        【v235】やめた時に戻す「曲を止めていた位置」です(restoreSyncPausedPosition)。
+        先に鳴らし始める直前(syncWarmup)に覚えます。それまでは null のままです。
+        */
+        restoreDeck:null,
+        restoreTrack:null,
+        restoreSec:null
     };
 
     syncState.startNotice = "";
@@ -5568,6 +5609,19 @@ function syncWarmup(){
     */
     countdown.mode = (startAtSec >= 0 && remainSec >= SYNC_CHASE_MIN_SEC) ? "chase" : "seek";
 
+    /*
+    【v235】曲を止めていた位置を覚えておきます。やめた時に、ここへ戻すためです
+    (restoreSyncPausedPosition。冒頭の【v235 やめた時の曲の位置】)。
+    どのデッキの、どの曲の位置かも一緒に覚えます(曲が替わっていたら戻さないため)。
+
+    ⚠️ すぐ下で位置を動かす**前に**覚えること。後だと、先に鳴らし始める位置
+       (狙いの6秒ぶん手前)を覚えてしまいます。v234 までは、やめると曲が
+       ちょうどその途中の位置に残っていました。
+    */
+    countdown.restoreDeck = deck;
+    countdown.restoreTrack = getDeckTrack(deck);
+    countdown.restoreSec = deck.currentTime;
+
     deck.currentTime = Math.max(0,startAtSec);
 
     const playing = deck.play();
@@ -6157,7 +6211,7 @@ function formatSyncSignedMs(ms){
 /**
  * カウントダウンを取りやめます(「やめる」・✕・①②の選び直し・時間切れ)。
  *
- * 先に鳴らし始めていたら止め、音量を元に戻します。
+ * 先に鳴らし始めていたら止め、曲を止めていた位置へ戻し(v235)、音量を元に戻します。
  * ⚠️ 音量を1に戻し忘れると、次に▶を押した時に**無音のまま鳴ります。**
  * (v231までは消音も元に戻していました。v232から先に鳴らす間も消音を
  *  使わないので、戻すものがありません)
@@ -6184,9 +6238,19 @@ function cancelSyncCountdown(notice){
     syncStartTimerIds.forEach(function(id){ clearTimeout(id); });
     syncStartTimerIds = [];
 
+    // 🐛パネルの「取りやめました」の行に付け足す説明(v235。位置を戻したか)
+    let restoredText = "";
+
     if(countdown.warmStarted){
 
         audioPlayer.pause();
+
+        /*
+        【v235】曲を止めていた位置へ戻します(冒頭の【v235 やめた時の曲の位置】)。
+        ⚠️ 止めた**後**に戻すこと。鳴っている最中に戻すと、戻した所から
+           また少し進んでしまいます。
+        */
+        restoredText = restoreSyncPausedPosition(countdown);
 
     }
 
@@ -6214,7 +6278,53 @@ function cancelSyncCountdown(notice){
 
     refreshSyncStartStep();
 
-    console.log("同期モード ③ カウントダウンを取りやめました");
+    console.log("同期モード ③ カウントダウンを取りやめました" + restoredText);
+
+}
+
+/**
+ * カウントダウンをやめた時、曲を「止めていた位置」へ戻します(v235)。
+ *
+ * 戻す位置は、先に鳴らし始める直前(syncWarmup)に覚えたものです。
+ *
+ *     続きから … 竹弘が曲を止めた位置
+ *     頭から   … 頭から鳴らす準備をする前の位置
+ *                (一覧のトップの曲を載せた時は、載せた所 = 曲の頭)
+ *
+ * 詳しい経緯は冒頭の【v235 やめた時の曲の位置】。
+ *
+ * ⚠️ cancelSyncCountdown() が、曲を止めた**後**に呼びます。
+ * ⚠️ 同じデッキに同じ曲が載っている時だけ戻します。
+ *
+ * @param  {Object} countdown - やめた syncCountdown(この約束)
+ * @return {string} 🐛パネルの「取りやめました」の行に付け足す説明
+ *                  (位置を覚えていなければ空。戻さなかった時はその理由)
+ */
+function restoreSyncPausedPosition(countdown){
+
+    /*
+    位置を覚えていなければ何もしません(先に鳴らし始める前にやめた時など。
+    その時は、曲の位置にまだ触っていません)。
+    ⚠️ isFinite(null) は true になるので(null は 0 と見なされる)、
+       先に「数かどうか」を typeof で確かめます。
+    */
+    if(typeof countdown.restoreSec !== "number" || !isFinite(countdown.restoreSec)){ return ""; }
+
+    const deck = audioPlayer;
+
+    if(countdown.restoreDeck !== deck || getDeckTrack(deck) !== countdown.restoreTrack){
+
+        return " : 曲が替わっていたので、位置は戻しません";
+
+    }
+
+    // 戻す前の位置(先に鳴らしていた所)も、🐛パネルに残します
+    const fromSec = deck.currentTime;
+
+    deck.currentTime = countdown.restoreSec;
+
+    return " : 曲を止めていた位置(" + countdown.restoreSec.toFixed(2) + "秒)へ戻しました" +
+           "(先に鳴らしていた位置 " + fromSec.toFixed(2) + "秒)";
 
 }
 
