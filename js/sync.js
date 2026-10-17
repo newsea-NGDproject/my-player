@@ -681,8 +681,10 @@ const SYNC_LATE_GIVEUP_MS = 2000;
 ---- 音の出口を休ませない「聞こえない小さな信号」(v232) ----
 
     SYNC_KEEP_AWAKE_LEVEL          … 信号の大きさ(ずっと同じ値の「直流」。1が最大)
+    SYNC_KEEP_AWAKE_MUTED_LEVEL    … 「音だけ消す」(5-5)の間だけ使う、少し大きい信号(v240)
     SYNC_KEEP_AWAKE_RAMP_SEC       … 流し始め・止める時に、何秒かけて0から
                                      その大きさへ(その大きさから0へ)変えるか
+                                     (2つの大きさを行き来する時も同じ秒数)
     SYNC_KEEP_AWAKE_AFTER_START_MS … スタートした後、何ms流し続けてから止めるか
 
 【なぜ 0.0001 なのか】
@@ -704,8 +706,34 @@ const SYNC_LATE_GIVEUP_MS = 2000;
  スタートの瞬間からは曲が鳴るので、もう信号は要りません。ただ、曲の音量は
  30msかけて上がり、スタート直後の位置の実測(約1.3秒)も続いています。その間に
  万一にも出口が休まないよう、少しだけ重ねてから止めます。
+
+【なぜ「音だけ消す」の間は 0.001 なのか(v240)】
+
+ v239 の2台の試験(2026-10-17、ログ「画面ロック停止再発」)で、音を消したまま
+ 画面を消すと、約30秒でタイマーが間引かれ(心拍・接続の予約が遅れる)、約90秒で
+ Chrome がページを**凍結**して曲が止まりました(document 'freeze')。凍結の間は
+ イヤホンのタップも届きません。
+
+    消している間 … 全体の音量つまみが 0 で、曲もカチッもスピーカーへ出ない
+                   + この信号は 0.0001(−80dB)= 上の境目(約 −72dB)より小さい
+    → Chrome から見ると、**音を鳴らしていない裏の画面**
+    → 電池のために間引かれ、しばらくすると凍結される
+      (9月の「画面ロック中に曲が止まる」と同じ仕組み。ふつうに鳴っている時は起きない)
+
+ そこで消している間だけ、境目を超える 0.001(−60dB)にします。上の
+ 「大きすぎると」のとおり Chrome は「鳴っている」と見なしますが、
+ **消している間はそれこそが狙い**です(曲は裏で鳴り続けているのだから、
+ 本当に「再生中」)。直流なので、−60dB でも耳には聞こえません。
+
+ 同期モードの画面を開いている間は、今までどおり 0.0001 のままです。
+ その間は曲が止まっているので、「再生中」とは見なされたくないためです。
+ どちらにするかは getSyncKeepAwakeLevel() が1か所で決めます(5-3c節)。
+
+⚠️ 境目に余裕を持たせて、境目より約12dB(4倍)大きくしてあります。
+   2台の試験で「画面を消して5分以上」消しても凍結しないかを確かめる。
 */
 const SYNC_KEEP_AWAKE_LEVEL = 0.0001;
+const SYNC_KEEP_AWAKE_MUTED_LEVEL = 0.001;
 const SYNC_KEEP_AWAKE_RAMP_SEC = 0.05;
 const SYNC_KEEP_AWAKE_AFTER_START_MS = 3000;
 
@@ -1098,6 +1126,26 @@ let syncKeepAwakeNode = null;
 // スタートした後に信号を止める予約(setTimeout の受付番号)。予約していない時は0
 let syncKeepAwakeStopTimerId = 0;
 
+/*
+いま流している信号の大きさ(v240)。SYNC_KEEP_AWAKE_LEVEL か
+SYNC_KEEP_AWAKE_MUTED_LEVEL のどちらか。流していない時は 0。
+大きさを切り替える時に「本当に変わったか」を見分けるために覚えておきます。
+*/
+let syncKeepAwakeLevel = 0;
+
+/*
+同期モードの画面を「開いている途中」か(v240)。
+
+openSyncPanel() は、曲を止めてから画面を出すまでの間に、DBを読むために
+2回待ちます(await)。その間に曲の 'pause' の知らせが届くので、画面は
+まだ出ていません。v239 では、そこで 5-5 の受け口が「画面は閉じている」と
+判断して、出口を休ませない信号を止めていました(10-17 の試験で見つかった穴)。
+
+→ 開き始めてから画面を出すまでは true にして、isSyncPanelShown()(5-5)が
+  「開いている」と答えるようにします。
+*/
+let syncPanelOpening = false;
+
 // ---- ② の測定中だけ使うもの ----
 
 // ピッの見回り係(setInterval の受付番号)。止まっている間は0
@@ -1408,7 +1456,19 @@ async function openSyncPanel(){
     停止ボタンの記号(■⇄▶)はわざと触りません。マイピッチ設定や
     タップ補正と同じく、「閉じたら続きから鳴らす」一時的な停止だから
     です(旗 intentionalPause を立てなければ、記号は ■ のまま)。
+
+    【v240】曲を止める**前に**「開いている途中」の印を立てます
+    (変数 syncPanelOpening の説明)。止めた知らせ('pause')は少し後に
+    届くので、それより先に立てておく必要があります。
+
+    ⚠️ 「音だけ消す」(5-5)の途中で開いた時も、音を戻すのはここではなく
+       5-5 の 'pause' の受け口に任せます。js/metronome.js の 'pause' の
+       受け口(先に読み込まれるので先に動く)が、予約済みのカチッを
+       取り消した**後に**音が戻るためです。ここで先に戻すと、取り消す前の
+       カチッが一瞬聞こえるおそれがあります。
     */
+    syncPanelOpening = true;
+
     syncState.wasPlaying = !audioPlayer.paused;
 
     if(syncState.wasPlaying){
@@ -1536,6 +1596,9 @@ async function openSyncPanel(){
     refreshSyncPanel();
 
     syncPanelEl.style.display = "flex";
+
+    // 画面を出したので「開いている途中」の印を下ろします(v240。ここからは表示で分かる)
+    syncPanelOpening = false;
 
     // 前に開いた時のスクロール位置が残らないよう、先頭に戻します
     const body = syncPanelEl.querySelector(".license-body");
@@ -6397,6 +6460,11 @@ Chrome は、アプリの音が30秒ほど無音のままだと、電池のた�
 SYNC_KEEP_AWAKE_LEVEL(0.0001 = −80dB)。なぜこの値かは、その定数の
 コメントにあります。
 
+【v240】「音だけ消す」(5-5)の間だけは SYNC_KEEP_AWAKE_MUTED_LEVEL
+(0.001 = −60dB)にします。どちらにするかは getSyncKeepAwakeLevel() が
+1か所で決め、切り替わった時は refreshSyncKeepAwakeLevel() が、流している
+信号をその大きさへゆっくり動かします(信号を作り直さない)。
+
 ⚠️⚠️ **ConstantSourceNode の値は、何もしないと1(最大)です。**
    必ず0から始めて、ゆっくり SYNC_KEEP_AWAKE_LEVEL まで上げること。
    間違えると「ボン」という大きな音が出ます。
@@ -6457,6 +6525,9 @@ function startSyncKeepAwake(){
 
         const now = deckAudioCtx.currentTime;
 
+        // 今の状態に合う大きさ(v240。消している間だけ少し大きい)
+        const level = getSyncKeepAwakeLevel();
+
         /*
         ⚠️ 最初は1(最大)なので、鳴らし始める前に必ず0にします。
         そこから SYNC_KEEP_AWAKE_RAMP_SEC 秒かけて、ゆっくり上げます。
@@ -6467,7 +6538,7 @@ function startSyncKeepAwake(){
         */
         node.offset.value = 0;
         node.offset.setValueAtTime(0,now);
-        node.offset.linearRampToValueAtTime(SYNC_KEEP_AWAKE_LEVEL,now + SYNC_KEEP_AWAKE_RAMP_SEC);
+        node.offset.linearRampToValueAtTime(level,now + SYNC_KEEP_AWAKE_RAMP_SEC);
 
         node.connect(deckAudioCtx.destination);
 
@@ -6475,8 +6546,10 @@ function startSyncKeepAwake(){
 
         syncKeepAwakeNode = node;
 
-        // 【開発用調査ログ】(v232)実機で「開いた時から流れていたか」を確かめるため
-        console.log("同期モード : 音の出口を休ませないよう、聞こえない小さな信号を流し始めました");
+        syncKeepAwakeLevel = level;
+
+        // 【開発用調査ログ】(v232)実機で「開いた時から流れていたか」を確かめるため(v240 で大きさも出す)
+        console.log("同期モード : 音の出口を休ませないよう、聞こえない小さな信号を流し始めました(" + formatSyncKeepAwakeLevel(level) + ")");
 
     }
     catch(error){
@@ -6510,6 +6583,8 @@ function stopSyncKeepAwake(){
     const node = syncKeepAwakeNode;
 
     syncKeepAwakeNode = null;
+
+    syncKeepAwakeLevel = 0;
 
     try{
 
@@ -6560,6 +6635,88 @@ function stopSyncKeepAwakeLater(){
         stopSyncKeepAwake();
 
     },SYNC_KEEP_AWAKE_AFTER_START_MS);
+
+}
+
+/**
+ * 今の状態で流すべき信号の大きさを返します(v240)。
+ *
+ *     「音だけ消す」(5-5)の間 … SYNC_KEEP_AWAKE_MUTED_LEVEL(0.001 = −60dB)
+ *     それ以外                 … SYNC_KEEP_AWAKE_LEVEL(0.0001 = −80dB)
+ *
+ * 理由は2つの定数のコメント(【なぜ「音だけ消す」の間は 0.001 なのか】)。
+ * **大きさを決めるのはこの関数だけ**にして、流し始める時と切り替える時の
+ * 両方がここを見ます(2か所で決めると、片方だけ直し忘れるため)。
+ *
+ * @return {number}
+ */
+function getSyncKeepAwakeLevel(){
+
+    return syncMuted ? SYNC_KEEP_AWAKE_MUTED_LEVEL : SYNC_KEEP_AWAKE_LEVEL;
+
+}
+
+/**
+ * 流している信号を、今の状態に合う大きさへ動かします(v240)。
+ *
+ * setSyncMuted()(5-5)が、消した・戻した直後に呼びます。流していない時や、
+ * 大きさが変わらない時は何もしません。
+ *
+ * 信号を作り直さず、SYNC_KEEP_AWAKE_RAMP_SEC 秒かけてゆっくり動かします
+ * (作り直すと、一瞬0になる・段差ができるため。止める時と同じ書き方)。
+ */
+function refreshSyncKeepAwakeLevel(){
+
+    if(!syncKeepAwakeNode){ return; }
+
+    const level = getSyncKeepAwakeLevel();
+
+    if(level === syncKeepAwakeLevel){ return; }
+
+    const before = syncKeepAwakeLevel;
+
+    try{
+
+        const offset = syncKeepAwakeNode.offset;
+
+        const now = deckAudioCtx.currentTime;
+
+        // 予約してある変化(上げている途中など)を取り消し、今の値から新しい大きさへ
+        offset.cancelScheduledValues(now);
+        offset.setValueAtTime(offset.value,now);
+        offset.linearRampToValueAtTime(level,now + SYNC_KEEP_AWAKE_RAMP_SEC);
+
+        syncKeepAwakeLevel = level;
+
+        // 【開発用調査ログ】(v240)消している間に −60dB になっていたかを、実機のログで確かめるため
+        console.log(
+            "同期モード : 聞こえない信号の大きさを変えました : " +
+            formatSyncKeepAwakeLevel(before) + " → " + formatSyncKeepAwakeLevel(level) +
+            (syncMuted ? "(音だけ消している間。画面を消しても間引かれないように)" : "(音を戻した)")
+        );
+
+    }
+    catch(error){
+
+        // 変えられなくても信号は流れたまま(v239 と同じ動きになるだけ)
+        console.error("同期モード : 聞こえない信号の大きさを変えられませんでした :",error.name,error.message);
+
+    }
+
+}
+
+/**
+ * 信号の大きさを、ログ用に「−60dB」の形の文字にします(v240)。
+ *
+ * dB(デシベル)= 20 × log10(大きさ)。1(最大)が 0dB で、
+ * 10分の1になるごとに 20dB ずつ小さくなります(0.001 → −60dB、0.0001 → −80dB)。
+ *
+ * @param  {number} level - 信号の大きさ(0より大きい数)
+ * @return {string}
+ */
+function formatSyncKeepAwakeLevel(level){
+
+    return Math.round(20 * Math.log10(level)) + "dB";
 
 }
 
@@ -6736,6 +6893,12 @@ GetMediaSessionInfoSync)。だからボタンは押すたびに ⏸ が届きま
 startSyncKeepAwake)を、画面が消えていても流し続けます。この信号は
 全体のつまみを通らないので、消しても止まりません。
 
+【v240】消している間の信号は、②③より大きい −60dB にします
+(SYNC_KEEP_AWAKE_MUTED_LEVEL)。v239 の −80dB では、Chrome から見て
+完全な無音だったため、画面を消すと約90秒でページが凍結されて曲が
+止まりました(10-17 の2台の試験)。大きさの切り替えは setSyncMuted() の
+最後の refreshSyncKeepAwakeLevel() が受け持ちます。
+
 ------------------------------------------------------------
 【いつ「戻す」か】
 
@@ -6843,6 +7006,14 @@ function setSyncMuted(muted,why){
 
     }
 
+    /*
+    【v240】流している信号の大きさを、今の状態に合わせます
+    (消した → −60dB / 戻した → −80dB。流していなければ何もしない)。
+    消した時に新しく流し始めた場合は、startSyncKeepAwake() が最初から
+    −60dB で流すので、ここでは何も変わりません。
+    */
+    refreshSyncKeepAwakeLevel();
+
     refreshSyncMuteBadge();
 
 }
@@ -6883,9 +7054,15 @@ function stopSyncMutedTooLong(){
  * 同期モードの画面が開いているかを返します(v239)。
  * (5-3 の handleSyncKeepAwakeVisibility と同じ見分け方)
  *
+ * 【v240】開いている途中(syncPanelOpening)も「開いている」と答えます。
+ * 曲を止めた知らせ('pause')は、画面が出る前に届くことがあるためです
+ * (変数 syncPanelOpening の説明)。
+ *
  * @return {boolean}
  */
 function isSyncPanelShown(){
+
+    if(syncPanelOpening){ return true; }
 
     return !!(syncPanelEl && syncPanelEl.style.display === "flex");
 
