@@ -192,6 +192,12 @@ if(mediaSessionSupported){
         // 【開発用調査ログ】(v237)届いた操作を🐛パネルに残す(このファイルの最後の logMediaSessionAction)
         logMediaSessionAction("▶");
 
+        /*
+        【v238】止めた時に休ませた音の出口を、鳴らす前に起こします
+        (js/deck.js の resumeDeckAudio。休んでいなければ何もしません)。
+        */
+        resumeDeckAudio();
+
         audioPlayer.play();
     });
 
@@ -227,6 +233,14 @@ if(mediaSessionSupported){
         prepareUserPause();
 
         audioPlayer.pause();
+
+        /*
+        【v238】止めたら、少し待ってから音の出口を休ませます(js/deck.js の
+        sleepDeckAudioSoon)。出口が開いたままだとイヤホンが「まだ鳴っている」と
+        思い、次のタッチを ⏸ として送ってきて、Chrome がそれを捨てるため
+        (竹弘の報告「1回目のタッチでは再開しない」)。止めた**後**に呼ぶこと。
+        */
+        sleepDeckAudioSoon();
 
     });
 

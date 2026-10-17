@@ -538,11 +538,52 @@ function ensureDeckAudioGraph(){
  */
 function resumeDeckAudio(){
 
+    /*
+    【v238】「止めたので出口を休ませる」予約が残っていたら、取り消します
+    (下の 3-3 の sleepDeckAudioSoon)。止めてから0.5秒以内に鳴らし直した時、
+    鳴り始めた後に休まされてしまわないためです。
+    */
+    cancelDeckAudioSleep();
+
     if(!deckAudioCtx){ return; }
 
     if(deckAudioCtx.state === "suspended"){
 
-        deckAudioCtx.resume().catch(function(error){
+        /*
+        【v238】すでに起こしている途中なら、二重には起こしません。
+        resume() は少し時間がかかり(実測で約0.3秒)、その間 state は
+        "suspended" のままです。
+        */
+        if(deckAudioWakePending){ return; }
+
+        /*
+        【開発用調査ログ】(v238)このアプリが自分で休ませていた時だけ、
+        「何秒休んでいたか」「起きるまで何msかかったか」を🐛パネルに出します。
+        performance.now() は「ページを開いてから何ミリ秒か」を返します。
+        */
+        const sleptAtMs = deckAudioSleptAtMs;
+        const wakeStartMs = performance.now();
+
+        deckAudioSleptAtMs = null;
+        deckAudioWakePending = true;
+
+        deckAudioCtx.resume().then(function(){
+
+            deckAudioWakePending = false;
+
+            if(sleptAtMs !== null){
+
+                console.log(
+                    "音の出口を起こしました : 休んでいた " +
+                    ((wakeStartMs - sleptAtMs) / 1000).toFixed(1) + "秒" +
+                    " / 起きるまで " + Math.round(performance.now() - wakeStartMs) + "ms"
+                );
+
+            }
+
+        }).catch(function(error){
+
+            deckAudioWakePending = false;
 
             console.error("音量回路を起こせませんでした :",error.name,error.message);
 
@@ -551,6 +592,219 @@ function resumeDeckAudio(){
     }
 
 }
+
+
+// ==========================================================
+// 3-3. 竹弘が止めた時は、音の出口を休ませる(v238)
+// ==========================================================
+/* ------------------------------------------------------------
+   【何が起きていたか(竹弘の報告、2026-10-17)】
+
+       「イヤホンタッチで一時停止した後、1回目のタッチでは一時停止
+         解除にならない。必ずもう一度タッチで解除になる。ネイティブ
+         アプリでは、そんなことはない」(イヤホンは Victor HA-A6T)
+
+   v237 のログ(js/media-session.js の logMediaSessionAction)と実機の
+   テストで、仕組みが分かりました。
+
+       ① ノリRunは一時停止しても、音の出口(上の deckAudioCtx)を開けた
+          まま、聞こえない無音を流し続けていた
+       ② Bluetooth の音の流れが止まらないので、イヤホンは「まだ鳴って
+          いる」と思い、1回目のタッチを ⏸ として送る
+       ③ Android 版の Chrome は、止まっている時に届いた ⏸ をページへ渡す
+          前に捨てる(Chromium の MediaNotificationController の onPause)
+       ④ 2回目のタッチで、やっと ▶ が送られる
+
+   その証拠に、⏸ の後1分待つと1回で再開できました。Chrome は30〜40秒
+   無音が続くと、自分で出口を休ませるためです(同期モードの確認A で
+   分かったこと)。ネイティブアプリは止めると出口を閉じるので、
+   イヤホンにも「止まった」と伝わります。
+
+   ------------------------------------------------------------
+   【直し方:竹弘が止めたら、こちらから出口を休ませる】
+
+       止めた(イヤホン・通知・ロック画面の ⏸ / ■)
+         → 0.5秒後に出口を休ませる(AudioContext の suspend)
+       鳴らし直す(▶ / ■ / 曲のタップ …)
+         → 鳴らす前に起こす(上の resumeDeckAudio)
+
+   ⚠️ 代わりに、再開の鳴り出しが毎回 約0.3秒遅れます(出口を起こす時の
+      引っかかり)。今までも1分以上止めた後はそうなっていました。曲は
+      止めた所から続くだけで、拍はずれません。
+
+   ⚠️ close() は使いません(上の resumeDeckAudio のコメント。v157 の
+      「ブッ」というノイズ)。suspend は「一時停止」で、閉じはしません。
+
+   ------------------------------------------------------------
+   【なぜ0.5秒待ってから休ませるのか】
+
+   ノリノリアシストは、止めた知らせ('pause')を受けてから、予約済みの
+   カチッを取り消します(js/metronome.js)。この知らせは少し遅れて届く
+   ので、止めた瞬間に出口を休ませると、取り消す前のカチッが出口の中に
+   残り、**再開した瞬間に鳴ってしまう**おそれがあります。カチッは長くても
+   0.3秒なので、0.5秒待てば片付いています。
+
+   ------------------------------------------------------------
+   【休ませない時】
+
+       ・待っている0.5秒の間に、また鳴り始めた(2枚のデッキのどちらか)
+       ・同期モードの画面を開いていて、出口を休ませない信号が流れている
+         (js/sync.js の v232。②③のピッ・カチッと、スタートの精度のため)
+
+   ------------------------------------------------------------
+   【鳴らし直す入口で起こし忘れても、音は出るようにしてある】
+
+   曲を鳴らす入口はいくつもあります(▶・■・曲のタップ・マイピッチ設定や
+   のり注入を閉じた時の続き …)。1つでも起こし忘れると、**曲が進んでいる
+   のに音が出ない**という、走行中にいちばん困る失敗になります。
+
+   そこで下の「保険」が、曲が鳴り始めた知らせ('play')のたびに出口を
+   確かめ、休んでいたら起こします。主な入口(▶・■・曲のタップ)では
+   鳴らす前に起こしているので、保険が働くのは起こし忘れた時だけです
+   (その時は🐛パネルに知らせを出すので、入口を直せます)。
+   ------------------------------------------------------------ */
+
+// 止めてから出口を休ませるまでの待ち(秒)。理由は上の【なぜ0.5秒…】
+const DECK_AUDIO_SLEEP_DELAY_SEC = 0.5;
+
+// 休ませる予約(setTimeout の番号)。null = 予約なし
+let deckAudioSleepTimerId = null;
+
+/*
+このファイルが自分で出口を休ませた時刻(performance.now のミリ秒)。
+null = 休ませていない。使い道は2つです。
+
+    ・画面に触れた時に起こさない判断(下の resumeDeckAudioOnTouch)… 本番の処理
+    ・起こした時に「何秒休んでいたか」を🐛パネルに出す … 【開発用調査ログ】(v238)
+
+⚠️ ログを消す時も、この変数は消さないこと(触っただけで出口が起きて、
+   イヤホンの1回目のタッチがまた効かなくなる)。
+*/
+let deckAudioSleptAtMs = null;
+
+// 出口を起こしている途中か(resume() の答えを待っている間 true。上の resumeDeckAudio)
+let deckAudioWakePending = false;
+
+/**
+ * 竹弘が曲を止めた後に呼びます。少し待ってから、音の出口を休ませます(v238)。
+ *
+ *     呼ぶ所 … イヤホン・通知・ロック画面の ⏸(js/media-session.js)
+ *              ■ボタン(js/upper-area.js)
+ *
+ * ⚠️ 呼ぶ側は、audioPlayer.pause() の**後で**呼ぶこと(止めてから休ませる)。
+ */
+function sleepDeckAudioSoon(){
+
+    if(!deckAudioCtx){ return; }
+
+    // 前の予約が残っていたら置き換えます(2回押された時など)
+    cancelDeckAudioSleep();
+
+    deckAudioSleepTimerId = setTimeout(function(){
+
+        deckAudioSleepTimerId = null;
+
+        // 待っている間に、どちらかのデッキがまた鳴り始めていたら休ませません
+        if(!deckAudioA.paused || !deckAudioB.paused){ return; }
+
+        // 同期モードが出口を起こしておきたい間は、休ませません
+        if(isDeckAudioWantedAwake()){ return; }
+
+        // すでに休んでいる(ブラウザが休ませた)なら、何もしません
+        if(deckAudioCtx.state !== "running"){ return; }
+
+        deckAudioCtx.suspend().then(function(){
+
+            /*
+            ⚠️ suspend は少し時間がかかります。休ませている途中で、竹弘が
+               もう鳴らし直していたら、すぐ起こし直します。
+
+            play() を呼ぶと paused はその場で false になるので、ここで
+            確かめれば間に合います。起こし直さないと、**曲は進むのに音が
+            出ない**ことになります。
+            */
+            if(!deckAudioA.paused || !deckAudioB.paused){
+
+                console.warn("音の出口を休ませている間に鳴り始めたので、すぐ起こし直します");
+
+                resumeDeckAudio();
+
+                return;
+
+            }
+
+            deckAudioSleptAtMs = performance.now();
+
+            // 【開発用調査ログ】(v238)
+            console.log("音の出口を休ませました(竹弘が止めたため。イヤホンの1回目のタッチで再開できるように)");
+
+        }).catch(function(error){
+
+            console.error("音の出口を休ませられませんでした :",error.name,error.message);
+
+        });
+
+    },DECK_AUDIO_SLEEP_DELAY_SEC * 1000);
+
+}
+
+/**
+ * 「出口を休ませる」予約を取り消します(v238)。予約が無ければ何もしません。
+ */
+function cancelDeckAudioSleep(){
+
+    if(deckAudioSleepTimerId === null){ return; }
+
+    clearTimeout(deckAudioSleepTimerId);
+
+    deckAudioSleepTimerId = null;
+
+}
+
+/**
+ * ほかの係が「出口を起こしておきたい」と言っているかを返します(v238)。
+ *
+ * いまは同期モードだけです。画面を開いている間、js/sync.js が聞こえない
+ * 小さな信号(syncKeepAwakeNode)を流して出口を休ませないようにしています
+ * (v232)。その間に休ませると、その工夫が台無しになります。
+ *
+ * ⚠️ typeof で確かめるのは、js/sync.js が無い時(将来消した時など)にも
+ *    エラーにならないようにするためです。typeof は、まだ無い名前でも
+ *    エラーにならず "undefined" を返します。
+ *
+ * @return {boolean} true = 休ませない
+ */
+function isDeckAudioWantedAwake(){
+
+    return (typeof syncKeepAwakeNode !== "undefined") && syncKeepAwakeNode !== null;
+
+}
+
+/*
+【保険】曲が鳴り始めた時に、出口が休んでいたら起こします(v238)。
+
+上の【鳴らし直す入口で起こし忘れても…】の仕組みです。主な入口では鳴らす
+前に起こしているので、ここが働くのは起こし忘れた入口があった時だけです。
+その時は🐛パネルに知らせを出します(どの入口かを探す手がかり)。
+
+⚠️ deckAudioA / deckAudioB / audioPlayer は js/config.js で作られていて、
+   このファイルより先に読み込まれるので、ここで耳を付けて大丈夫です。
+*/
+bindDeckEvent("play",function(){
+
+    // 休ませる予約が残っていたら取り消します(鳴り始めたので)
+    cancelDeckAudioSleep();
+
+    // ⚠️ 入口で起こしている途中(deckAudioWakePending)なら、起こし忘れではありません
+    if(deckAudioCtx && deckAudioCtx.state === "suspended" && !deckAudioWakePending){
+
+        console.warn("曲が鳴り始めたのに音の出口が休んでいたので、起こしました(起こし忘れの入口があります)");
+
+        resumeDeckAudio();
+
+    }
+
+});
 
 /**
  * デッキの音量を、その場で設定します。
@@ -649,12 +903,39 @@ function rampDeckVolume(deck,curve,durationSec){
 タップのたびに1回状態を見るだけなので、負担にはなりません。
 passive:true は「この処理は画面のスクロールを邪魔しません」という
 ブラウザへの申告で、指の動きが滑らかになります。
+
+【v238】このアプリが自分で休ませた出口は、触っただけでは起こしません
+(下の resumeDeckAudioOnTouch)。理由は2つあります。
+
+    ① ■ で止めると、同じタップの click がここにも届きます(■ の処理の
+       後で、画面全体へ伝わってくる)。起こすと、■ が入れたばかりの
+       「休ませる予約」まで取り消してしまいます
+    ② イヤホンで止めた後に画面へ触れただけで出口が開くと、イヤホンが
+       また「鳴っている」と思い、1回目のタッチが効かなくなります
+
+その代わり、曲を鳴らす入口(▶・■・曲のタップ …)と、曲が鳴り始めた時の
+保険(上の 3-3)が必ず起こします。ブラウザやOSが休ませた時は、今までどおり
+触ったら起こします。
 */
 [ "click","touchstart" ].forEach(function(eventName){
 
-    document.addEventListener(eventName,resumeDeckAudio,{passive:true});
+    document.addEventListener(eventName,resumeDeckAudioOnTouch,{passive:true});
 
 });
+
+/**
+ * 画面に触れた時に、音の出口を起こします(v238 で上の受け口から分けた)。
+ *
+ * このアプリが自分で休ませている時(休ませる予約を入れた後も含む)は
+ * 何もしません。理由は上のコメントの①②です。
+ */
+function resumeDeckAudioOnTouch(){
+
+    if(deckAudioSleepTimerId !== null || deckAudioSleptAtMs !== null){ return; }
+
+    resumeDeckAudio();
+
+}
 
 
 // ==========================================================

@@ -559,6 +559,13 @@ stopBtn.addEventListener("click",function(){
     if(!audioPlayer.src){ return; }
 
     if(audioPlayer.paused){
+
+        /*
+        【v238】止めた時に休ませた音の出口を、鳴らす前に起こします
+        (js/deck.js の resumeDeckAudio。休んでいなければ何もしません)。
+        */
+        resumeDeckAudio();
+
         audioPlayer.play();
     }
     else{
@@ -587,6 +594,13 @@ stopBtn.addEventListener("click",function(){
         prepareUserPause();
 
         audioPlayer.pause();
+
+        /*
+        【v238】止めたら、少し待ってから音の出口を休ませます(js/deck.js の
+        sleepDeckAudioSoon)。イヤホンの ⏸(js/media-session.js)と同じ止め方です。
+        こうしておくと、■ で止めた後もイヤホンの1回目のタッチで再開できます。
+        */
+        sleepDeckAudioSoon();
 
     }
 
