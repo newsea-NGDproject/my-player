@@ -214,6 +214,16 @@ if(mediaSessionSupported){
         logMediaSessionAction("⏸");
 
         /*
+        【v239】同期モード中(同期スタートした後の🕺ノリノリRun)は、曲を止めずに
+        「音だけ消す ⇄ 戻す」を切り替えます(js/sync.js の handleSyncEarphonePause)。
+        引き受けてもらえたら(true)、ここで終わりです。曲は止めません。
+
+        ⚠️ typeof で確かめるのは、js/sync.js はこのファイルより後に読み込まれる
+           うえ、将来外した時にもイヤホンの ⏸ が壊れないようにするためです。
+        */
+        if(typeof handleSyncEarphonePause === "function" && handleSyncEarphonePause()){ return; }
+
+        /*
         意図した停止であることを js/upper-area.js の停止ボタン記号
         表示(v135)へ伝えます。ロック画面からの一時停止も、竹弘が
         自分で選んだ操作なので「意図した停止」として扱います。

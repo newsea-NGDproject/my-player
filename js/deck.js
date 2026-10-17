@@ -434,8 +434,14 @@ function releaseDeckUrl(deck){
    【回路のかたち】
 
        deckAudioA ──> MediaElementSource ──> GainNode ──┐
-                                                         ├─> スピーカー
-       deckAudioB ──> MediaElementSource ──> GainNode ──┘
+                                                         ├─> 全体の音量つまみ ──> スピーカー
+       deckAudioB ──> MediaElementSource ──> GainNode ──┘          ↑
+                         ノリノリアシスト(js/metronome.js)の音量つまみ ─┘
+
+   「全体の音量つまみ」(deckMasterGain)は v239 で足しました。同期モードで
+   「音だけ消す」時に、曲とカチッをまとめて 0 にするためです(下の 3-4)。
+   ⚠️ 同期モードのピッ・カチッ・出口を休ませない信号(js/sync.js)は、
+      このつまみを通さず、スピーカーへ直接つないだままです。
 
    ⚠️ createMediaElementSource は、1つの <audio> につき**一度しか
       呼べません**(呼ぶと元にも戻せません)。そのため下の
@@ -448,6 +454,9 @@ let deckAudioCtx = null;
 
 // デッキ → そのデッキの音量つまみ(GainNode)
 const deckGains = new Map();
+
+// 全体の音量つまみ(v239)。2枚のデッキとノリノリアシストの音が、ここを通ってスピーカーへ出ます
+let deckMasterGain = null;
 
 /**
  * 音量回路を用意します。すでにあれば何もしません。
@@ -465,6 +474,14 @@ function ensureDeckAudioGraph(){
 
         deckAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
+        /*
+        全体の音量つまみ(v239)を、デッキの回路より先に作ります。
+        デッキの音量つまみは、スピーカーではなくここへつなぎます。
+        */
+        deckMasterGain = deckAudioCtx.createGain();
+        deckMasterGain.gain.value = 1;
+        deckMasterGain.connect(deckAudioCtx.destination);
+
         [deckAudioA,deckAudioB].forEach(function(deck){
 
             const source = deckAudioCtx.createMediaElementSource(deck);
@@ -474,11 +491,12 @@ function ensureDeckAudioGraph(){
             gain.gain.value = 1;
 
             /*
-            源(曲)→ 音量つまみ → スピーカー、と数珠つなぎにします。
-            connect が「配線する」命令です。
+            源(曲)→ 音量つまみ → 全体の音量つまみ → スピーカー、と
+            数珠つなぎにします。connect が「配線する」命令です。
+            (v238まではスピーカーへ直接つないでいました)
             */
             source.connect(gain);
-            gain.connect(deckAudioCtx.destination);
+            gain.connect(deckMasterGain);
 
             /*
             ⚠️ <audio> 側の音量を1に戻します(v175で追加した命綱)。
@@ -520,6 +538,7 @@ function ensureDeckAudioGraph(){
 
         deckAudioCtx = null;
         deckGains.clear();
+        deckMasterGain = null;
 
     }
 
@@ -889,6 +908,86 @@ function rampDeckVolume(deck,curve,durationSec){
     そのまま表現できます。
     */
     gain.gain.setValueCurveAtTime(curve,now,durationSec);
+
+}
+
+// ==========================================================
+// 3-4. 全体の音量つまみ(v239)
+// ==========================================================
+/*
+曲(2枚のデッキ)とノリノリアシストの音を、まとめて上げ下げするつまみです。
+いまの使い道は、同期モードの「音だけ消す」(js/sync.js の 5-5)だけです。
+
+    消す … つまみを 0 に(曲もアシストも裏で進み続ける)
+    戻す … つまみを 1 に(戻した瞬間から、みんなと拍が揃ったまま聞こえる)
+
+【なぜ <audio> の消音(muted)を使わないのか】
+
+鳴っている曲の消音を戻すと、曲の位置が約60ms先へ跳びました(同期モードの
+確認C、2026-10-12)。みんなと拍を揃えている最中に跳ぶと、その人だけずれます。
+音量つまみなら、曲の進み方には一切触りません。
+
+⚠️ クロスフェードの音量の動きは、各デッキの音量つまみ(setDeckVolume /
+   rampDeckVolume)のままです。全体のつまみはその後ろで掛け算されるだけ
+   なので、繋いでいる途中に消しても戻しても、フェードの形は崩れません。
+⚠️ v240 で 🔈ボタンもこのつまみに乗せ替える予定です。その時は「🔈 と
+   音だけ消す」の両方を見て値を決める形にすること(片方が戻した時に、
+   もう片方で消しているのに鳴り出さないように)。
+*/
+
+// 消す・戻す時に、音量を変えきるまでの時間(秒)。一瞬で変えると「プツッ」と鳴るため
+const DECK_MASTER_FADE_SEC = 0.03;
+
+/**
+ * 全体の音量つまみがあるかを返します(v239)。
+ *
+ * 音の回路を作れなかった古いブラウザでは無いので、その時「音だけ消す」は
+ * 使えません(呼ぶ側は今までどおり本当に止めます)。
+ *
+ * @return {boolean}
+ */
+function hasDeckMaster(){
+
+    return deckMasterGain !== null;
+
+}
+
+/**
+ * 曲やアシストの音を、どこへつなげばよいかを返します(v239)。
+ *
+ * 全体の音量つまみがあればそこ、無ければスピーカー(destination)です。
+ * js/metronome.js のアシストの音量つまみが使います。
+ *
+ * @return {AudioNode|null}
+ */
+function getDeckOutput(){
+
+    if(deckMasterGain){ return deckMasterGain; }
+
+    return deckAudioCtx ? deckAudioCtx.destination : null;
+
+}
+
+/**
+ * 全体の音量を変えます(v239)。DECK_MASTER_FADE_SEC 秒かけて変えます。
+ *
+ * @param {number} volume - 0(消す)〜1(いつもの大きさ)
+ */
+function setDeckMasterVolume(volume){
+
+    if(!deckMasterGain || !deckAudioCtx){ return; }
+
+    const gainParam = deckMasterGain.gain;
+    const now = deckAudioCtx.currentTime;
+
+    /*
+    予約してある変化を取り消し、今の値から始めて、まっすぐ目当ての値へ
+    近づけます(linearRampToValueAtTime)。途中で何度押されても、その時の
+    値から滑らかに向きを変えます。
+    */
+    gainParam.cancelScheduledValues(now);
+    gainParam.setValueAtTime(gainParam.value,now);
+    gainParam.linearRampToValueAtTime(volume,now + DECK_MASTER_FADE_SEC);
 
 }
 

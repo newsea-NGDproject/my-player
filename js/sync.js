@@ -6577,13 +6577,21 @@ function handleSyncKeepAwakeVisibility(){
 
     if(document.visibilityState === "hidden"){
 
+        /*
+        【v239】「音だけ消す」の間は止めません(5-5)。走っている時は画面を
+        消してポケットに入れるのがふつうで、ここで止めると、戻した瞬間に
+        その人の曲だけみんなより遅れるためです。
+        */
+        if(syncMuted){ return; }
+
         stopSyncKeepAwake();
 
         return;
 
     }
 
-    if(syncPanelEl && syncPanelEl.style.display === "flex"){
+    // 【v239】「音だけ消す」の間も流します(5-5)
+    if((syncPanelEl && syncPanelEl.style.display === "flex") || syncMuted){
 
         startSyncKeepAwake();
 
@@ -6686,6 +6694,299 @@ function acceptSyncDialog(){
     if(onOk){ onOk(); }
 
 }
+
+
+// ==========================================================
+// 5-5. 同期モード中のイヤホンの ⏸ は「音だけ消す ⇄ 戻す」(v239)
+// ==========================================================
+/*
+【竹弘の案(2026-10-12 夜 → 10-13 に仕様を決めた)】
+
+    「ランナーが曲を止めたいのは、一緒に走っている仲間と話をしたい時。
+      音さえ消えればいい。信号で止まっても曲を止める必要は無い。
+      曲を止めると、走り出しでまた『同期モード何秒後に再生』の手間 →
+      それは無しにしたい」
+
+そこで、同期スタートした後(syncState.running)の🕺ノリノリRunでは、
+イヤホン・通知・ロック画面の ⏸ を「音だけ消す ⇄ 戻す」の切り替えにします。
+
+    消す … 全体の音量つまみ(js/deck.js の 3-4)を 0 に。曲もノリノリアシストも
+           裏で進み続ける
+    戻す … つまみを 1 に。戻した瞬間から、みんなと拍が揃ったまま聞こえる
+           (時刻ボタンで合わせ直す必要が無い)
+
+⚠️ 画面の ■ は今までどおり**本当の一時停止**です(竹弘の指定)。
+
+------------------------------------------------------------
+【ロック画面・通知のボタンは ⏸ のまま】
+
+曲は鳴り続けているので、Chrome は「再生中」として ⏸ を出し続けます
+(鳴っているページは「一時停止中」を名乗れない決まり。Chromium の
+GetMediaSessionInfoSync)。だからボタンは押すたびに ⏸ が届きます。
+それを受け口で「消す ⇄ 戻す」に切り替えます。v238 までのテストで、
+鳴っている時の ⏸ は毎回1タップで届くことを確かめてあります。
+
+------------------------------------------------------------
+【消している間は、出口を休ませない信号を流し続ける】
+
+音量つまみが 0 だと、スピーカーへ出る音はゼロ(無音)です。Chrome は
+30〜40秒無音が続くと出口を休ませるので、戻した瞬間に約0.2秒引っかかり、
+**その人の曲だけみんなより遅れます**(同期モードの確認A・B と同じ)。
+そこで消している間は、②③と同じ「聞こえない小さな信号」(5-3 の
+startSyncKeepAwake)を、画面が消えていても流し続けます。この信号は
+全体のつまみを通らないので、消しても止まりません。
+
+------------------------------------------------------------
+【いつ「戻す」か】
+
+    ・消している時に ⏸ がもう一度届いた(🕺を出た後でも、消していれば戻す)
+    ・画面の 🔇 の知らせをタップした
+    ・曲が鳴り始めた('play'。▶ で再開した・曲をタップした など)
+    ・曲が本当に止まった('pause'。■・電話・同期モードを開いた など)
+      ⚠️ 🎬頭出し接続の無音で先行曲が止まる時は除く(isConnectSilence)。
+         曲と曲の間の段取りで、竹弘が止めたのではないため
+    ・🕺ノリノリRunを出た(メインメニューで音が消えたままにならないように)
+    ・消し忘れの保険:**120分**消したままなら、本当に止める(竹弘の指定。
+      「昼ごはんで1時間 OFF もありうる。アプリの切り忘れ・電池消耗を考えて」)
+
+⚠️ 電話などで Chrome が曲を本当に止めた時も「戻す」ので、電話の後に
+   曲が戻ってくると音も聞こえます。そのぶん拍はみんなとずれています
+   (直すのは「みんなの拍の物差し」の予定)。
+*/
+
+// 消し忘れの保険:この分数だけ消したままなら、本当に止めます(竹弘の指定)
+const SYNC_MUTE_MAX_MIN = 120;
+
+// いま「音だけ消して」いるか
+let syncMuted = false;
+
+// 消し始めた時刻(performance.now のミリ秒)。戻した時に「何秒消していたか」を🐛へ出すため
+let syncMutedAtMs = 0;
+
+// 消し忘れの保険の予約(setTimeout の番号)。0 = 予約なし
+let syncMuteGuardTimerId = 0;
+
+/**
+ * イヤホン・通知・ロック画面の ⏸ が届いた時に、js/media-session.js から呼ばれます(v239)。
+ *
+ * 同期モード中なら「音だけ消す ⇄ 戻す」を切り替えて true を返します。
+ * その時、呼んだ側は**曲を止めません**。false なら、今までどおり止めてもらいます。
+ *
+ * @return {boolean} true = こちらで引き受けた(止めないで)
+ */
+function handleSyncEarphonePause(){
+
+    // 消している時は、いつでも「戻す」(🕺を出た後でも)
+    if(syncMuted){
+
+        setSyncMuted(false,"イヤホン・通知の ⏸");
+
+        return true;
+
+    }
+
+    /*
+    消せるのは、同期スタートした後の🕺ノリノリRunで、曲が鳴っている時だけ。
+    全体の音量つまみが無い(古いブラウザ)時は、今までどおり止めます。
+    */
+    if(!syncState.running || !isNoriRunMode || audioPlayer.paused || !hasDeckMaster()){ return false; }
+
+    setSyncMuted(true,"イヤホン・通知の ⏸");
+
+    return true;
+
+}
+
+/**
+ * 音だけ消す・戻すを切り替えます(v239)。
+ *
+ * @param {boolean} muted - true = 消す / false = 戻す
+ * @param {string}  why   - 🐛パネルに出す理由
+ */
+function setSyncMuted(muted,why){
+
+    if(muted === syncMuted){ return; }
+
+    syncMuted = muted;
+
+    setDeckMasterVolume(muted ? 0 : 1);
+
+    if(muted){
+
+        // 出口を休ませない信号を流します(画面が消えても止めない。上の説明)
+        startSyncKeepAwake();
+
+        syncMutedAtMs = performance.now();
+
+        syncMuteGuardTimerId = setTimeout(stopSyncMutedTooLong,SYNC_MUTE_MAX_MIN * 60 * 1000);
+
+        // 【開発用調査ログ】(v239)
+        console.log("同期モード : 🔇 音だけ消しました(" + why + "。曲とカチッは裏で進んでいます)");
+
+    }
+    else{
+
+        if(syncMuteGuardTimerId){ clearTimeout(syncMuteGuardTimerId); syncMuteGuardTimerId = 0; }
+
+        /*
+        信号は少し重ねてから止めます(戻した直後の音量の上がり始めで出口が
+        休まないように)。同期モードの画面が開いている時は、画面の側が
+        信号を使っているので止めません。
+        */
+        if(!isSyncPanelShown()){ stopSyncKeepAwakeLater(); }
+
+        // 【開発用調査ログ】(v239)
+        console.log(
+            "同期モード : 🔈 音を戻しました(" + why + "。消していた " +
+            ((performance.now() - syncMutedAtMs) / 1000).toFixed(1) + "秒)"
+        );
+
+    }
+
+    refreshSyncMuteBadge();
+
+}
+
+/**
+ * 消し忘れの保険:SYNC_MUTE_MAX_MIN 分たっても消したままなら、本当に止めます(v239)。
+ *
+ * 止め方は、竹弘が ■ で止めた時と同じです(裏のデッキを先に止める →
+ * 主役を止める → 出口を休ませる。js/connect.js の prepareUserPause と
+ * js/deck.js の sleepDeckAudioSoon)。止めてから音を戻すので、聞こえる
+ * 音が一瞬漏れることはありません。
+ */
+function stopSyncMutedTooLong(){
+
+    syncMuteGuardTimerId = 0;
+
+    if(!syncMuted){ return; }
+
+    console.log("同期モード : 音を消したまま " + SYNC_MUTE_MAX_MIN + "分たったので、曲を止めます(消し忘れの保険)");
+
+    // ■ の記号を ▶ に切り替えるための旗(js/upper-area.js の intentionalPause)
+    intentionalPause = true;
+
+    prepareUserPause();
+
+    audioPlayer.pause();
+
+    setSyncMuted(false,"消し忘れの保険");
+
+    // 出口を休ませられるよう、信号は今すぐ止めます(Later だと休ませる予約に間に合わない)
+    if(!isSyncPanelShown()){ stopSyncKeepAwake(); }
+
+    sleepDeckAudioSoon();
+
+}
+
+/**
+ * 同期モードの画面が開いているかを返します(v239)。
+ * (5-3 の handleSyncKeepAwakeVisibility と同じ見分け方)
+ *
+ * @return {boolean}
+ */
+function isSyncPanelShown(){
+
+    return !!(syncPanelEl && syncPanelEl.style.display === "flex");
+
+}
+
+/**
+ * 画面の 🔇 の知らせを、今の状態に合わせて出し入れします(v239)。
+ *
+ * 知らせは上半分の副題(「メインメニュー」の行)の場所に出します。
+ * #upper-area に sync-muted という印(クラス)を付け外しするだけで、
+ * 副題を隠して知らせを見せるのは CSS がやります(c014.html)。
+ * 副題の文字は js/norirun.js が書き換えるので、文字そのものには触りません。
+ */
+function refreshSyncMuteBadge(){
+
+    const upperAreaEl = document.getElementById("upper-area");
+
+    if(!upperAreaEl){ return; }
+
+    upperAreaEl.classList.toggle("sync-muted",syncMuted);
+
+}
+
+/*
+曲が鳴り始めたら、消していた音を戻します(v239)。
+▶ で再開した・別の曲をタップした・同期モードでスタートし直した、などです。
+消したまま鳴り始めると、**曲が進むのに何も聞こえない**ことになるためです。
+*/
+bindDeckEvent("play",function(){
+
+    if(syncMuted){ setSyncMuted(false,"曲が鳴り始めた"); }
+
+});
+
+/*
+曲が本当に止まったら、消していた音を戻し、信号も止めます(v239)。
+■・電話・同期モードを開いた、などです。止まっているのに「曲は進んでいます」と
+出し続けないため、また出口を休ませて(v238)イヤホンの1タップで再開できる
+ようにするためです。
+
+⚠️ 🎬頭出し接続の無音で先行曲が止まる時は除きます。曲と曲の間の段取りで、
+   その間も音は消したままにしておきます(js/connect.js の isConnectSilence)。
+*/
+bindDeckEvent("pause",function(){
+
+    if(!syncMuted){ return; }
+
+    if(isConnectSilence()){ return; }
+
+    setSyncMuted(false,"曲が止まった");
+
+    // 同期モードの画面を開いた時は、画面の側が信号を使うので止めません
+    if(!isSyncPanelShown()){ stopSyncKeepAwake(); }
+
+});
+
+/*
+🕺ノリノリRunを出たら、消していた音を戻します(v239)。
+メインメニューで、音が消えたまま曲だけ進むことにならないようにします。
+
+🕺モードは #app に norirun-mode という印(クラス)が付く・外れるだけで
+表されるので、js/metronome.js(v217)と同じく MutationObserver で
+「印が外れた瞬間」を見張ります。js/norirun.js には触りません。
+*/
+(function watchSyncMuteMode(){
+
+    const appEl = document.getElementById("app");
+
+    if(!appEl){ return; }
+
+    const observer = new MutationObserver(function(){
+
+        if(syncMuted && !appEl.classList.contains("norirun-mode")){
+
+            setSyncMuted(false,"🕺ノリノリRunを出た");
+
+        }
+
+    });
+
+    observer.observe(appEl,{ attributes:true, attributeFilter:["class"] });
+
+})();
+
+/*
+画面の 🔇 の知らせをタップしても、音を戻します(v239)。
+イヤホンが手元に無い時のためです。
+*/
+(function bindSyncMuteBadge(){
+
+    const badgeEl = document.getElementById("sync-mute-badge");
+
+    if(!badgeEl){ return; }
+
+    badgeEl.addEventListener("click",function(){
+
+        setSyncMuted(false,"画面の 🔇 をタップ");
+
+    });
+
+})();
 
 
 // ==========================================================
