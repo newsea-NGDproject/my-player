@@ -681,10 +681,8 @@ const SYNC_LATE_GIVEUP_MS = 2000;
 ---- 音の出口を休ませない「聞こえない小さな信号」(v232) ----
 
     SYNC_KEEP_AWAKE_LEVEL          … 信号の大きさ(ずっと同じ値の「直流」。1が最大)
-    SYNC_KEEP_AWAKE_MUTED_LEVEL    … 「音だけ消す」(5-5)の間だけ使う、少し大きい信号(v240)
     SYNC_KEEP_AWAKE_RAMP_SEC       … 流し始め・止める時に、何秒かけて0から
                                      その大きさへ(その大きさから0へ)変えるか
-                                     (2つの大きさを行き来する時も同じ秒数)
     SYNC_KEEP_AWAKE_AFTER_START_MS … スタートした後、何ms流し続けてから止めるか
 
 【なぜ 0.0001 なのか】
@@ -707,33 +705,19 @@ const SYNC_LATE_GIVEUP_MS = 2000;
  30msかけて上がり、スタート直後の位置の実測(約1.3秒)も続いています。その間に
  万一にも出口が休まないよう、少しだけ重ねてから止めます。
 
-【なぜ「音だけ消す」の間は 0.001 なのか(v240)】
+【経緯の記録:v239〜v240 の「音だけ消す」と −60dB(v241 で外した)】
 
- v239 の2台の試験(2026-10-17、ログ「画面ロック停止再発」)で、音を消したまま
- 画面を消すと、約30秒でタイマーが間引かれ(心拍・接続の予約が遅れる)、約90秒で
- Chrome がページを**凍結**して曲が止まりました(document 'freeze')。凍結の間は
- イヤホンのタップも届きません。
+ v239〜v240 では、同期モード中のイヤホンの ⏸ を「音だけ消す」にしていて、
+ 消している間だけこの信号を 0.001(−60dB)に上げていました。−80dB のままだと、
+ Chrome から見て完全な無音になり、画面を消すと約90秒でページが**凍結**されて
+ 曲が止まったためです(2026-10-17 の2台の試験。曲を鳴らしたまま無音にすると、
+ Chrome は「音を鳴らしていない裏の画面」として間引き・凍結する)。
 
-    消している間 … 全体の音量つまみが 0 で、曲もカチッもスピーカーへ出ない
-                   + この信号は 0.0001(−80dB)= 上の境目(約 −72dB)より小さい
-    → Chrome から見ると、**音を鳴らしていない裏の画面**
-    → 電池のために間引かれ、しばらくすると凍結される
-      (9月の「画面ロック中に曲が止まる」と同じ仕組み。ふつうに鳴っている時は起きない)
-
- そこで消している間だけ、境目を超える 0.001(−60dB)にします。上の
- 「大きすぎると」のとおり Chrome は「鳴っている」と見なしますが、
- **消している間はそれこそが狙い**です(曲は裏で鳴り続けているのだから、
- 本当に「再生中」)。直流なので、−60dB でも耳には聞こえません。
-
- 同期モードの画面を開いている間は、今までどおり 0.0001 のままです。
- その間は曲が止まっているので、「再生中」とは見なされたくないためです。
- どちらにするかは getSyncKeepAwakeLevel() が1か所で決めます(5-3c節)。
-
-⚠️ 境目に余裕を持たせて、境目より約12dB(4倍)大きくしてあります。
-   2台の試験で「画面を消して5分以上」消しても凍結しないかを確かめる。
+ v241 で「音だけ消す」をやめ、本当の一時停止に戻したので(5-5)、−60dB も
+ 外しました。⚠️ 将来また「曲を進めたまま音だけ消す」ような仕組みを作る時は、
+ この凍結を思い出すこと。
 */
 const SYNC_KEEP_AWAKE_LEVEL = 0.0001;
-const SYNC_KEEP_AWAKE_MUTED_LEVEL = 0.001;
 const SYNC_KEEP_AWAKE_RAMP_SEC = 0.05;
 const SYNC_KEEP_AWAKE_AFTER_START_MS = 3000;
 
@@ -1127,22 +1111,16 @@ let syncKeepAwakeNode = null;
 let syncKeepAwakeStopTimerId = 0;
 
 /*
-いま流している信号の大きさ(v240)。SYNC_KEEP_AWAKE_LEVEL か
-SYNC_KEEP_AWAKE_MUTED_LEVEL のどちらか。流していない時は 0。
-大きさを切り替える時に「本当に変わったか」を見分けるために覚えておきます。
-*/
-let syncKeepAwakeLevel = 0;
-
-/*
-同期モードの画面を「開いている途中」か(v240)。
+同期モードの画面を「開いている途中」か(v240。v241 で使い道を変えた)。
 
 openSyncPanel() は、曲を止めてから画面を出すまでの間に、DBを読むために
 2回待ちます(await)。その間に曲の 'pause' の知らせが届くので、画面は
-まだ出ていません。v239 では、そこで 5-5 の受け口が「画面は閉じている」と
-判断して、出口を休ませない信号を止めていました(10-17 の試験で見つかった穴)。
+まだ出ていません。
 
-→ 開き始めてから画面を出すまでは true にして、isSyncPanelShown()(5-5)が
-  「開いている」と答えるようにします。
+v241:5-5 の 'pause' の受け口は、この印が立っている時の一時停止を
+「竹弘が止めた一時停止」とは見なしません(同期モードの画面を開くための
+一時停止で、再開する時は画面の側が決めるため)。
+(v240 では「音だけ消す」の信号を止めない見分けに使っていました)
 */
 let syncPanelOpening = false;
 
@@ -1460,12 +1438,6 @@ async function openSyncPanel(){
     【v240】曲を止める**前に**「開いている途中」の印を立てます
     (変数 syncPanelOpening の説明)。止めた知らせ('pause')は少し後に
     届くので、それより先に立てておく必要があります。
-
-    ⚠️ 「音だけ消す」(5-5)の途中で開いた時も、音を戻すのはここではなく
-       5-5 の 'pause' の受け口に任せます。js/metronome.js の 'pause' の
-       受け口(先に読み込まれるので先に動く)が、予約済みのカチッを
-       取り消した**後に**音が戻るためです。ここで先に戻すと、取り消す前の
-       カチッが一瞬聞こえるおそれがあります。
     */
     syncPanelOpening = true;
 
@@ -1478,6 +1450,17 @@ async function openSyncPanel(){
         cancelConnect();
 
     }
+
+    /*
+    【v241】止めた後に「再開したら、みんなの拍に合わせ直す」約束(5-5)が
+    残っていたら、ここで取り消します(音量つまみも1に戻す)。
+
+    同期モードの画面を開いたら、走り直しは画面の側(時刻ボタン)で決めるためです。
+    取り消さないと、✕で閉じて ▶ を押した時に、止めた時に0にした音量のまま
+    鳴り始めるおそれがあります。合わせ直している途中(▶ の直後)に開いた時も、
+    その予約をここで止めます。
+    */
+    cancelSyncResume("同期モードの画面を開いた");
 
     /*
     ---- 音の出口を休ませない信号を流し始めます(v232) ----
@@ -5490,6 +5473,14 @@ async function loadSyncTrackSilently(trackId){
  */
 function isSyncWarmingUp(){
 
+    /*
+    ⓪【v241】一時停止から再開して、みんなの拍に合わせ直している最中
+    (止めている間も含む。5-5 の syncResume)。音量0の曲に合わせて、
+    カチッだけが先に鳴り出さないようにします。合わせ直した後は、
+    下の②(holdSyncMetronomeUntilStart)と同じ形で印を外します。
+    */
+    if(syncResume !== null){ return true; }
+
     // ① 先に鳴らしている最中(続きからは、開始の0.4拍前に印を外す。v233)
     if(syncCountdown !== null && syncCountdown.warmStarted === true && syncCountdown.metronomeReleased !== true){
 
@@ -5567,9 +5558,13 @@ function releaseSyncMetronome(countdown){
  * ⚠️ finishSyncStart() より**前に**呼ぶこと。あちらが syncCountdown を null に
  *    した瞬間に印が外れないよう、先に期限を入れておくためです。
  *
+ * 【v241】一時停止から再開した時の合わせ直し(5-5)でも使います。その時は
+ * label に「再開」と渡し、🐛パネルの言い方だけを変えます(動きは同じ)。
+ *
  * @param {number} wPerfMs - 開始の瞬間(performance.now の物差し)
+ * @param {string} [label] - 🐛パネルに出す場面の名前(省くと「頭から」)
  */
-function holdSyncMetronomeUntilStart(wPerfMs){
+function holdSyncMetronomeUntilStart(wPerfMs,label){
 
     const untilMs = wPerfMs + SYNC_METRONOME_KICK_AFTER_MS;
 
@@ -5582,7 +5577,7 @@ function holdSyncMetronomeUntilStart(wPerfMs){
 
         syncMetronomeHoldUntilMs = 0;
 
-        kickSyncMetronome("頭から・開始の" + SYNC_METRONOME_KICK_AFTER_MS + "ms後");
+        kickSyncMetronome((label || "頭から") + "・開始の" + SYNC_METRONOME_KICK_AFTER_MS + "ms後");
 
     },Math.max(0,untilMs - performance.now()));
 
@@ -5908,6 +5903,12 @@ function syncProbeSeekLag(){
 
         countdown.seekLeadMs = lagMs;
 
+        /*
+        【v241】このスマホの「頭出しの待ち」として覚えておきます。一時停止から
+        再開する時に、みんなの拍へ合わせ直すのに使います(5-5 の syncSeekLagMs)。
+        */
+        syncSeekLagMs = lagMs;
+
         // 本番の頭出しの予約を取り直します(狙いの瞬間 − 待ち)
         clearTimeout(countdown.fireTimerId);
 
@@ -6202,11 +6203,17 @@ function finishSyncStart(){
  *    2台の拍が本当に揃っているかは、耳で確かめます(ノリノリアシストの
  *    カチッが1つに重なって聞こえるか)。
  *
+ * 【v241】一時停止からの再開(5-5)でも使います。その時は label で🐛パネルの
+ * 見出しを変え、onReport で平均のずれを受け取ります(頭出しの待ちを直すため)。
+ * どちらも省けば、今までどおりの動きです。
+ *
  * @param {HTMLAudioElement} deck      - 鳴らし始めたデッキ
  * @param {number}           targetSec - 狙いの位置(曲の何秒目)
  * @param {number}           wPerfMs   - 狙いの瞬間(performance.now の物差し)
+ * @param {string}           [label]   - 🐛パネルの見出し(省くと「同期モード ③ スタート位置の実測」)
+ * @param {Function}         [onReport] - 測り終えた時に呼ぶ係。平均のずれ(ms)と回数を渡す
  */
-function measureSyncAlignment(deck,targetSec,wPerfMs){
+function measureSyncAlignment(deck,targetSec,wPerfMs,label,onReport){
 
     // 本来の速さで測ります(v230。追いかけ補正の途中の値を拾わないため)
     const rate = getSyncDeckBaseRate(deck);
@@ -6248,11 +6255,14 @@ function measureSyncAlignment(deck,targetSec,wPerfMs){
         const mean = errors.reduce(function(a,b){ return a + b; },0) / errors.length;
 
         console.log(
-            "同期モード ③ スタート位置の実測 : 予定とのずれ 平均 " + formatSyncSignedMs(mean),
+            (label || "同期モード ③ スタート位置の実測") + " : 予定とのずれ 平均 " + formatSyncSignedMs(mean),
             "(最小 " + formatSyncSignedMs(Math.min.apply(null,errors)) +
             " / 最大 " + formatSyncSignedMs(Math.max.apply(null,errors)) + " / " + note + ")",
             "※プラスは予定より早い、マイナスは遅い"
         );
+
+        // 【v241】頼まれていれば、平均のずれを渡します(再開の頭出しの待ちを直すため)
+        if(typeof onReport === "function"){ onReport(mean,errors.length); }
 
     };
 
@@ -6459,11 +6469,7 @@ Chrome は、アプリの音が30秒ほど無音のままだと、電池のた�
 部品(決まった値を出し続ける Web Audio の部品)を使います。大きさは
 SYNC_KEEP_AWAKE_LEVEL(0.0001 = −80dB)。なぜこの値かは、その定数の
 コメントにあります。
-
-【v240】「音だけ消す」(5-5)の間だけは SYNC_KEEP_AWAKE_MUTED_LEVEL
-(0.001 = −60dB)にします。どちらにするかは getSyncKeepAwakeLevel() が
-1か所で決め、切り替わった時は refreshSyncKeepAwakeLevel() が、流している
-信号をその大きさへゆっくり動かします(信号を作り直さない)。
+(v239〜v240 の「音だけ消す」の間だけ −60dB にしていた経緯も、そこに残してあります)
 
 ⚠️⚠️ **ConstantSourceNode の値は、何もしないと1(最大)です。**
    必ず0から始めて、ゆっくり SYNC_KEEP_AWAKE_LEVEL まで上げること。
@@ -6525,9 +6531,6 @@ function startSyncKeepAwake(){
 
         const now = deckAudioCtx.currentTime;
 
-        // 今の状態に合う大きさ(v240。消している間だけ少し大きい)
-        const level = getSyncKeepAwakeLevel();
-
         /*
         ⚠️ 最初は1(最大)なので、鳴らし始める前に必ず0にします。
         そこから SYNC_KEEP_AWAKE_RAMP_SEC 秒かけて、ゆっくり上げます。
@@ -6538,7 +6541,7 @@ function startSyncKeepAwake(){
         */
         node.offset.value = 0;
         node.offset.setValueAtTime(0,now);
-        node.offset.linearRampToValueAtTime(level,now + SYNC_KEEP_AWAKE_RAMP_SEC);
+        node.offset.linearRampToValueAtTime(SYNC_KEEP_AWAKE_LEVEL,now + SYNC_KEEP_AWAKE_RAMP_SEC);
 
         node.connect(deckAudioCtx.destination);
 
@@ -6546,10 +6549,8 @@ function startSyncKeepAwake(){
 
         syncKeepAwakeNode = node;
 
-        syncKeepAwakeLevel = level;
-
-        // 【開発用調査ログ】(v232)実機で「開いた時から流れていたか」を確かめるため(v240 で大きさも出す)
-        console.log("同期モード : 音の出口を休ませないよう、聞こえない小さな信号を流し始めました(" + formatSyncKeepAwakeLevel(level) + ")");
+        // 【開発用調査ログ】(v232)実機で「開いた時から流れていたか」を確かめるため
+        console.log("同期モード : 音の出口を休ませないよう、聞こえない小さな信号を流し始めました");
 
     }
     catch(error){
@@ -6583,8 +6584,6 @@ function stopSyncKeepAwake(){
     const node = syncKeepAwakeNode;
 
     syncKeepAwakeNode = null;
-
-    syncKeepAwakeLevel = 0;
 
     try{
 
@@ -6639,88 +6638,6 @@ function stopSyncKeepAwakeLater(){
 }
 
 /**
- * 今の状態で流すべき信号の大きさを返します(v240)。
- *
- *     「音だけ消す」(5-5)の間 … SYNC_KEEP_AWAKE_MUTED_LEVEL(0.001 = −60dB)
- *     それ以外                 … SYNC_KEEP_AWAKE_LEVEL(0.0001 = −80dB)
- *
- * 理由は2つの定数のコメント(【なぜ「音だけ消す」の間は 0.001 なのか】)。
- * **大きさを決めるのはこの関数だけ**にして、流し始める時と切り替える時の
- * 両方がここを見ます(2か所で決めると、片方だけ直し忘れるため)。
- *
- * @return {number}
- */
-function getSyncKeepAwakeLevel(){
-
-    return syncMuted ? SYNC_KEEP_AWAKE_MUTED_LEVEL : SYNC_KEEP_AWAKE_LEVEL;
-
-}
-
-/**
- * 流している信号を、今の状態に合う大きさへ動かします(v240)。
- *
- * setSyncMuted()(5-5)が、消した・戻した直後に呼びます。流していない時や、
- * 大きさが変わらない時は何もしません。
- *
- * 信号を作り直さず、SYNC_KEEP_AWAKE_RAMP_SEC 秒かけてゆっくり動かします
- * (作り直すと、一瞬0になる・段差ができるため。止める時と同じ書き方)。
- */
-function refreshSyncKeepAwakeLevel(){
-
-    if(!syncKeepAwakeNode){ return; }
-
-    const level = getSyncKeepAwakeLevel();
-
-    if(level === syncKeepAwakeLevel){ return; }
-
-    const before = syncKeepAwakeLevel;
-
-    try{
-
-        const offset = syncKeepAwakeNode.offset;
-
-        const now = deckAudioCtx.currentTime;
-
-        // 予約してある変化(上げている途中など)を取り消し、今の値から新しい大きさへ
-        offset.cancelScheduledValues(now);
-        offset.setValueAtTime(offset.value,now);
-        offset.linearRampToValueAtTime(level,now + SYNC_KEEP_AWAKE_RAMP_SEC);
-
-        syncKeepAwakeLevel = level;
-
-        // 【開発用調査ログ】(v240)消している間に −60dB になっていたかを、実機のログで確かめるため
-        console.log(
-            "同期モード : 聞こえない信号の大きさを変えました : " +
-            formatSyncKeepAwakeLevel(before) + " → " + formatSyncKeepAwakeLevel(level) +
-            (syncMuted ? "(音だけ消している間。画面を消しても間引かれないように)" : "(音を戻した)")
-        );
-
-    }
-    catch(error){
-
-        // 変えられなくても信号は流れたまま(v239 と同じ動きになるだけ)
-        console.error("同期モード : 聞こえない信号の大きさを変えられませんでした :",error.name,error.message);
-
-    }
-
-}
-
-/**
- * 信号の大きさを、ログ用に「−60dB」の形の文字にします(v240)。
- *
- * dB(デシベル)= 20 × log10(大きさ)。1(最大)が 0dB で、
- * 10分の1になるごとに 20dB ずつ小さくなります(0.001 → −60dB、0.0001 → −80dB)。
- *
- * @param  {number} level - 信号の大きさ(0より大きい数)
- * @return {string}
- */
-function formatSyncKeepAwakeLevel(level){
-
-    return Math.round(20 * Math.log10(level)) + "dB";
-
-}
-
-/**
  * 画面が隠れた・見えるようになった時に呼ばれます(v232)。
  *
  *     隠れた時       … 信号を止める(開いたまましまっても電池を使わない)
@@ -6729,17 +6646,13 @@ function formatSyncKeepAwakeLevel(level){
  * ⚠️ 見えた直後は出口が休んでいることがあり、流し始めた瞬間に起こし直し
  *    (約0.2秒)が入ります。②を測る・時刻ボタンを押すのは人の操作なので、
  *    ふつうはそれより後になります。
+ *
+ * (v239〜v240 では「音だけ消す」の間は隠れても止めていませんでした。
+ *  v241 で「音だけ消す」をやめたので、v232 の形に戻しています)
  */
 function handleSyncKeepAwakeVisibility(){
 
     if(document.visibilityState === "hidden"){
-
-        /*
-        【v239】「音だけ消す」の間は止めません(5-5)。走っている時は画面を
-        消してポケットに入れるのがふつうで、ここで止めると、戻した瞬間に
-        その人の曲だけみんなより遅れるためです。
-        */
-        if(syncMuted){ return; }
 
         stopSyncKeepAwake();
 
@@ -6747,8 +6660,7 @@ function handleSyncKeepAwakeVisibility(){
 
     }
 
-    // 【v239】「音だけ消す」の間も流します(5-5)
-    if((syncPanelEl && syncPanelEl.style.display === "flex") || syncMuted){
+    if(syncPanelEl && syncPanelEl.style.display === "flex"){
 
         startSyncKeepAwake();
 
@@ -6854,316 +6766,658 @@ function acceptSyncDialog(){
 
 
 // ==========================================================
-// 5-5. 同期モード中のイヤホンの ⏸ は「音だけ消す ⇄ 戻す」(v239)
+// 5-5. 同期スタート後の一時停止:再開したら、みんなの拍に合わせ直す(v241)
 // ==========================================================
 /*
-【竹弘の案(2026-10-12 夜 → 10-13 に仕様を決めた)】
+【竹弘と決めたこと(2026-10-18)】
 
-    「ランナーが曲を止めたいのは、一緒に走っている仲間と話をしたい時。
-      音さえ消えればいい。信号で止まっても曲を止める必要は無い。
-      曲を止めると、走り出しでまた『同期モード何秒後に再生』の手間 →
-      それは無しにしたい」
+v239〜v240 では、同期スタート後のイヤホンの ⏸ を「音だけ消す ⇄ 戻す」に
+していました(曲は裏で進むので、戻せばみんなと拍が揃ったまま)。ところが
+2台の試験で、**イヤホンを2回タップしないと効かない**と分かりました。
 
-そこで、同期スタートした後(syncState.running)の🕺ノリノリRunでは、
-イヤホン・通知・ロック画面の ⏸ を「音だけ消す ⇄ 戻す」の切り替えにします。
+    ・イヤホンは ⏸ と ▶ を自分で交互に送る(スマホの状態が変わったと
+      知らされると、そこで合わせ直す)
+    ・音だけ消すでは、スマホ側はずっと「再生中」のまま何も変わらない
+    ・だからイヤホンは次に ▶ を送り、Chrome は「もう再生中」としてそれを
+      このアプリへ渡す前に捨てる(Chromium の MediaNotificationController の onPlay)
+    ・2回目の ⏸ でやっと届く
 
-    消す … 全体の音量つまみ(js/deck.js の 3-4)を 0 に。曲もノリノリアシストも
-           裏で進み続ける
-    戻す … つまみを 1 に。戻した瞬間から、みんなと拍が揃ったまま聞こえる
-           (時刻ボタンで合わせ直す必要が無い)
+曲を進めたまま(Chrome から見て再生中のまま)では、この食い違いは直せません。
+そこで v241 から、同期スタート後も**本当の一時停止**に戻し、
 
-⚠️ 画面の ■ は今までどおり**本当の一時停止**です(竹弘の指定)。
+    **再開した時に、みんなの拍(③の基準)へ自動で合わせ直す**
 
-------------------------------------------------------------
-【ロック画面・通知のボタンは ⏸ のまま】
+ことにしました(予定していた「みんなの拍の物差し」の前倒し)。
 
-曲は鳴り続けているので、Chrome は「再生中」として ⏸ を出し続けます
-(鳴っているページは「一時停止中」を名乗れない決まり。Chromium の
-GetMediaSessionInfoSync)。だからボタンは押すたびに ⏸ が届きます。
-それを受け口で「消す ⇄ 戻す」に切り替えます。v238 までのテストで、
-鳴っている時の ⏸ は毎回1タップで届くことを確かめてあります。
-
-------------------------------------------------------------
-【消している間は、出口を休ませない信号を流し続ける】
-
-音量つまみが 0 だと、スピーカーへ出る音はゼロ(無音)です。Chrome は
-30〜40秒無音が続くと出口を休ませるので、戻した瞬間に約0.2秒引っかかり、
-**その人の曲だけみんなより遅れます**(同期モードの確認A・B と同じ)。
-そこで消している間は、②③と同じ「聞こえない小さな信号」(5-3 の
-startSyncKeepAwake)を、画面が消えていても流し続けます。この信号は
-全体のつまみを通らないので、消しても止まりません。
-
-【v240】消している間の信号は、②③より大きい −60dB にします
-(SYNC_KEEP_AWAKE_MUTED_LEVEL)。v239 の −80dB では、Chrome から見て
-完全な無音だったため、画面を消すと約90秒でページが凍結されて曲が
-止まりました(10-17 の2台の試験)。大きさの切り替えは setSyncMuted() の
-最後の refreshSyncKeepAwakeLevel() が受け持ちます。
+    ・イヤホンは1回タップで効く(ひとりの時と同じ。v238)
+    ・止めている間は電池をほとんど使わない(音の出口も休む。v238)
+    ・電話で Chrome が止めた後に鳴らし直した時も、同じように揃う
+    ・時刻ボタンで合わせ直す手間も要らない
+    ・止めている間は曲が進まない(みんな別の曲なので、拍さえ揃えばよい)
 
 ------------------------------------------------------------
-【いつ「戻す」か】
+【流れ】
 
-    ・消している時に ⏸ がもう一度届いた(🕺を出た後でも、消していれば戻す)
-    ・画面の 🔇 の知らせをタップした
-    ・曲が鳴り始めた('play'。▶ で再開した・曲をタップした など)
-    ・曲が本当に止まった('pause'。■・電話・同期モードを開いた など)
-      ⚠️ 🎬頭出し接続の無音で先行曲が止まる時は除く(isConnectSilence)。
-         曲と曲の間の段取りで、竹弘が止めたのではないため
-    ・🕺ノリノリRunを出た(メインメニューで音が消えたままにならないように)
-    ・消し忘れの保険:**120分**消したままなら、本当に止める(竹弘の指定。
-      「昼ごはんで1時間 OFF もありうる。アプリの切り忘れ・電池消耗を考えて」)
+  止めた(主役のデッキの 'pause')
+    → 再開の約束(syncResume)を作り、止めた位置を覚える
+    → 全体の音量つまみ(js/deck.js の 3-4)を0にしておく
+      (どこから再開されても、合わせ直すまで音が漏れないように)
 
-⚠️ 電話などで Chrome が曲を本当に止めた時も「戻す」ので、電話の後に
-   曲が戻ってくると音も聞こえます。そのぶん拍はみんなとずれています
-   (直すのは「みんなの拍の物差し」の予定)。
+  鳴り始めた('play')… イヤホンの ▶・画面の ▶・電話の後に Chrome が
+                       鳴らし直した・のり注入やマイピッチ設定を閉じた、のどれでも
+    ① 曲が実際に進み出すのを待つ(音の出口を起こす時間・鳴り出しの待ち)
+    ② 「止めた位置の直後の拍」を、みんなの拍の格子に乗せる瞬間を選ぶ
+       (今から間に合う、いちばん近い格子の拍)
+    ③ その瞬間より「頭出しの待ち」ぶん前に、その拍へ頭出しする
+    ④ 頭出しが終わったら、30msで音量を上げる
+    → 同期スタートの「頭出しで揃える」(syncFire)を短くしたものです
+
+  竹弘の目標:**▶ から音が出るまで1秒に近づける**(それ以上だとタップミスと
+  思って、もう一度押してしまうため)。見込みは、ふつう 0.3〜1秒ほど:
+
+      出口を起こす(0.01〜0.5秒)+ 頭出しの待ち(25〜50ms)
+      + 余裕(SYNC_RESUME_MIN_LEAD_MS)+ 次の格子の拍まで(0〜1拍。ピッチ130なら0〜0.46秒)
+
+------------------------------------------------------------
+【なぜ全体の音量つまみで消しておくのか】
+
+合わせ直している最中(音量0で鳴っている間)に竹弘がまた ⏸ や ■ を押すと、
+止める前の取りやめ(js/connect.js の prepareUserPause → cancelConnect)が
+**主役のデッキの音量つまみを1に戻します。** その直後に曲が止まるまでの
+ほんの一瞬、音が漏れます(v239 の試験の「■ で一瞬カチッと曲が聞こえた」と
+同じ形)。全体のつまみはその後ろにあるので、ここを0にしておけば漏れません。
+止めた後にノリノリアシストが鳴らしきるカチッ(v180)の残りも、一緒に消えます。
+
+------------------------------------------------------------
+【頭出しの待ち(このスマホの値)】
+
+頭出しを命令してから、曲が狙いの位置から進み出すまでの待ちです
+(GALAXY 約25ms / XPERIA 約50ms。同期スタートの「試し頭出し」の実測)。
+
+    ・同期スタートで試し頭出しをしていれば、その値を使う(syncProbeSeekLag)
+    ・無ければ予備の値(SYNC_SEEK_LEAD_MS = 14ms)で頭出しし、再開した後の
+      位置の実測から直す(次の再開からは直した値)
+
+------------------------------------------------------------
+【合わせ直さない時(今までどおり、すぐ音を出す)】
+
+    ・同期スタートの前 / 🕺ノリノリRunでない / ③の基準が無い
+    ・止めた時と違うデッキ・違う曲が鳴り始めた(曲をタップした・⏭ など)
+    ・ノリ注入されていない曲(拍の位置が分からない)
+    ・止めた位置の直後の拍が、もう繋ぐ位置(endTS)より後
+
+⚠️ 次の一時停止は、竹弘が止めたものではないので約束を作りません。
+    ・🎬頭出し接続の無音で、先行曲が止まる時(isConnectSilence)
+    ・同期モードの画面を開く時(syncPanelOpening。走り直しは画面の側で決める)
+    ・同期スタートの準備中(syncCountdown)
+
+⚠️ 🎬頭出し接続の無音の間に竹弘が止めた時は、まだ合わせ直せません
+   (先行曲がもう止まっていて、'pause' の知らせが来ないため)。
+   「次の曲の頭で止めて待たせる」直しを、ひとりの時と一緒に次の版で入れます
+   (その時は、ここで同期スタートの「頭から」と同じ合わせ直しをする)。
+
+------------------------------------------------------------
+【接続の準備が途中で始まっていたら】
+
+曲の終わり近くで再開すると、合わせ直している間(音量0)に、次の曲へ繋ぐ
+助走が始まることがあります(js/connect.js が timeupdate で見張っている)。
+その助走は、頭出しする**前の**位置を元に予約されているので、頭出しすると
+接続がずれます。そこで音量を上げる時に取りやめ(cancelConnect)、頭出しした
+後の位置で助走をやり直してもらいます(■ で止めて再開した時と同じ)。
 */
 
-// 消し忘れの保険:この分数だけ消したままなら、本当に止めます(竹弘の指定)
-const SYNC_MUTE_MAX_MIN = 120;
+/*
+再開する時、頭出しの命令をいつまでに出せればよいかの余裕(ms)。
+選ぶ格子の拍は「今 + 頭出しの待ち + この余裕」より後の拍です。
+setTimeout の遅れ(数ms〜十数ms)を吸収するための余裕で、長いほど
+▶ から音が出るまでが延びます(竹弘の目標は1秒)。
+*/
+const SYNC_RESUME_MIN_LEAD_MS = 80;
 
-// いま「音だけ消して」いるか
-let syncMuted = false;
+/*
+再開した後、曲が実際に進み出すのを待つ時の、見に行く間隔(ms)と上限(ms)。
+上限を過ぎても進み出さなければ、待たずに次へ進みます(止まったままには
+しないため)。上限は、出口を起こす実測の最大(約0.46秒。v238)に余裕を持たせた値です。
+*/
+const SYNC_RESUME_POLL_MS = 20;
+const SYNC_RESUME_WAIT_MAX_MS = 1500;
 
-// 消し始めた時刻(performance.now のミリ秒)。戻した時に「何秒消していたか」を🐛へ出すため
-let syncMutedAtMs = 0;
+/*
+「進み出した」とみなす目安(実秒):鳴り始めた位置から、これだけ進んだら。
+出口が起きる前や鳴り出しの待ちの間は、曲の位置が止まったままなので見分けられます。
+*/
+const SYNC_RESUME_MOVED_SEC = 0.03;
 
-// 消し忘れの保険の予約(setTimeout の番号)。0 = 予約なし
-let syncMuteGuardTimerId = 0;
+/*
+再開した後の位置の実測から、頭出しの待ちを直す時の上限(ms)。
+これより大きくずれていたら、何か別の理由(途中で止まった・飛んだ)なので直しません。
+*/
+const SYNC_RESUME_CALIBRATE_MAX_MS = 150;
+
+/*
+再開の約束(v241)。null = 約束なし。
+
+    phase      … "paused"(止まっていて、鳴り始めを待っている)/
+                 "aligning"(鳴り始めて、みんなの拍に合わせ直している最中)
+    deck       … 止めたデッキ
+    track      … 止めた曲(libraryMap の中身)
+    pausedSec  … 止めた位置(曲の何秒目)
+    playAtMs   … 鳴り始めた時刻(performance.now。▶ から音が出るまでを測る)
+    movedAtMs  … 曲が進み出したのを確かめた時刻
+    moved      … 本当に進み出したか(false = 待ちきれずに先へ進んだ)
+    targetSec  … 合わせ直す拍(曲の何秒目。止めた位置の直後の拍)
+    wPerfMs    … その拍を鳴らす瞬間(みんなの拍 − 自分の遅延)
+    lagMs      … 使った頭出しの待ち
+    timerIds   … 予約した setTimeout の番号(取り消す時に使う)
+
+⚠️ isSyncWarmingUp() は、これが null でない間 true を返します
+   (止めている間・合わせ直している間は、ノリノリアシストを鳴らさない)。
+*/
+let syncResume = null;
+
+/*
+このスマホの「頭出しの待ち」(ms)。null = まだ測っていない。
+同期スタートの試し頭出し(syncProbeSeekLag)と、再開した後の位置の実測で直します。
+*/
+let syncSeekLagMs = null;
 
 /**
- * イヤホン・通知・ロック画面の ⏸ が届いた時に、js/media-session.js から呼ばれます(v239)。
+ * 同期スタートした後の🕺ノリノリRunで、③の基準があるかを返します(v241)。
+ * (止めた時に約束を作るか・鳴り始めた時に合わせ直すか、の共通の条件)
  *
- * 同期モード中なら「音だけ消す ⇄ 戻す」を切り替えて true を返します。
- * その時、呼んだ側は**曲を止めません**。false なら、今までどおり止めてもらいます。
- *
- * @return {boolean} true = こちらで引き受けた(止めないで)
+ * @return {boolean}
  */
-function handleSyncEarphonePause(){
+function isSyncResumeWanted(){
 
-    // 消している時は、いつでも「戻す」(🕺を出た後でも)
-    if(syncMuted){
-
-        setSyncMuted(false,"イヤホン・通知の ⏸");
-
-        return true;
-
-    }
-
-    /*
-    消せるのは、同期スタートした後の🕺ノリノリRunで、曲が鳴っている時だけ。
-    全体の音量つまみが無い(古いブラウザ)時は、今までどおり止めます。
-    */
-    if(!syncState.running || !isNoriRunMode || audioPlayer.paused || !hasDeckMaster()){ return false; }
-
-    setSyncMuted(true,"イヤホン・通知の ⏸");
-
-    return true;
+    return syncState.running && isNoriRunMode && syncAnchorPerfMs !== null;
 
 }
 
 /**
- * 音だけ消す・戻すを切り替えます(v239)。
+ * 曲の中で、ある位置の「直後の拍」(曲の何秒目)を返します(v241)。
  *
- * @param {boolean} muted - true = 消す / false = 戻す
- * @param {string}  why   - 🐛パネルに出す理由
+ * buildSyncResumePlan()(同期スタートの「続きから」)と同じ求め方です。
+ * あちらは繋ぐ位置まで20秒ない時に断る決まりがあるので、ここでは使わず
+ * 計算だけを同じ式で書いています。
+ *
+ * @param  {Object} track - 曲(ノリ注入済み)
+ * @param  {number} sec   - 位置(曲の何秒目)
+ * @return {number} 直後の拍の位置。計算できない時は NaN
  */
-function setSyncMuted(muted,why){
+function findSyncNextBeatSec(track,sec){
 
-    if(muted === syncMuted){ return; }
+    const beatSongSec = 60 / getEffectiveBaseBpm(track);
 
-    syncMuted = muted;
+    const beat0Sec = getBeat0AtSec(track);
 
-    setDeckMasterVolume(muted ? 0 : 1);
+    if(!isFinite(beatSongSec) || beatSongSec <= 0){ return NaN; }
 
-    if(muted){
+    // - 0.000001 は計算の誤差よけです(buildSyncResumePlan のコメント)
+    const k = Math.ceil((sec - beat0Sec) / beatSongSec - 0.000001);
 
-        // 出口を休ませない信号を流します(画面が消えても止めない。上の説明)
-        startSyncKeepAwake();
+    return beat0Sec + k * beatSongSec;
 
-        syncMutedAtMs = performance.now();
+}
 
-        syncMuteGuardTimerId = setTimeout(stopSyncMutedTooLong,SYNC_MUTE_MAX_MIN * 60 * 1000);
+/**
+ * 合わせ直す間、音を消しておく・戻す(v241)。
+ *
+ * 全体の音量つまみ(js/deck.js の 3-4)を使います。理由は冒頭の
+ * 【なぜ全体の音量つまみで消しておくのか】。つまみが無い古いブラウザでは、
+ * デッキの音量で代わりにします。
+ *
+ * @param {HTMLAudioElement} deck   - 対象のデッキ(つまみが無い時だけ使う)
+ * @param {number}           volume - 0(消す)/ 1(戻す)
+ */
+function setSyncResumeVolume(deck,volume){
 
-        // 【開発用調査ログ】(v239)
-        console.log("同期モード : 🔇 音だけ消しました(" + why + "。曲とカチッは裏で進んでいます)");
+    if(hasDeckMaster()){
+
+        setDeckMasterVolume(volume);
+
+        return;
+
+    }
+
+    setDeckVolume(deck,volume);
+
+}
+
+/**
+ * 再開の約束で予約した setTimeout を、すべて取り消します(v241)。
+ */
+function clearSyncResumeTimers(){
+
+    if(!syncResume){ return; }
+
+    syncResume.timerIds.forEach(function(id){ clearTimeout(id); });
+
+    syncResume.timerIds = [];
+
+}
+
+/**
+ * 再開の約束を取り消し、消しておいた音を戻します(v241)。約束が無ければ何もしません。
+ *
+ *     呼ぶ所 … 同期モードの画面を開いた時(openSyncPanel)/ 合わせ直さない場面で
+ *              鳴り始めた時(下の handleSyncPlay)
+ *
+ * @param {string} why - 🐛パネルに出す理由
+ */
+function cancelSyncResume(why){
+
+    if(!syncResume){ return; }
+
+    const resume = syncResume;
+
+    clearSyncResumeTimers();
+
+    syncResume = null;
+
+    setSyncResumeVolume(resume.deck,1);
+
+    // 【開発用調査ログ】(v241)
+    console.log("同期モード : 再開の合わせ直しはしません(" + why + ")。音量を戻しました");
+
+}
+
+/**
+ * 曲が止まった時(主役のデッキの 'pause')に呼ばれます(v241)。
+ * 「再開したら合わせ直す」約束を作り、音を消しておきます。
+ */
+function handleSyncPause(){
+
+    if(!isSyncResumeWanted()){ return; }
+
+    // 竹弘が止めたのではない一時停止には、約束を作りません(冒頭の ⚠️)
+    if(isConnectSilence() || syncPanelOpening || syncCountdown){ return; }
+
+    const deck = audioPlayer;
+    const track = getDeckTrack(deck);
+
+    /*
+    合わせ直している途中に、また止められた時は、その予約を取り消します。
+    止めた位置は、最初に止めた位置のままにします(合わせ直している間は
+    音を消していて、その間に進んだぶんは誰にも聞こえていないため)。
+    */
+    let pausedSec = deck.currentTime;
+
+    if(syncResume && syncResume.phase === "aligning" && syncResume.deck === deck && syncResume.track === track){
+
+        pausedSec = syncResume.pausedSec;
+
+    }
+
+    clearSyncResumeTimers();
+
+    syncResume = {
+        phase:"paused",
+        deck:deck,
+        track:track,
+        pausedSec:pausedSec,
+        playAtMs:0,
+        movedAtMs:0,
+        moved:false,
+        targetSec:0,
+        wPerfMs:0,
+        lagMs:0,
+        timerIds:[]
+    };
+
+    /*
+    全体の音量つまみを0にしておきます(冒頭の【なぜ全体の音量つまみで…】)。
+    止まっている曲の音量を変えるだけなので、何も聞こえません。
+    */
+    setSyncResumeVolume(deck,0);
+
+    // 【開発用調査ログ】(v241)
+    console.log(
+        "同期モード : 一時停止しました(" + pausedSec.toFixed(2) + "秒)。" +
+        "再開したら、みんなの拍に合わせ直します"
+    );
+
+}
+
+/**
+ * 曲が鳴り始めた時(主役のデッキの 'play')に呼ばれます(v241)。
+ * 約束があれば、みんなの拍に合わせ直し始めます。
+ */
+function handleSyncPlay(){
+
+    const resume = syncResume;
+
+    if(!resume || resume.phase !== "paused"){ return; }
+
+    /*
+    同期スタートの準備中(syncWarmup が音量0で先に鳴らした)なら、約束だけ
+    捨てて、消しておいた全体の音量を戻します。曲の音量は準備の側が決めます。
+    (ふつうは同期モードの画面を開いた時に、もう取り消してあります)
+    */
+    if(syncCountdown){
+
+        cancelSyncResume("同期スタートの準備中");
+
+        return;
+
+    }
+
+    const deck = audioPlayer;
+    const track = getDeckTrack(deck);
+
+    // ---- 合わせ直さない場面なら、約束を取り消して、すぐ音を出します ----
+
+    let skipWhy = "";
+
+    if(!isSyncResumeWanted()){
+
+        skipWhy = "同期スタートの後の🕺ノリノリRunではない";
+
+    }
+    else if(deck !== resume.deck || track !== resume.track){
+
+        skipWhy = "止めた時と違う曲が鳴り始めた";
+
+    }
+    else if(!track || !hasSavedTapResult(track)){
+
+        skipWhy = "ノリ注入されていない曲";
 
     }
     else{
 
-        if(syncMuteGuardTimerId){ clearTimeout(syncMuteGuardTimerId); syncMuteGuardTimerId = 0; }
+        resume.targetSec = findSyncNextBeatSec(track,resume.pausedSec);
 
-        /*
-        信号は少し重ねてから止めます(戻した直後の音量の上がり始めで出口が
-        休まないように)。同期モードの画面が開いている時は、画面の側が
-        信号を使っているので止めません。
-        */
-        if(!isSyncPanelShown()){ stopSyncKeepAwakeLater(); }
+        if(!isFinite(resume.targetSec) || resume.targetSec >= track.endTS){
 
-        // 【開発用調査ログ】(v239)
-        console.log(
-            "同期モード : 🔈 音を戻しました(" + why + "。消していた " +
-            ((performance.now() - syncMutedAtMs) / 1000).toFixed(1) + "秒)"
-        );
+            skipWhy = "止めた位置が繋ぐ位置に近すぎる";
+
+        }
+
+    }
+
+    if(skipWhy){
+
+        cancelSyncResume(skipWhy);
+
+        return;
+
+    }
+
+    // ---- ここから合わせ直し ----
+
+    resume.phase = "aligning";
+    resume.playAtMs = performance.now();
+
+    // 念のため、もう一度消しておきます(止めている間に誰かが戻していても)
+    setSyncResumeVolume(deck,0);
+
+    waitSyncResumeMoving(resume,deck.currentTime);
+
+}
+
+/**
+ * ① 曲が実際に進み出すのを待ちます(v241)。
+ *
+ * 止めている間に休ませた音の出口(v238)を起こす間や、鳴り出しの待ちの間は、
+ * 曲の位置が止まったままです。その最中に頭出しすると、頭出しの待ちが
+ * いつもと変わってしまうので、進み出してから次へ進みます。
+ *
+ * @param {Object} resume   - この約束(syncResume)
+ * @param {number} startSec - 鳴り始めた時の曲の位置
+ */
+function waitSyncResumeMoving(resume,startSec){
+
+    const deck = resume.deck;
+
+    const rate = getSyncDeckBaseRate(deck);
+
+    const check = function(){
+
+        // 取り消された・また止められた時は、何もしません(止めた時は 'pause' の側が引き継ぐ)
+        if(syncResume !== resume || deck.paused){ return; }
+
+        const moved = (deck.currentTime - startSec) >= SYNC_RESUME_MOVED_SEC * rate;
+
+        const awake = !deckAudioCtx || deckAudioCtx.state === "running";
+
+        const waitedMs = performance.now() - resume.playAtMs;
+
+        if((moved && awake) || waitedMs >= SYNC_RESUME_WAIT_MAX_MS){
+
+            resume.moved = moved && awake;
+            resume.movedAtMs = performance.now();
+
+            scheduleSyncResumeFire(resume);
+
+            return;
+
+        }
+
+        resume.timerIds.push(setTimeout(check,SYNC_RESUME_POLL_MS));
+
+    };
+
+    check();
+
+}
+
+/**
+ * ② みんなの拍の格子の上で、合わせ直す瞬間を選んで予約します(v241)。
+ *
+ * scheduleSyncStart() と同じ式です。
+ *
+ *     みんなの拍         = 基準 + 1拍 × n
+ *     その拍を鳴らす瞬間 = みんなの拍 − 自分の遅延(遠い人ほど早く家を出る)
+ *
+ * 「今 + 頭出しの待ち + 余裕」より後で、いちばん近い拍を選びます。
+ * 頭出しの命令は、その瞬間の「頭出しの待ち」ぶん前に予約します。
+ *
+ * @param {Object} resume - この約束(syncResume)
+ */
+function scheduleSyncResumeFire(resume){
+
+    const lagMs = (syncSeekLagMs !== null) ? syncSeekLagMs : SYNC_SEEK_LEAD_MS;
+
+    const beatMs = 60000 / syncState.pitch;
+
+    const latencyMs = syncState.latencyMs || 0;
+
+    const earliestMs = performance.now() + lagMs + SYNC_RESUME_MIN_LEAD_MS;
+
+    // その時刻以降に鳴らせる、最初の「みんなの拍」
+    const stepCount = Math.ceil((earliestMs + latencyMs - syncAnchorPerfMs) / beatMs);
+
+    resume.wPerfMs = syncAnchorPerfMs + stepCount * beatMs - latencyMs;
+    resume.lagMs = lagMs;
+
+    resume.timerIds.push(setTimeout(
+        function(){ syncResumeFire(resume); },
+        Math.max(0,resume.wPerfMs - lagMs - performance.now())
+    ));
+
+}
+
+/**
+ * ③ 合わせ直す拍へ頭出しし、終わったら音量を上げます(v241)。
+ *
+ * syncFire()(同期スタートの「頭出しで揃える」)と同じ書き方です。
+ *
+ *     ・setTimeout が遅れたぶん、狙う位置を先へずらして打ち消す
+ *       (syncFire の【遅れの打ち消し】)
+ *     ・頭出しの終わりは3つの入口で待つ(もう終わっていた / seeked が届いた /
+ *       0.1秒で時間切れ)。時間切れが無いと、万一 seeked が来なかった時に
+ *       **永久に無音**になる
+ *
+ * @param {Object} resume - この約束(syncResume)
+ */
+function syncResumeFire(resume){
+
+    if(syncResume !== resume || resume.phase !== "aligning"){ return; }
+
+    const deck = resume.deck;
+
+    // 曲が替わった・止められた時は、何もしません(止めた時は 'pause' の側が引き継ぐ)
+    if(deck !== audioPlayer || deck.paused){ return; }
+
+    const issuedAtMs = performance.now();
+
+    // 本来の命令の瞬間(合わせる瞬間 − 頭出しの待ち)から、どれだけ遅れたか
+    const lateMs = issuedAtMs - (resume.wPerfMs - resume.lagMs);
+
+    const rate = getSyncDeckBaseRate(deck);
+
+    deck.currentTime = Math.max(0,resume.targetSec + lateMs / 1000 * rate);
+
+    let raised = false;
+
+    const raise = function(why){
+
+        if(raised){ return; }
+
+        raised = true;
+
+        deck.removeEventListener("seeked",onSeeked);
+
+        // 頭出しを待つ間に止められた・取り消された時は、何もしません
+        if(syncResume !== resume || deck.paused){ return; }
+
+        raiseSyncResume(resume,issuedAtMs,lateMs,why);
+
+    };
+
+    const onSeeked = function(){ raise("頭出し完了"); };
+
+    if(!deck.seeking){
+
+        raise("待ち不要");
+
+        return;
+
+    }
+
+    deck.addEventListener("seeked",onSeeked);
+
+    resume.timerIds.push(setTimeout(function(){ raise("時間切れ"); },CONNECT_HEAD_SEEK_WAIT_MAX_SEC * 1000));
+
+}
+
+/**
+ * ④ 音量を上げて、合わせ直しを終えます(v241)。
+ *
+ * @param {Object} resume     - この約束(syncResume)
+ * @param {number} issuedAtMs - 頭出しを命令した時刻
+ * @param {number} lateMs     - 命令の遅れ(位置をずらして打ち消し済み)
+ * @param {string} why        - 頭出しの終わりをどの入口で知ったか
+ */
+function raiseSyncResume(resume,issuedAtMs,lateMs,why){
+
+    const deck = resume.deck;
+
+    const doneAtMs = performance.now();
+
+    /*
+    次の曲へ繋ぐ準備が始まっていたら、取りやめます(冒頭の【接続の準備が…】)。
+    頭出しした後の位置で、js/connect.js が助走をやり直します。
+
+    ⚠️ connectState と isPreRolling は js/connect.js の変数です。typeof で
+       確かめるのは、検証ページなど connect.js が無い所でも止まらないためです
+       (typeof は、まだ無い名前でもエラーにならず "undefined" を返します)。
+    */
+    const connecting =
+        (typeof connectState !== "undefined" && connectState !== null) ||
+        (typeof isPreRolling !== "undefined" && isPreRolling === true);
+
+    if(connecting){ cancelConnect(); }
+
+    /*
+    主役のデッキの音量つまみを1にしてから(cancelConnect も1にします)、
+    全体の音量つまみを30msで上げます(setDeckMasterVolume。🎬と同じ長さ)。
+    つまみが無い古いブラウザでは、デッキの音量を30msで上げます。
+    */
+    if(hasDeckMaster()){
+
+        setDeckVolume(deck,1);
+
+        setDeckMasterVolume(1);
+
+    }
+    else{
+
+        startFade(deck,0,1,CONNECT_HEAD_FADE_SEC);
 
     }
 
     /*
-    【v240】流している信号の大きさを、今の状態に合わせます
-    (消した → −60dB / 戻した → −80dB。流していなければ何もしない)。
-    消した時に新しく流し始めた場合は、startSyncKeepAwake() が最初から
-    −60dB で流すので、ここでは何も変わりません。
+    ノリノリアシスト:合わせた拍が来る瞬間(15ms後)まで黙らせておき、その時
+    すぐ予約させます(同期スタートの「頭から」と同じ。holdSyncMetronomeUntilStart)。
+    ⚠️ 約束を消す(syncResume = null)**前に**呼ぶこと。間が空くと、その一瞬だけ
+       isSyncWarmingUp() が false になり、カチッを早めに予約されるおそれがあるため。
     */
-    refreshSyncKeepAwakeLevel();
+    holdSyncMetronomeUntilStart(resume.wPerfMs,"再開");
 
-    refreshSyncMuteBadge();
+    clearSyncResumeTimers();
 
-}
+    syncResume = null;
 
-/**
- * 消し忘れの保険:SYNC_MUTE_MAX_MIN 分たっても消したままなら、本当に止めます(v239)。
- *
- * 止め方は、竹弘が ■ で止めた時と同じです(裏のデッキを先に止める →
- * 主役を止める → 出口を休ませる。js/connect.js の prepareUserPause と
- * js/deck.js の sleepDeckAudioSoon)。止めてから音を戻すので、聞こえる
- * 音が一瞬漏れることはありません。
- */
-function stopSyncMutedTooLong(){
+    // 【開発用調査ログ】(v241)▶ から音が出るまでの時間を、実機で確かめるため
+    console.log(
+        "同期モード : 再開 → みんなの拍に合わせ直しました",
+        ": ▶ から音を出すまで " + Math.round(resume.wPerfMs - resume.playAtMs) + "ms",
+        "(曲が動き出すまで " + Math.round(resume.movedAtMs - resume.playAtMs) + "ms" + (resume.moved ? "" : "・待ちきれず") + ")",
+        "/ 頭出しの待ち " + Math.round(doneAtMs - issuedAtMs) + "ms(" + why + ")",
+        "/ 頭出しを " + Math.round(resume.lagMs) + "ms 早く命令" + (syncSeekLagMs !== null ? "(測った値)" : "(予備の値)"),
+        "/ 命令の遅れ " + formatSyncSignedMs(lateMs) + "(位置をずらして打ち消し済み)",
+        "/ 位置 " + resume.pausedSec.toFixed(2) + "秒で止めて、" + resume.targetSec.toFixed(2) + "秒の拍から",
+        "/ 時計の点検 " + formatSyncSignedMs(getSyncAnchorDriftMs()),
+        (connecting ? "/ 繋ぐ準備をやり直します" : "")
+    );
 
-    syncMuteGuardTimerId = 0;
+    /*
+    位置が予定どおりかを測り(同期スタートと同じ物差し)、ずれていたら
+    このスマホの頭出しの待ちを直します(次の再開から使う)。
 
-    if(!syncMuted){ return; }
+        ずれがプラス(予定より早い)… 待ちを長く見積もりすぎ → 待ちを減らす
+        ずれがマイナス(予定より遅い)… 待ちを短く見積もりすぎ → 待ちを増やす
+        → 直した待ち = 使った待ち − ずれ
+    */
+    measureSyncAlignment(deck,resume.targetSec,resume.wPerfMs,"同期モード : 再開位置の実測",function(meanMs,count){
 
-    console.log("同期モード : 音を消したまま " + SYNC_MUTE_MAX_MIN + "分たったので、曲を止めます(消し忘れの保険)");
+        if(count < 3 || Math.abs(meanMs) > SYNC_RESUME_CALIBRATE_MAX_MS){ return; }
 
-    // ■ の記号を ▶ に切り替えるための旗(js/upper-area.js の intentionalPause)
-    intentionalPause = true;
+        const before = resume.lagMs;
 
-    prepareUserPause();
+        syncSeekLagMs = Math.min(Math.max(before - meanMs,0),SYNC_PROBE_MAX_LAG_MS);
 
-    audioPlayer.pause();
+        // 【開発用調査ログ】(v241)
+        console.log(
+            "同期モード : 頭出しの待ちを直しました : " + Math.round(before) + "ms → " +
+            Math.round(syncSeekLagMs) + "ms(次の再開から)"
+        );
 
-    setSyncMuted(false,"消し忘れの保険");
-
-    // 出口を休ませられるよう、信号は今すぐ止めます(Later だと休ませる予約に間に合わない)
-    if(!isSyncPanelShown()){ stopSyncKeepAwake(); }
-
-    sleepDeckAudioSoon();
-
-}
-
-/**
- * 同期モードの画面が開いているかを返します(v239)。
- * (5-3 の handleSyncKeepAwakeVisibility と同じ見分け方)
- *
- * 【v240】開いている途中(syncPanelOpening)も「開いている」と答えます。
- * 曲を止めた知らせ('pause')は、画面が出る前に届くことがあるためです
- * (変数 syncPanelOpening の説明)。
- *
- * @return {boolean}
- */
-function isSyncPanelShown(){
-
-    if(syncPanelOpening){ return true; }
-
-    return !!(syncPanelEl && syncPanelEl.style.display === "flex");
-
-}
-
-/**
- * 画面の 🔇 の知らせを、今の状態に合わせて出し入れします(v239)。
- *
- * 知らせは上半分の副題(「メインメニュー」の行)の場所に出します。
- * #upper-area に sync-muted という印(クラス)を付け外しするだけで、
- * 副題を隠して知らせを見せるのは CSS がやります(c014.html)。
- * 副題の文字は js/norirun.js が書き換えるので、文字そのものには触りません。
- */
-function refreshSyncMuteBadge(){
-
-    const upperAreaEl = document.getElementById("upper-area");
-
-    if(!upperAreaEl){ return; }
-
-    upperAreaEl.classList.toggle("sync-muted",syncMuted);
+    });
 
 }
 
 /*
-曲が鳴り始めたら、消していた音を戻します(v239)。
-▶ で再開した・別の曲をタップした・同期モードでスタートし直した、などです。
-消したまま鳴り始めると、**曲が進むのに何も聞こえない**ことになるためです。
-*/
-bindDeckEvent("play",function(){
+曲が止まった・鳴り始めた知らせを受けます(v241)。
 
-    if(syncMuted){ setSyncMuted(false,"曲が鳴り始めた"); }
-
-});
-
-/*
-曲が本当に止まったら、消していた音を戻し、信号も止めます(v239)。
-■・電話・同期モードを開いた、などです。止まっているのに「曲は進んでいます」と
-出し続けないため、また出口を休ませて(v238)イヤホンの1タップで再開できる
-ようにするためです。
-
-⚠️ 🎬頭出し接続の無音で先行曲が止まる時は除きます。曲と曲の間の段取りで、
-   その間も音は消したままにしておきます(js/connect.js の isConnectSilence)。
+bindDeckEvent は「主役のデッキ」の知らせだけを渡します(繋いだ後に裏で
+完走していく先行曲の知らせは聞き流す。js/deck.js)。
+⚠️ js/metronome.js の受け口の方が先に登録されているので、先に動きます。
+   止めた時のカチッの取り消しも、鳴り始めた時のアシストの判断
+   (isSyncWarmingUp。約束がある間は鳴らさない)も、それで問題ありません。
 */
 bindDeckEvent("pause",function(){
 
-    if(!syncMuted){ return; }
-
-    if(isConnectSilence()){ return; }
-
-    setSyncMuted(false,"曲が止まった");
-
-    // 同期モードの画面を開いた時は、画面の側が信号を使うので止めません
-    if(!isSyncPanelShown()){ stopSyncKeepAwake(); }
+    handleSyncPause();
 
 });
 
-/*
-🕺ノリノリRunを出たら、消していた音を戻します(v239)。
-メインメニューで、音が消えたまま曲だけ進むことにならないようにします。
+bindDeckEvent("play",function(){
 
-🕺モードは #app に norirun-mode という印(クラス)が付く・外れるだけで
-表されるので、js/metronome.js(v217)と同じく MutationObserver で
-「印が外れた瞬間」を見張ります。js/norirun.js には触りません。
-*/
-(function watchSyncMuteMode(){
+    handleSyncPlay();
 
-    const appEl = document.getElementById("app");
-
-    if(!appEl){ return; }
-
-    const observer = new MutationObserver(function(){
-
-        if(syncMuted && !appEl.classList.contains("norirun-mode")){
-
-            setSyncMuted(false,"🕺ノリノリRunを出た");
-
-        }
-
-    });
-
-    observer.observe(appEl,{ attributes:true, attributeFilter:["class"] });
-
-})();
-
-/*
-画面の 🔇 の知らせをタップしても、音を戻します(v239)。
-イヤホンが手元に無い時のためです。
-*/
-(function bindSyncMuteBadge(){
-
-    const badgeEl = document.getElementById("sync-mute-badge");
-
-    if(!badgeEl){ return; }
-
-    badgeEl.addEventListener("click",function(){
-
-        setSyncMuted(false,"画面の 🔇 をタップ");
-
-    });
-
-})();
+});
 
 
 // ==========================================================

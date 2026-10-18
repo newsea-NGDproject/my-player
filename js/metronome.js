@@ -438,7 +438,8 @@ function ensureMetronomeGain(){
 
         /*
         【v239】つなぎ先は「全体の音量つまみ」です(js/deck.js の getDeckOutput)。
-        同期モードで「音だけ消す」時に、曲と一緒にカチッも消えるようにするためです。
+        つまみを下げた時に、曲と一緒にカチッも消えるようにするためです
+        (いまの使い道は js/deck.js の 3-4。v241 では同期スタート後の一時停止)。
         (v238まではスピーカー(deckAudioCtx.destination)へ直接つないでいました)
         */
         metronomeGainNode.connect(getDeckOutput());

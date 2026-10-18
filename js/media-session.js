@@ -214,14 +214,10 @@ if(mediaSessionSupported){
         logMediaSessionAction("⏸");
 
         /*
-        【v239】同期モード中(同期スタートした後の🕺ノリノリRun)は、曲を止めずに
-        「音だけ消す ⇄ 戻す」を切り替えます(js/sync.js の handleSyncEarphonePause)。
-        引き受けてもらえたら(true)、ここで終わりです。曲は止めません。
-
-        ⚠️ typeof で確かめるのは、js/sync.js はこのファイルより後に読み込まれる
-           うえ、将来外した時にもイヤホンの ⏸ が壊れないようにするためです。
+        (v239〜v240 では、同期スタート後はここで「音だけ消す」に回していました。
+         イヤホンが2回タップになったので、v241 で外しました。同期スタート後も
+         ここで本当に止め、再開した時に js/sync.js の 5-5 がみんなの拍に合わせ直します)
         */
-        if(typeof handleSyncEarphonePause === "function" && handleSyncEarphonePause()){ return; }
 
         /*
         意図した停止であることを js/upper-area.js の停止ボタン記号
