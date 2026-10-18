@@ -266,6 +266,21 @@ if(mediaSessionSupported){
         // 【開発用調査ログ】(v237)届いた操作を🐛パネルに残す(このファイルの最後の logMediaSessionAction)
         logMediaSessionAction("⏮");
 
+        /*
+        【v248 段④】同期モードの薄暗いロック画面の間は、⏮⏭ を使いません
+        (竹弘と決めた仕様 2026-09-22)。1人だけ曲を変えると、その人の曲だけが
+        頭から鳴り、みんなの拍から外れてしまうためです。⏸ ▶ は今までどおり効きます。
+        ⚠️ typeof で確かめるのは、js/sync-lock.js が無い時にもエラーで止まらないためです。
+        */
+        if(typeof isSyncLockShown === "function" && isSyncLockShown()){
+
+            // 【開発用調査ログ】(v248)
+            console.log("同期モード ④ ロック画面の間なので ⏮ は使いません");
+
+            return;
+
+        }
+
         skipTrack(-1);
     });
 
@@ -273,6 +288,16 @@ if(mediaSessionSupported){
 
         // 【開発用調査ログ】(v237)届いた操作を🐛パネルに残す(このファイルの最後の logMediaSessionAction)
         logMediaSessionAction("⏭");
+
+        // 【v248 段④】ロック画面の間は ⏭ を使いません(理由は上の ⏮ と同じ)
+        if(typeof isSyncLockShown === "function" && isSyncLockShown()){
+
+            // 【開発用調査ログ】(v248)
+            console.log("同期モード ④ ロック画面の間なので ⏭ は使いません");
+
+            return;
+
+        }
 
         skipTrack(1);
     });

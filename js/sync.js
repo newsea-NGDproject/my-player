@@ -6238,6 +6238,15 @@ function syncRaiseChased(countdown){
 function finishSyncStart(){
 
     /*
+    【v248 段④】1拍目の瞬間(この約束の狙いの瞬間 wPerfMs)を控えます。
+    走行タイマーをそこから数え始めるためです(下の showSyncLock)。
+    ⚠️ すぐ下で syncCountdown を null にするので、その**前**に控えること。
+    */
+    const firstBeatPerfMs = (syncCountdown && isFinite(syncCountdown.wPerfMs) && syncCountdown.wPerfMs > 0)
+        ? syncCountdown.wPerfMs
+        : performance.now();
+
+    /*
     追いかけ補正が残っていたら止めます(v230。ふつうは止まっています)。
     速さを変えたまま走り出すと、テンポがずれるためです。
     */
@@ -6274,6 +6283,14 @@ function finishSyncStart(){
     syncState.running = true;
 
     refreshSyncStartStep();
+
+    /*
+    【v248 段④】薄暗いロック画面を出し、走行タイマーを1拍目から数え始めます
+    (js/sync-lock.js の showSyncLock。音量以外の操作をロックする)。
+    ⚠️ typeof で確かめるのは、js/sync-lock.js が無い時(読み込めなかった時)にも
+       スタートそのものは止めないためです。
+    */
+    if(typeof showSyncLock === "function"){ showSyncLock(firstBeatPerfMs); }
 
 }
 
