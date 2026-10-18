@@ -220,6 +220,17 @@ if(mediaSessionSupported){
         */
 
         /*
+        【v245】寝ずの番(レイヤー5。js/keep-awake.js)が起こしている間に届いた ⏸ は、
+        「再開して」の合図です。寝ずの番は止めている間、Chrome に「再生中」と
+        伝えているので ⏸ が届きますが、本当は曲は止まっています。寝ずの番が
+        引き受けたら(true)、ここで終わりです(止める処理はしない)。
+
+        ⚠️ typeof で確かめるのは、js/keep-awake.js が読み込めなかった時・将来外した
+           時にも、イヤホンの ⏸ が壊れないようにするためです。
+        */
+        if(typeof handleKeepAwakePauseKey === "function" && handleKeepAwakePauseKey()){ return; }
+
+        /*
         意図した停止であることを js/upper-area.js の停止ボタン記号
         表示(v135)へ伝えます。ロック画面からの一時停止も、竹弘が
         自分で選んだ操作なので「意図した停止」として扱います。

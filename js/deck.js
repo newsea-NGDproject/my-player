@@ -783,19 +783,24 @@ function cancelDeckAudioSleep(){
 /**
  * ほかの係が「出口を起こしておきたい」と言っているかを返します(v238)。
  *
- * いまは同期モードだけです。画面を開いている間、js/sync.js が聞こえない
- * 小さな信号(syncKeepAwakeNode)を流して出口を休ませないようにしています
- * (v232)。その間に休ませると、その工夫が台無しになります。
+ *     ・同期モードの画面を開いている間、js/sync.js が聞こえない小さな信号
+ *       (syncKeepAwakeNode)を流して出口を休ませないようにしています(v232)
+ *     ・【v245】寝ずの番(レイヤー5。js/keep-awake.js)が起こしている間
+ *       (同期スタート後に止めている間。聞こえない信号で、凍結させない)
  *
- * ⚠️ typeof で確かめるのは、js/sync.js が無い時(将来消した時など)にも
- *    エラーにならないようにするためです。typeof は、まだ無い名前でも
- *    エラーにならず "undefined" を返します。
+ * その間に休ませると、その工夫が台無しになります。
+ *
+ * ⚠️ typeof で確かめるのは、js/sync.js・js/keep-awake.js が無い時(将来消した
+ *    時など)にもエラーにならないようにするためです。typeof は、まだ無い名前
+ *    でもエラーにならず "undefined" を返します。
  *
  * @return {boolean} true = 休ませない
  */
 function isDeckAudioWantedAwake(){
 
-    return (typeof syncKeepAwakeNode !== "undefined") && syncKeepAwakeNode !== null;
+    if((typeof syncKeepAwakeNode !== "undefined") && syncKeepAwakeNode !== null){ return true; }
+
+    return (typeof isKeepAwakeSounding === "function") && isKeepAwakeSounding();
 
 }
 

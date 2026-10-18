@@ -529,30 +529,14 @@ v229で画面の縁に移した)。
 しています(光っている時間が長すぎると、どこが拍の頭なのか見分けにくく
 なるため)。⚠️ c014.html の .sync-beat-frame.sync-beat-on の animation の
 長さと同じ値にすること。
+
+(v244)光り方そのもの(光り始めは海色・余韻は暁色)は c014.html の
+@keyframes sync-beat-flash だけで決めています。このファイルは印
+(.sync-beat-on)を付け外しするだけです。v243 で試した「ぐるっと回って
+消える」光り方は、2台を並べると接している辺の見え方が違って比べにくい
+ので戻しました(経緯は c014.html の @keyframes sync-beat-flash の説明)。
 */
 const SYNC_LAMP_FLASH_MS = 160;
-
-/*
-【v243】拍合わせ画面の縁の光り方(竹弘の要望 2026-10-18「拍合わせでフラッシュが
-すごく有効だと分かった。後光のフェードアウトと同時に、ぐるっと回って消えていく
-効果にできないか。試したい。やっぱり戻したいとなるかもしれない」)。
-
-    "spin"  … 光った瞬間は枠全体がパッと光り(拍の頭はぼやけない)、内側の後光は
-               その場でフェードアウト、枠の線は12時の位置から時計回りに
-               ぐるっと消えていく(c014.html の .sync-beat-spin)
-    "plain" … v229〜v242 の光り方(160msで枠と後光が一緒に消える。
-               c014.html の .sync-beat-on と @keyframes sync-beat-flash)
-
-⚠️ **元に戻す時は、ここを "plain" にするだけ**です(版番号は上げる)。"plain" の
-   CSS は v243 で1文字も変えていません。
-
-    SYNC_BEAT_SPIN_MS        … ぐるっと消えきるまでの長さ(ms)
-    SYNC_BEAT_SPIN_MAX_RATIO … ただし光る間隔のこの割合まで(次の光と重ならないように。
-                               130なら光る間隔 461ms × 0.6 = 約277ms)
-*/
-const SYNC_BEAT_FLASH_STYLE = "spin";
-const SYNC_BEAT_SPIN_MS = 280;
-const SYNC_BEAT_SPIN_MAX_RATIO = 0.6;
 
 /*
 拍合わせ画面のパッドで、1回に動かす量(ms。v229)。
@@ -4747,39 +4731,7 @@ function startSyncBeatLamp(){
     // 【v242】眠って指の時計が止まっていたら、基準をその分戻してから光らせます
     fixSyncAnchorAfterSleep("拍合わせ画面");
 
-    applySyncBeatFlashStyle();
-
     scheduleSyncBeatLamp();
-
-}
-
-/**
- * 縁の光り方を、SYNC_BEAT_FLASH_STYLE に合わせます(v243)。
- *
- * "spin" の時は、縁に sync-beat-spin という印(クラス)を付け、ぐるっと消える長さを
- * CSS の変数 --sync-beat-spin-ms で渡します。"plain" の時は印を外すだけで、
- * v242 までの光り方に戻ります。
- *
- * 長さは SYNC_BEAT_SPIN_MS と「光る間隔 × SYNC_BEAT_SPIN_MAX_RATIO」の短い方です。
- * 光る間隔はみんなのピッチで変わるので、光らせ始めるたびに決め直します。
- */
-function applySyncBeatFlashStyle(){
-
-    if(!syncBeatFrameEl){ return; }
-
-    const spin = (SYNC_BEAT_FLASH_STYLE === "spin");
-
-    syncBeatFrameEl.classList.toggle("sync-beat-spin",spin);
-
-    if(!spin){ return; }
-
-    const spinMs = Math.round(Math.min(SYNC_BEAT_SPIN_MS,getSyncSharedPeriodMs() * SYNC_BEAT_SPIN_MAX_RATIO));
-
-    /*
-    setProperty は「CSS の変数に値を入れる」命令です。c014.html の
-    .sync-beat-spin のアニメーションの長さが、この値で決まります。
-    */
-    syncBeatFrameEl.style.setProperty("--sync-beat-spin-ms",spinMs + "ms");
 
 }
 
@@ -6924,6 +6876,7 @@ v239〜v240 では、同期スタート後のイヤホンの ⏸ を「音だけ
 
     ・イヤホンは1回タップで効く(ひとりの時と同じ。v238)
     ・止めている間は電池をほとんど使わない(音の出口も休む。v238)
+      → ⚠️ v245 で変わりました(下の【v245 止めている間は寝ずの番が起こしておく】)
     ・電話で Chrome が止めた後に鳴らし直した時も、同じように揃う
     ・時刻ボタンで合わせ直す手間も要らない
     ・止めている間は曲が進まない(みんな別の曲なので、拍さえ揃えばよい)
@@ -7003,6 +6956,23 @@ v239〜v240 では、同期スタート後のイヤホンの ⏸ を「音だけ
    (その時は、ここで同期スタートの「頭から」と同じ合わせ直しをする)。
 
 ------------------------------------------------------------
+【v245 止めている間は寝ずの番(レイヤー5)が起こしておく】
+
+v242 の実機テスト(2026-10-18)で、XPERIA は止めて画面を消すと約2〜5分で
+Chrome がページを凍結し、イヤホンの ▶ が届かなくなりました。そこで止めている
+間は、寝ずの番(js/keep-awake.js)に札(SYNC_KEEP_AWAKE_TAG)を掛けます。
+
+    止めて1.5秒後 … 寝ずの番が聞こえない信号(−60dB)を流し、Chrome に
+                    「再生中」と伝える(凍結しない・イヤホンの ⏸ が届く)
+    ⏸ が届いた    … 寝ずの番が信号を止め、0.2秒後に resumeSyncByPauseKey を呼ぶ
+                    → 曲を鳴らす → ここ(handleSyncPlay)で合わせ直す(今までどおり)
+    鳴り始めた・取りやめた … 札を外す
+
+⚠️ 起こしている間は、曲を鳴らしている時と同じくらい電池を使います
+   (止め忘れの保険は120分。js/keep-awake.js の KEEP_AWAKE_MAX_MIN)。
+⚠️ 実験の版です。うまく行かない時の代わりの案は js/keep-awake.js の冒頭。
+
+------------------------------------------------------------
 【接続の準備が途中で始まっていたら】
 
 曲の終わり近くで再開すると、合わせ直している間(音量0)に、次の曲へ繋ぐ
@@ -7056,6 +7026,23 @@ const SYNC_RESUME_VERIFY_MOVED_SEC = 0.03;
 const SYNC_RESUME_VERIFY_SAMPLES = 2;
 const SYNC_RESUME_VERIFY_INTERVAL_MS = 30;
 const SYNC_RESUME_VERIFY_WAIT_MAX_MS = 800;
+
+/*
+【v245】寝ずの番(レイヤー5。js/keep-awake.js)に掛ける札の名前。
+
+同期スタート後に止めている間、寝ずの番に起きていてもらいます
+(XPERIA では、止めて画面を消すと約2〜5分で Chrome がページを凍結し、
+イヤホンの ▶ が届かなくなったため。竹弘の実機 2026-10-18)。
+
+    止めた('pause')     … 札を掛ける(handleSyncPause)
+    鳴り始めた('play')  … 札を外す(handleSyncPlay)
+    取りやめた          … 札を外す(cancelSyncResume)
+
+寝ずの番が起こしている間は、Chrome に「再生中」と伝えてあるので、
+イヤホン・通知の ⏸ が届きます。それを「再開して」の合図として受け取るのが
+下の resumeSyncByPauseKey() です(くわしくは js/keep-awake.js の冒頭)。
+*/
+const SYNC_KEEP_AWAKE_TAG = "同期の一時停止";
 
 /*
 再開の約束(v241)。null = 約束なし。
@@ -7184,8 +7171,71 @@ function cancelSyncResume(why){
 
     setSyncResumeVolume(resume.deck,1);
 
+    // 【v245】寝ずの番(レイヤー5)の札も外します(合わせ直さないので、起こしておく理由が無い)
+    releaseSyncKeepAwake(why);
+
     // 【開発用調査ログ】(v241)
     console.log("同期モード : 再開の合わせ直しはしません(" + why + ")。音量を戻しました");
+
+}
+
+/**
+ * 寝ずの番(レイヤー5。js/keep-awake.js)の札「同期の一時停止」を外します(v245)。
+ * 掛かっていなければ何もしません。
+ *
+ * ⚠️ typeof で確かめるのは、js/keep-awake.js が無い時(読み込めなかった時・
+ *    将来外した時)にもエラーにならないようにするためです。
+ *
+ * @param {string} why - 外す理由(🐛パネルに出す)
+ */
+function releaseSyncKeepAwake(why){
+
+    if(typeof removeKeepAwakeTag !== "function"){ return; }
+
+    removeKeepAwakeTag(SYNC_KEEP_AWAKE_TAG,why);
+
+}
+
+/**
+ * 寝ずの番(レイヤー5)が起こしている間に、イヤホン・通知・ロック画面の ⏸ が
+ * 届いた時に呼ばれます(v245。js/keep-awake.js の handleKeepAwakePauseKey が
+ * 札の受け手として呼ぶ)。
+ *
+ * 寝ずの番は Chrome に「再生中」と伝えているので ⏸ が届きますが、本当は
+ * 曲は止まっています。つまり竹弘の「再開して」の合図です。
+ *
+ * やることは、イヤホンの ▶ と同じです(js/media-session.js の ▶ の受け口)。
+ * 曲が鳴り始めると、下の handleSyncPlay が、みんなの拍に合わせ直します
+ * (v241・v242 のまま)。
+ */
+function resumeSyncByPauseKey(){
+
+    const resume = syncResume;
+
+    // もう再開している・取りやめた後なら、何もしません
+    if(!resume || resume.phase !== "paused" || !audioPlayer.paused){ return; }
+
+    // 【開発用調査ログ】(v245)
+    console.log("同期モード : 止めている間の ⏸ を「再開して」として受け取りました(寝ずの番から)");
+
+    // 止めた時に休ませた音の出口を、鳴らす前に起こします(v238。休んでいなければ何もしない)
+    resumeDeckAudio();
+
+    /*
+    play() は「鳴らし始めてください」と頼む命令で、結果(Promise)が後から返ります。
+    鳴らせなかった時は、寝ずの番の保険(KEEP_AWAKE_REARM_MS)がまた起こし直します。
+    */
+    const result = audioPlayer.play();
+
+    if(result && typeof result.catch === "function"){
+
+        result.catch(function(error){
+
+            console.warn("同期モード : ⏸ で再開しようとしましたが、鳴らせませんでした :",error.name,error.message);
+
+        });
+
+    }
 
 }
 
@@ -7248,6 +7298,18 @@ function handleSyncPause(){
         "再開したら、みんなの拍に合わせ直します"
     );
 
+    /*
+    【v245】寝ずの番(レイヤー5。js/keep-awake.js)に札を掛けて、止めている間も
+    アプリを眠らせないようにします(冒頭の定数 SYNC_KEEP_AWAKE_TAG の説明)。
+    ⏸ が届いたら resumeSyncByPauseKey を呼んでもらいます。
+    typeof の理由は releaseSyncKeepAwake と同じです。
+    */
+    if(typeof hangKeepAwakeTag === "function"){
+
+        hangKeepAwakeTag(SYNC_KEEP_AWAKE_TAG,resumeSyncByPauseKey);
+
+    }
+
 }
 
 /**
@@ -7255,6 +7317,12 @@ function handleSyncPause(){
  * 約束があれば、みんなの拍に合わせ直し始めます。
  */
 function handleSyncPlay(){
+
+    /*
+    【v245】曲が鳴り始めたら、合わせ直すかどうかに関係なく、寝ずの番(レイヤー5)の
+    札を外します(曲そのものが「聞こえる音」になるので、起こしておく必要が無い)。
+    */
+    releaseSyncKeepAwake("曲が鳴り始めた");
 
     const resume = syncResume;
 
