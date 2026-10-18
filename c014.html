@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v243)ノリRun
+        (v245)ノリRun
         メインメニュー
 
     </title>
@@ -5760,6 +5760,22 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             pointer-events:none;
 
             box-shadow:inset 0 0 0 14px rgba(var(--theme-rgb),0.14);
+
+            /*
+            【v244】光り始めに使う海色です(下の @keyframes sync-beat-flash)。
+
+            この画面の中では --theme-color が暁色に書き直されているので
+            (上の「#connect-panel, #metronome-panel, #sync-panel」)、海色は
+            --main-blue から借ります。--main-blue は :root で
+            「--theme-color(海の青)」として解かれ、#00a2ff という色そのものに
+            固まって子へ伝わります(:root の --main-blue の説明と同じ決まり)。
+            #sync-panel は #app の外にあるので、#app.norirun-mode の
+            書き直しも届きません。→ ここでは必ず海の青になります。
+
+            ⚠️ 色の数値(#00a2ff)をここに書き写していません。海色を変えたく
+               なったら :root の1か所を直すだけで済みます。
+            */
+            --sync-flash-sea:var(--main-blue);
         }
 
         #sync-panel .sync-beat-frame.sync-beat-on{
@@ -5770,97 +5786,57 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         @keyframes は「アニメーションの途中の姿」を決める書き方です。
         0% が光った瞬間、100% が消え終わった姿(ふだんの薄い枠)です。
         内側への影(inset)を2重にして、縁の線と、内側へにじむ光を出します。
+
+        【v244】光り始めは海色、余韻は暁色(竹弘の案 2026-10-18)
+
+            0%〜30%(約50ms)… 海色。白に近いほど明るく(いちばん明るい瞬間)
+            30%〜100%(約110ms)… 暁色。暗めから、ふだんの薄い枠へ消えていく
+
+        【見比べやすくするための決まり(人の目の性質から)】
+          ・2台を見比べる時、人は「光り始めの瞬間」で比べています。だから
+            光り始めがいちばん明るく、余韻は短く暗くします(余韻が明るく
+            長いと、どこが拍の頭か分からなくなる)
+          ・目が「いつ光ったか」を感じ取るのは、色より明るさです。そこで
+            光り始めの海色は白を混ぜて明るくしています。⚠️ 海色(#00a2ff)は
+            そのままだと暁色(#ff8c42)より暗く見える色なので、白を混ぜないと
+            余韻の方が明るく見え、拍の頭がぼやけてしまいます
+          ・色が海色から暁色へ変わるのは「今は余韻だ」と分かる目印です
+          ・枠全体が同じ瞬間に同じ姿になる(2台が並んだ時、どこで比べても同じ)
+
+        【v243 で試して戻したこと】
+        v243 で「後光はフェードアウト、枠の線は12時から時計回りにぐるっと消える」を
+        試しました。竹弘の判定:「イメージ通りで完璧。でも、端末同士が接する所の
+        表示状況がそもそも違って見えるのはダメ」(2台を横に並べると、接している辺の
+        消える時刻が2台で違うため、拍が揃っていても揃っていないように見えた)。
+        → 枠全体が一度に変わる形に戻し、v244 で色の変わり目を足しました。
+
+        【書き方の説明】
+          ・animation-timing-function:step-end を 0% に書くと、0%〜30% の間は
+            動かずに 0% の姿のまま止まり、30% で一度に次の姿へ切り替わります
+            (海色をじわっと暁色へ混ぜず、パッと切り替えるため)
+          ・color-mix(in srgb, A 55%, #fff) は「A を55%、白を45% 混ぜた色」、
+            color-mix(in srgb, A 85%, transparent) は「A を85%の濃さにした色」です
+          ・3つの姿とも影を2つずつ書いているのは、影の数を揃えると、途中の姿を
+            ブラウザが素直に作れるためです
         */
         @keyframes sync-beat-flash{
             0%{
                 box-shadow:
-                    inset 0 0 0 14px var(--theme-color),
-                    inset 0 0 48px 14px rgba(var(--theme-rgb),0.75);
+                    inset 0 0 0 14px color-mix(in srgb,var(--sync-flash-sea) 55%,#fff),
+                    inset 0 0 48px 14px color-mix(in srgb,var(--sync-flash-sea) 85%,transparent);
+                animation-timing-function:step-end;
+            }
+            30%{
+                box-shadow:
+                    inset 0 0 0 14px rgba(var(--theme-rgb),0.6),
+                    inset 0 0 48px 14px rgba(var(--theme-rgb),0.3);
+                animation-timing-function:ease-out;
             }
             100%{
-                box-shadow:inset 0 0 0 14px rgba(var(--theme-rgb),0.14);
+                box-shadow:
+                    inset 0 0 0 14px rgba(var(--theme-rgb),0.14),
+                    inset 0 0 48px 14px rgba(var(--theme-rgb),0);
             }
-        }
-
-        /*
-        【v243】「ぐるっと回って消える」光り方(竹弘の要望 2026-10-18)。
-        js/sync.js の SYNC_BEAT_FLASH_STYLE が "spin" の時だけ、縁に .sync-beat-spin が
-        付きます。"plain" に戻すと、この印が付かず、すぐ上の光り方(v229〜v242)に戻ります。
-        ⚠️ すぐ上の .sync-beat-on と @keyframes sync-beat-flash は v243 で変えていません。
-
-        【光り方】
-          ・光った瞬間は枠全体がパッと光る(拍の頭はぼやけない)
-          ・::before(内側の後光)… その場でフェードアウト
-          ・::after(枠の線)    … 12時の位置から時計回りに、ぐるっと消えていく
-          ・長さは --sync-beat-spin-ms(js/sync.js が光る間隔に合わせて入れる。約0.28秒)
-
-        【ぐるっと消える仕組み】
-        mask(マスク)は「どこを見せて、どこを隠すか」を絵で決める書き方です。
-        conic-gradient は時計の針のように、中心の周りを角度で塗り分ける模様です。
-            0度 〜 --sync-beat-sweep … transparent(隠す)
-            --sync-beat-sweep 〜 360度 … #000(見せる)
-        --sync-beat-sweep を 0度 → 360度 へ動かすと、隠れる所が時計回りに広がり、
-        枠の線がぐるっと消えていきます。
-
-        @property は「この CSS の変数は角度です」とブラウザに教える書き方です。
-        教えておかないと、変数はアニメーションで滑らかに動かず、途中で一度に
-        切り替わってしまいます(Android の Chrome は対応しています)。
-        */
-        @property --sync-beat-sweep{
-            syntax:"<angle>";
-            inherits:false;
-            initial-value:0deg;
-        }
-
-        /* 従来の光り方(枠の box-shadow を動かす)は、spin の時は使いません */
-        #sync-panel .sync-beat-frame.sync-beat-spin.sync-beat-on{
-            animation:none;
-        }
-
-        #sync-panel .sync-beat-frame.sync-beat-spin::before,
-        #sync-panel .sync-beat-frame.sync-beat-spin::after{
-            content:"";
-            position:absolute;
-            inset:0;
-            pointer-events:none;
-
-            /* ふだんは見せません(光った時だけアニメーションで見せる) */
-            opacity:0;
-        }
-
-        /* 内側の後光(フェードアウトするだけ) */
-        #sync-panel .sync-beat-frame.sync-beat-spin::before{
-            box-shadow:inset 0 0 48px 14px rgba(var(--theme-rgb),0.75);
-        }
-
-        /* 枠の線(ぐるっと消えていく) */
-        #sync-panel .sync-beat-frame.sync-beat-spin::after{
-            box-shadow:inset 0 0 0 14px var(--theme-color);
-
-            -webkit-mask:conic-gradient(from 0deg,transparent var(--sync-beat-sweep),#000 var(--sync-beat-sweep));
-            mask:conic-gradient(from 0deg,transparent var(--sync-beat-sweep),#000 var(--sync-beat-sweep));
-        }
-
-        #sync-panel .sync-beat-frame.sync-beat-spin.sync-beat-on::before{
-            animation:sync-beat-halo var(--sync-beat-spin-ms,280ms) ease-out;
-        }
-
-        /*
-        ease-in(はじめゆっくり、だんだん速く)にしているのは、光った直後の
-        「枠全体が光っている姿」を少しだけ長く見せ、拍の頭を分かりやすくするためです。
-        */
-        #sync-panel .sync-beat-frame.sync-beat-spin.sync-beat-on::after{
-            animation:sync-beat-spin var(--sync-beat-spin-ms,280ms) ease-in;
-        }
-
-        @keyframes sync-beat-halo{
-            0%  { opacity:1; }
-            100%{ opacity:0; }
-        }
-
-        @keyframes sync-beat-spin{
-            0%  { opacity:1; --sync-beat-sweep:0deg; }
-            100%{ opacity:1; --sync-beat-sweep:360deg; }
         }
 
         /*
@@ -9789,6 +9765,15 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
     createSwipeRuler() を呼んで定規を組み立てるためです。
 -->
 <script src="js/ruler.js"></script>
+<!--
+    寝ずの番(レイヤー5・デッキ5)。v245。
+    止めている間も、聞こえない信号でアプリを眠らせない(凍結させない)係です。
+
+    js/sync.js(札を掛ける)・js/media-session.js(⏸ を渡す)・js/deck.js
+    (出口を休ませない)から呼ばれますが、どれもボタンや曲の知らせの時に
+    呼ぶだけなので、読み込む順番には関係ありません(念のため sync.js の前)。
+-->
+<script src="js/keep-awake.js"></script>
 <!--
     みんなで走る同期モード(v221)。
 
