@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v241)ノリRun
+        (v243)ノリRun
         メインメニュー
 
     </title>
@@ -5780,6 +5780,87 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             100%{
                 box-shadow:inset 0 0 0 14px rgba(var(--theme-rgb),0.14);
             }
+        }
+
+        /*
+        【v243】「ぐるっと回って消える」光り方(竹弘の要望 2026-10-18)。
+        js/sync.js の SYNC_BEAT_FLASH_STYLE が "spin" の時だけ、縁に .sync-beat-spin が
+        付きます。"plain" に戻すと、この印が付かず、すぐ上の光り方(v229〜v242)に戻ります。
+        ⚠️ すぐ上の .sync-beat-on と @keyframes sync-beat-flash は v243 で変えていません。
+
+        【光り方】
+          ・光った瞬間は枠全体がパッと光る(拍の頭はぼやけない)
+          ・::before(内側の後光)… その場でフェードアウト
+          ・::after(枠の線)    … 12時の位置から時計回りに、ぐるっと消えていく
+          ・長さは --sync-beat-spin-ms(js/sync.js が光る間隔に合わせて入れる。約0.28秒)
+
+        【ぐるっと消える仕組み】
+        mask(マスク)は「どこを見せて、どこを隠すか」を絵で決める書き方です。
+        conic-gradient は時計の針のように、中心の周りを角度で塗り分ける模様です。
+            0度 〜 --sync-beat-sweep … transparent(隠す)
+            --sync-beat-sweep 〜 360度 … #000(見せる)
+        --sync-beat-sweep を 0度 → 360度 へ動かすと、隠れる所が時計回りに広がり、
+        枠の線がぐるっと消えていきます。
+
+        @property は「この CSS の変数は角度です」とブラウザに教える書き方です。
+        教えておかないと、変数はアニメーションで滑らかに動かず、途中で一度に
+        切り替わってしまいます(Android の Chrome は対応しています)。
+        */
+        @property --sync-beat-sweep{
+            syntax:"<angle>";
+            inherits:false;
+            initial-value:0deg;
+        }
+
+        /* 従来の光り方(枠の box-shadow を動かす)は、spin の時は使いません */
+        #sync-panel .sync-beat-frame.sync-beat-spin.sync-beat-on{
+            animation:none;
+        }
+
+        #sync-panel .sync-beat-frame.sync-beat-spin::before,
+        #sync-panel .sync-beat-frame.sync-beat-spin::after{
+            content:"";
+            position:absolute;
+            inset:0;
+            pointer-events:none;
+
+            /* ふだんは見せません(光った時だけアニメーションで見せる) */
+            opacity:0;
+        }
+
+        /* 内側の後光(フェードアウトするだけ) */
+        #sync-panel .sync-beat-frame.sync-beat-spin::before{
+            box-shadow:inset 0 0 48px 14px rgba(var(--theme-rgb),0.75);
+        }
+
+        /* 枠の線(ぐるっと消えていく) */
+        #sync-panel .sync-beat-frame.sync-beat-spin::after{
+            box-shadow:inset 0 0 0 14px var(--theme-color);
+
+            -webkit-mask:conic-gradient(from 0deg,transparent var(--sync-beat-sweep),#000 var(--sync-beat-sweep));
+            mask:conic-gradient(from 0deg,transparent var(--sync-beat-sweep),#000 var(--sync-beat-sweep));
+        }
+
+        #sync-panel .sync-beat-frame.sync-beat-spin.sync-beat-on::before{
+            animation:sync-beat-halo var(--sync-beat-spin-ms,280ms) ease-out;
+        }
+
+        /*
+        ease-in(はじめゆっくり、だんだん速く)にしているのは、光った直後の
+        「枠全体が光っている姿」を少しだけ長く見せ、拍の頭を分かりやすくするためです。
+        */
+        #sync-panel .sync-beat-frame.sync-beat-spin.sync-beat-on::after{
+            animation:sync-beat-spin var(--sync-beat-spin-ms,280ms) ease-in;
+        }
+
+        @keyframes sync-beat-halo{
+            0%  { opacity:1; }
+            100%{ opacity:0; }
+        }
+
+        @keyframes sync-beat-spin{
+            0%  { opacity:1; --sync-beat-sweep:0deg; }
+            100%{ opacity:1; --sync-beat-sweep:360deg; }
         }
 
         /*
