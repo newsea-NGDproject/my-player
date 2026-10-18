@@ -14,9 +14,9 @@
      層1 デッキA / 層2 デッキB … 曲を鳴らす
      層3 ノリノリアシスト      … カチッを鳴らす
      層4 司令塔(JavaScript)   … 値を書く・時刻を予約する
-     層5 寝ずの番(このファイル)… 聞こえない音で、アプリを眠らせない
+     層5 寝ずの番(このファイル)… 聞こえない曲で、アプリを眠らせない
 
- 曲は鳴らしません。デッキA・Bとは別物です。
+ 竹弘の曲は鳴らしません。デッキA・Bとは別の、小さな <audio> を1つ持ちます。
 
 ----------------------------------------------------------------------
 
@@ -31,33 +31,69 @@
  止めている間は無音なので、凍結されます(海外の事例を調べても、ここを
  きれいに解いた Web アプリは見つからなかった)。
 
- v240 で、−60dB の聞こえない信号(直流)を流せば凍結しないことは確かめて
- あります。ところがそれだけだと、イヤホンが2回タップになります。
+----------------------------------------------------------------------
+
+【イヤホンの ⏸ ▶ が届く仕組み(Chrome の関所は2つある)】
+
+ イヤホンのボタンは、Chrome の中の2つの関所を通ってからノリRunに届きます。
+
+     ① 外側の関所(Java の MediaNotificationController)
+          「止まっている」時は ▶ だけ、「再生中」の時は ⏸ だけを通す
+     ② 内側の関所(C++ の MediaSessionImpl::Suspend)
+          ⏸ は、**本当に鳴っているプレイヤーがある**時だけ通す
+          (`if (!IsActive()) return;`。2026-10-18 に Chromium のソースで確かめた)
+
+ イヤホンは ⏸ と ▶ を自分で交互に送り、スマホの状態が変わったと知らされると
+ そこで合わせ直します。Bluetooth で音が流れていると「鳴っている」と思って
+ ⏸ を送ります。
+
+ そこで寝ずの番は、止めている間、**聞こえない曲を本当に鳴らします**
+ (下の【聞こえない曲】)。すると
+
+     ・Chrome から見て「本当に再生中」→ ①も②も ⏸ を通す
+     ・聞こえる音を出しているページなので、凍結されない
+     ・イヤホンも「鳴っている」と思って ⏸ を送る
+
+ 届いた ⏸ は、本当は「再開して」の合図です。札を掛けた係(同期モード)へ渡します。
 
 ----------------------------------------------------------------------
 
-【2回タップになる仕組みと、先回り(竹弘の案「必要な起動を複数」)】
+【v245 の失敗と、v246 で直したこと(⚠️ 二度と同じ穴を踏まないために)】
 
-     ・Chrome(門番)は、止まっている時は ▶ だけ、鳴っている時は ⏸ だけを
-       ノリRunに渡し、もう片方は渡す前に捨てる
-       (Chromium の MediaNotificationController の onPlay / onPause)
-     ・イヤホンは ⏸ と ▶ を自分で交互に送り、スマホの状態が変わったと
-       知らされると、そこで合わせ直す
-     ・信号が流れていると、イヤホンは「鳴っている」と思って ⏸ を送るのに、
-       Chrome は「止まっている」と思っているので捨てる → 2回目の ▶ で再開
+ v245 は、曲を鳴らさずに **Chrome に「再生中」と名乗るだけ**にしていました
+ (navigator.mediaSession.playbackState = "playing"。−60dB の信号は音の回路から
+ 流していた)。Chrome は、ページが「再生中」と名乗ると①の関所では再生中として
+ 扱うので、うまく行くと考えていました。
 
- 1回目のタップは Chrome がページへ渡す前に捨てるので、ノリRunからは
- 見張ることもできません。そこで**先回り**します。
+ 竹弘の実機(2台とも)では、**画面を消すとイヤホンが全く効かなくなりました**。
 
-     止めている間、寝ずの番が Chrome に「再生中」と伝える
-       (navigator.mediaSession.playbackState = "playing")
-     → Chrome・イヤホンの両方が「鳴っている」で揃い、イヤホンの ⏸ が届く
-     → 届いた ⏸ を、札を掛けた係(同期モード)へ「再開して」と渡す
+     ⏸ … ①は「再生中」なので通す → ②が「本当に鳴っているプレイヤーが無い」と捨てる
+     ▶ … ①が「再生中なのに ▶?」と捨てる
 
- ⚠️ Chrome は、ページが「再生中」と言えば、曲が止まっていても再生中として
-    扱います。逆の「止まっている」と偽ることだけは禁止です(曲が鳴って
-    いるのに止まっていると言っても、再生中のまま)。Chromium の
-    media_session_impl.cc の GetMediaSessionInfoSync で確かめました。
+ → **どちらのボタンも届かない**。名乗るだけの「再生中」は、②の関所を通れません。
+
+ ⚠️ **本当に鳴っているプレイヤー無しで「再生中」と名乗ってはいけない。**
+    v246 からは playbackState には触りません。聞こえない曲が鳴っている間だけ、
+    Chrome が自分で「再生中」と判断します(曲を鳴らせなかった時は「止まっている」
+    のままなので、今までどおり ▶ で再開できる)。
+
+----------------------------------------------------------------------
+
+【聞こえない曲】
+
+ その場で作る、30秒の WAV ファイルです(ファイルとしては置かない)。
+
+     中身   … ずっと同じ値(直流)。大きさ 0.001 = −60dB
+     形     … 8000Hz・モノラル・16bit(約480KB)
+     鳴らし方 … <audio> の loop で繰り返す(JavaScript が動かなくても続く)
+
+ ・Chrome が「鳴っている」とみなす境目は約 −72dB。−60dB なら「聞こえる音」の
+   扱いで凍結しない(v240 で実証した大きさ)
+ ・直流は、イヤホンやスピーカーからは音になりません
+ ・30秒にしているのは、Chrome が5秒以下の短い音を「効果音」として扱い、
+   ふつうのプレイヤー(再生中の扱い)に入れないためです(余裕を持たせた長さ)
+ ・音の回路(js/deck.js の deckAudioCtx)は通しません。止めている間は v238 で
+   休ませてあるので、起こさずに済みます(再開する時に同期モードが起こす)
 
 ----------------------------------------------------------------------
 
@@ -65,8 +101,6 @@
 
  寝ずの番に起きていてほしい係は、名前の付いた**札**を掛けます。
  寝ずの番は、札が1枚でも掛かっていれば起き、全部外れたら休みます。
- 札を掛けた係は、自分の札を外すだけでよく、ほかの係のことは
- 知らなくて構いません。
 
      hangKeepAwakeTag(名前, ⏸が届いた時に呼ぶ関数)
      removeKeepAwakeTag(名前, 理由)
@@ -75,13 +109,11 @@
 
      「同期の一時停止」… js/sync.js の 5-5(同期スタート後に止めた時)
 
- 「起こすかどうか」「どの強さで鳴らすか」「いつ止めるか」はこのファイルの
- refreshKeepAwake() の1か所で決めます(getTrackCover や
- findMetronomeBlockReason と同じ「決めるのは1か所」の考え方)。
+ 「起こすかどうか」はこのファイルの refreshKeepAwake() の1か所で決めます。
 
  ⚠️ 同期モードの画面を開いている間の −80dB の信号(js/sync.js の v232、
-    startSyncKeepAwake)は、まだ sync.js の中にあります。この版(v245)の
-    実験がうまく行ったら、次の版で寝ずの番へ引っ越す予定です。
+    startSyncKeepAwake)は、まだ sync.js の中にあります。この実験がうまく
+    行ったら、寝ずの番へ引っ越す予定です。
 
 ----------------------------------------------------------------------
 
@@ -91,16 +123,16 @@
     → KEEP_AWAKE_START_DELAY_MS(1.5秒)待つ
        (その間に v238 が音の出口を休ませ、Chrome とイヤホンに
         「止まった」がはっきり伝わる)
-    → 音の出口を起こして −60dB の信号を流し、Chrome に「再生中」と伝える
-       (イヤホンに「鳴っている」が伝わる)
+    → 聞こえない曲を鳴らす(Chrome もイヤホンも「再生中」になる)
 
   イヤホン・通知・ロック画面の ⏸ が届いた(js/media-session.js から)
-    → 信号を止め、Chrome に「止まった」と伝える
+    → 聞こえない曲を止める(Chrome に「止まった」が伝わる)
     → KEEP_AWAKE_HANDOFF_MS(0.2秒)後に、札を掛けた係へ「再開して」と渡す
        (同期モードは曲を鳴らし、みんなの拍に合わせ直す = v241・v242)
 
   鳴り始めた・取りやめた(js/sync.js が札を外す)
-    → 信号を止める。曲が止まったままなら、v238 の「出口を休ませる」に戻す
+    → 聞こえない曲を止める。竹弘の曲が止まったままなら、v238 の
+      「出口を休ませる」に戻す
 
 ----------------------------------------------------------------------
 
@@ -111,28 +143,31 @@
  間が短いと途中の「止まった」が上書きされて消え、イヤホンには何も変わって
  いないように見えます(v239 の「音だけ消す」で2回タップになったのと同じ形)。
 
-     止めてから「再生中」と伝えるまで … 1.5秒(500ms より十分長く)
-     ⏸ が届いて「止まった」と伝えてから鳴らすまで … 0.2秒
+     止めてから聞こえない曲を鳴らすまで … 1.5秒(500ms より十分長く)
+     ⏸ が届いて聞こえない曲を止めてから、竹弘の曲を鳴らすまで … 0.2秒
        (「止まった」はすぐ伝わり、鳴り始めた「再生中」は Chrome が
         500ms 後にまとめて伝える。どちらもイヤホンに届く)
 
 ----------------------------------------------------------------------
 
-【⚠️ 実験の版(v245)です】
+【⚠️ 実験の版です(v245 → v246)】
 
  イヤホンが本当に「スマホの状態が変わったら合わせ直す」かは、イヤホンの
  機種しだいで、実機で確かめるしかありません。見ること:
 
-     ・画面を消して5分以上止めても、凍結しない(🐛に 'freeze' が出ない)
      ・止めている間のイヤホンの ⏸(1回)で再開する
-       (🐛に「⏸ が届いた … 伝えてある状態 = playing」→「再開を頼みます」)
+       (🐛に「⏸ が届いた … 伝えてある状態 = paused」→「再開を頼みます」)
+       ※「伝えてある状態」は media-session.js が伝えた値で、paused のままです
+        (寝ずの番は名乗らないため)。Chrome 自身は聞こえない曲を見て再生中と判断します
      ・再開した後の、次の一時停止も1回で効く
+     ・画面を消して5分以上止めても、凍結しない(🐛に 'freeze' が出ない)
 
  外れた時の代わりの案は「止めて1分たってから起こす」(短い一時停止は
  v238 のまま1タップ、長い休みは2タップ・凍結しない)。
 
  電池:起こしている間は、曲を鳴らしている時と同じくらい使います。
  止め忘れの保険として、KEEP_AWAKE_MAX_MIN(120分)で休みます。
+ 止めている間、ロック画面・通知のボタンは ⏸(再生中の姿)になります。
 ======================================================================
 */
 
@@ -142,25 +177,24 @@
 // ==========================================================
 
 /*
-流す信号の大きさ(直流の値。1 が最大)。0.001 = −60dB。
+聞こえない曲の大きさ(直流の値。1 が最大)。0.001 = −60dB。
 
 Chrome が「鳴っている」とみなす境目は約 −72dB です。
 
     −80dB(0.0001)… 鳴っていない扱い。音の出口だけ起こしておける
                       (同期モードの画面の v232 の信号はこちら)
     −60dB(0.001) … 鳴っている扱い。ページごと起こしておける(凍結しない。v240 で実証)
-
-直流(ずっと同じ値)なので、イヤホンやスピーカーからは音になりません。
 */
 const KEEP_AWAKE_LEVEL = 0.001;
 
-// 信号を上げ下げする時間(秒)。いきなり変えると「プツ」の元になりうるため(v232 と同じ)
-const KEEP_AWAKE_RAMP_SEC = 0.05;
+// 聞こえない曲の長さ(秒)と、1秒あたりの点の数(Hz)。理由は冒頭の【聞こえない曲】
+const KEEP_AWAKE_SONG_SEC = 30;
+const KEEP_AWAKE_SONG_RATE = 8000;
 
 // 札が掛かってから、起こし始めるまでの待ち(ms)。理由は冒頭の【「止まった」と「再生中」の間…】
 const KEEP_AWAKE_START_DELAY_MS = 1500;
 
-// ⏸ が届いて「止まった」と伝えてから、札を掛けた係へ渡すまでの待ち(ms)。理由は同上
+// ⏸ が届いて聞こえない曲を止めてから、札を掛けた係へ渡すまでの待ち(ms)。理由は同上
 const KEEP_AWAKE_HANDOFF_MS = 200;
 
 /*
@@ -185,8 +219,14 @@ const KEEP_AWAKE_MAX_MIN = 120;
 */
 const keepAwakeTags = new Map();
 
-// 流している信号(ConstantSourceNode)。null = 流していない
-let keepAwakeNode = null;
+// 聞こえない曲を鳴らす <audio>(初めて起こす時に1回だけ作る)。null = まだ作っていない
+let keepAwakeAudio = null;
+
+// 聞こえない曲を鳴らしているか(play() が成功してから true)
+let keepAwakeSounding = false;
+
+// play() の答えを待っている途中か(二重に鳴らし始めないため)
+let keepAwakeStarting = false;
 
 // 起こし始めた時刻(performance.now。🐛パネルに「何秒起こしていたか」を出す)
 let keepAwakeStartedAtMs = 0;
@@ -255,16 +295,17 @@ function removeKeepAwakeTag(name,why){
 }
 
 /**
- * いま寝ずの番が起こしている(信号を流し、Chrome に「再生中」と伝えている)かを返します。
+ * いま寝ずの番が起こしている(聞こえない曲を鳴らしている)かを返します。
  *
- * js/deck.js の isDeckAudioWantedAwake() が、起こしている間は音の出口を
- * 休ませないために使います。
+ * js/deck.js の isDeckAudioWantedAwake() も使います(起こしている間は、
+ * 音の出口を休ませない。v246 からは聞こえない曲は出口を通らないので、
+ * 念のための守りです)。
  *
  * @return {boolean}
  */
 function isKeepAwakeSounding(){
 
-    return keepAwakeNode !== null;
+    return keepAwakeSounding;
 
 }
 
@@ -277,8 +318,8 @@ function isKeepAwakeSounding(){
  * イヤホン・通知・ロック画面の ⏸ が届いた時に、js/media-session.js が
  * まずここに聞きます。
  *
- * 寝ずの番が起こしている間に届いた ⏸ は、Chrome に「再生中」と伝えて
- * あるから届いたもので、本当は**曲は止まっています**。つまり竹弘の
+ * 寝ずの番が起こしている間に届いた ⏸ は、聞こえない曲が鳴っていて Chrome から
+ * 見て再生中だから届いたもので、竹弘の曲は**止まっています**。つまり竹弘の
  * 「再開して」の合図です。札を掛けた係へ渡します。
  *
  * @return {boolean} true = 引き受けた(media-session.js はここで終わる)/
@@ -310,7 +351,7 @@ function handleKeepAwakePauseKey(){
     // 【開発用調査ログ】(v245)
     console.log("寝ずの番(レイヤー5): 起こしている間に ⏸ が届きました → 「" + name + "」の係へ再開を頼みます");
 
-    // 信号を止め、Chrome に「止まった」と伝えます(冒頭の【「止まった」と「再生中」の間…】)
+    // 聞こえない曲を止めます(Chrome に「止まった」が伝わる。冒頭の【「止まった」と「再生中」の間…】)
     stopKeepAwakeSound("⏸ が届いた",true);
 
     clearKeepAwakeTimer("handoff");
@@ -380,14 +421,14 @@ function refreshKeepAwake(why){
 
         clearKeepAwakeTimer("start");
 
-        if(isKeepAwakeSounding()){ stopKeepAwakeSound(why,false); }
+        if(keepAwakeSounding || keepAwakeStarting){ stopKeepAwakeSound(why,false); }
 
         return;
 
     }
 
-    // もう起こしている・起こす予約がある時は、そのままにします
-    if(isKeepAwakeSounding() || keepAwakeStartTimerId){ return; }
+    // もう起こしている・起こしている途中・起こす予約がある時は、そのままにします
+    if(keepAwakeSounding || keepAwakeStarting || keepAwakeStartTimerId){ return; }
 
     keepAwakeStartTimerId = setTimeout(function(){
 
@@ -399,32 +440,40 @@ function refreshKeepAwake(why){
 
 }
 
+/**
+ * いまも起こしたいか(札があり、渡している途中でなく、120分たっておらず、
+ * 竹弘の曲が止まっている)を返します。play() の答えを待つ間に事情が
+ * 変わっていないかを確かめるのに使います。
+ *
+ * @return {boolean}
+ */
+function isKeepAwakeStillWanted(){
+
+    return keepAwakeTags.size > 0 && !keepAwakeHandingOff && !keepAwakeGaveUp && audioPlayer.paused;
+
+}
+
 
 // ==========================================================
-// 6. 信号を流す・止める
+// 6. 聞こえない曲を鳴らす・止める
 // ==========================================================
 
 /**
- * 音の出口を起こして −60dB の信号を流し、Chrome に「再生中」と伝えます。
+ * 聞こえない曲を鳴らし始めます。
  */
 function startKeepAwakeSound(){
 
     // 待っている間に事情が変わっていたら、起こしません
-    if(keepAwakeTags.size === 0 || keepAwakeHandingOff || keepAwakeGaveUp || isKeepAwakeSounding()){ return; }
+    if(keepAwakeSounding || keepAwakeStarting || !isKeepAwakeStillWanted()){ return; }
+
+    const audio = getKeepAwakeAudio();
 
     /*
-    曲がもう鳴っているなら、曲そのものが「聞こえる音」なので要りません
-    (ふつうは鳴り始めた時に札が外れているので、ここには来ません)。
+    <audio> や Blob が使えない古いブラウザでは、起こせません。
+    今までどおり(v241)の動きになります(止まっている扱いのままなので、
+    イヤホンの ▶ で再開できる)。
     */
-    if(!audioPlayer.paused){ return; }
-
-    /*
-    音の回路(js/deck.js の deckAudioCtx)が無い・ConstantSourceNode が無い
-    古いブラウザでは、起こせません。その時は Chrome に「再生中」とも伝えません
-    (信号が無いのに「再生中」と伝えると、イヤホンは「止まっている」と思って
-    ▶ を送り、Chrome はそれを捨ててしまう)。今までどおり(v241)の動きになります。
-    */
-    if(!deckAudioCtx || typeof deckAudioCtx.createConstantSource !== "function"){
+    if(!audio){
 
         console.warn("寝ずの番(レイヤー5): この端末では起こしておけません(今までどおり動きます)");
 
@@ -432,81 +481,82 @@ function startKeepAwakeSound(){
 
     }
 
-    /*
-    止めた時に v238 が休ませた音の出口を、起こします(js/deck.js の
-    resumeDeckAudio。休んでいなければ何もしません)。起きるまでの間に
-    予約した信号は、起きてから流れます。
-    */
-    resumeDeckAudio();
+    keepAwakeStarting = true;
+
+    let result = null;
 
     try{
 
-        /*
-        ConstantSourceNode は「ずっと同じ値を出し続ける」音源です(直流)。
-        ⚠️ 最初は1(最大)なので、鳴らし始める前に必ず0にしてから、
-           KEEP_AWAKE_RAMP_SEC 秒かけて上げます(v232 の信号と同じ書き方)。
-
-            setValueAtTime(値,時刻)          … その時刻に、その値にする
-            linearRampToValueAtTime(値,時刻) … その時刻までに、まっすぐその値へ
-        */
-        const node = deckAudioCtx.createConstantSource();
-
-        const now = deckAudioCtx.currentTime;
-
-        node.offset.value = 0;
-        node.offset.setValueAtTime(0,now);
-        node.offset.linearRampToValueAtTime(KEEP_AWAKE_LEVEL,now + KEEP_AWAKE_RAMP_SEC);
+        // 毎回、聞こえない曲の頭から鳴らします
+        audio.currentTime = 0;
 
         /*
-        スピーカーへ直接つなぎます。全体の音量つまみ(js/deck.js の 3-4)は
-        通しません。同期の一時停止の間はつまみが0なので、通すと消えてしまい、
-        Chrome から見て「聞こえる音」にならないためです。
+        play() は「鳴らし始めてください」と頼む命令で、結果(Promise)が後から返ります。
+        then は「うまく行った時」、catch は「失敗した時」にする仕事です。
         */
-        node.connect(deckAudioCtx.destination);
-
-        node.start();
-
-        keepAwakeNode = node;
+        result = audio.play();
 
     }
     catch(error){
 
-        console.error("寝ずの番(レイヤー5): 信号を流せませんでした :",error.name,error.message);
+        keepAwakeStarting = false;
+
+        console.warn("寝ずの番(レイヤー5): 聞こえない曲を鳴らせませんでした(今までどおり動きます) :",error.name,error.message);
 
         return;
 
     }
 
-    keepAwakeStartedAtMs = performance.now();
+    Promise.resolve(result).then(function(){
 
-    setKeepAwakePlaybackState("playing");
+        keepAwakeStarting = false;
 
-    // 止め忘れの保険(120分)
-    clearKeepAwakeTimer("max");
+        // 答えを待っている間に、札が外れた・竹弘の曲が鳴り始めた時は、すぐ止めます
+        if(!isKeepAwakeStillWanted()){
 
-    keepAwakeMaxTimerId = setTimeout(function(){
+            audio.pause();
 
-        keepAwakeMaxTimerId = 0;
+            return;
 
-        keepAwakeGaveUp = true;
+        }
 
-        refreshKeepAwake(KEEP_AWAKE_MAX_MIN + "分たった(止め忘れの保険)");
+        keepAwakeSounding = true;
+        keepAwakeStartedAtMs = performance.now();
 
-    },KEEP_AWAKE_MAX_MIN * 60 * 1000);
+        // 止め忘れの保険(120分)
+        clearKeepAwakeTimer("max");
 
-    // 【開発用調査ログ】(v245)
-    console.log(
-        "寝ずの番(レイヤー5): 起こし始めました(聞こえない信号 −60dB を流し、" +
-        "Chrome には「再生中」と伝えました)/ 札 : " + formatKeepAwakeTags()
-    );
+        keepAwakeMaxTimerId = setTimeout(function(){
+
+            keepAwakeMaxTimerId = 0;
+
+            keepAwakeGaveUp = true;
+
+            refreshKeepAwake(KEEP_AWAKE_MAX_MIN + "分たった(止め忘れの保険)");
+
+        },KEEP_AWAKE_MAX_MIN * 60 * 1000);
+
+        // 【開発用調査ログ】(v245)
+        console.log(
+            "寝ずの番(レイヤー5): 起こし始めました(聞こえない曲 −60dB を鳴らし、" +
+            "Chrome から見て再生中)/ 札 : " + formatKeepAwakeTags()
+        );
+
+    }).catch(function(error){
+
+        keepAwakeStarting = false;
+
+        // 鳴らし始める途中で止めた時(札が外れた時など)は、失敗ではないので黙っています
+        if(error && error.name === "AbortError"){ return; }
+
+        console.warn("寝ずの番(レイヤー5): 聞こえない曲を鳴らせませんでした(今までどおり動きます) :",error.name,error.message);
+
+    });
 
 }
 
 /**
- * 信号を止めます。
- *
- * Chrome に伝える状態は、曲が止まっていれば「止まった」、鳴っていれば
- * 「再生中」に戻します。
+ * 聞こえない曲を止めます。
  *
  * @param {string}  why     - 止める理由(🐛パネルに出す)
  * @param {boolean} handoff - true = ⏸ を係へ渡すために止める(すぐ鳴らし直すので、
@@ -516,39 +566,14 @@ function stopKeepAwakeSound(why,handoff){
 
     clearKeepAwakeTimer("max");
 
-    if(!keepAwakeNode){ return; }
+    const wasSounding = keepAwakeSounding;
 
-    const node = keepAwakeNode;
+    keepAwakeSounding = false;
+    keepAwakeStarting = false;
 
-    keepAwakeNode = null;
+    if(keepAwakeAudio){ keepAwakeAudio.pause(); }
 
-    try{
-
-        const now = deckAudioCtx.currentTime;
-
-        /*
-        予約してある変化を取り消し、今の値から0へ下げてから止めます
-        (v232 の stopSyncKeepAwake と同じ書き方)。cancelScheduledValues は
-        「この時刻より後の予約を取り消す」命令です。
-        */
-        node.offset.cancelScheduledValues(now);
-        node.offset.setValueAtTime(node.offset.value,now);
-        node.offset.linearRampToValueAtTime(0,now + KEEP_AWAKE_RAMP_SEC);
-
-        // 下げきった少し後に止め、止まったら配線を外します(部品を残さない)
-        node.onended = function(){ node.disconnect(); };
-
-        node.stop(now + KEEP_AWAKE_RAMP_SEC + 0.01);
-
-    }
-    catch(error){
-
-        // 止める予約に失敗しても、配線だけは外しておきます(流れ続けないように)
-        try{ node.disconnect(); }catch(ignore){ /* すでに外れていても構いません */ }
-
-    }
-
-    setKeepAwakePlaybackState(audioPlayer.paused ? "paused" : "playing");
+    if(!wasSounding){ return; }
 
     // 【開発用調査ログ】(v245)
     console.log(
@@ -557,7 +582,7 @@ function stopKeepAwakeSound(why,handoff){
     );
 
     /*
-    曲が止まったまま休む時は、v238 の「音の出口を休ませる」に戻します
+    竹弘の曲が止まったまま休む時は、v238 の「音の出口を休ませる」に戻します
     (イヤホンの1回目の ▶ が効くように。js/deck.js の sleepDeckAudioSoon)。
     ⏸ を係へ渡す時は、すぐ鳴らし直すので休ませません。
     */
@@ -569,24 +594,103 @@ function stopKeepAwakeSound(why,handoff){
 
 }
 
+/**
+ * 聞こえない曲の <audio> を返します。初めての時だけ作ります。
+ *
+ * @return {HTMLAudioElement|null} 作れない古いブラウザでは null
+ */
+function getKeepAwakeAudio(){
+
+    if(keepAwakeAudio){ return keepAwakeAudio; }
+
+    if(typeof Audio !== "function" || typeof Blob !== "function" || !window.URL || typeof URL.createObjectURL !== "function"){
+
+        return null;
+
+    }
+
+    try{
+
+        const audio = new Audio();
+
+        // loop = 最後まで鳴ったら頭に戻って繰り返す(JavaScript が動かなくても続く)
+        audio.loop = true;
+        audio.preload = "auto";
+
+        /*
+        URL.createObjectURL は、メモリの中のデータ(Blob)に一時的な住所(blob:…)を
+        付ける命令です。ファイルを置かなくても、<audio> がそれを読めます。
+        ページを閉じるまで使い続けるので、住所を消す(revokeObjectURL)ことはしません。
+        */
+        audio.src = URL.createObjectURL(makeKeepAwakeSongBlob());
+
+        keepAwakeAudio = audio;
+
+        return audio;
+
+    }
+    catch(error){
+
+        console.error("寝ずの番(レイヤー5): 聞こえない曲を作れませんでした :",error.name,error.message);
+
+        return null;
+
+    }
+
+}
+
+/**
+ * 聞こえない曲(WAV ファイル)を、メモリの中に作ります。
+ *
+ * WAV は「最初の44バイトに形の説明(ヘッダー)、その後ろに音の値を並べる」
+ * だけの単純な形式です。ここでは 16bit(1つの値が2バイト)・モノラルで、
+ * すべての値を同じ大きさ(KEEP_AWAKE_LEVEL)にします。
+ *
+ * DataView は、バイトの並び(ArrayBuffer)に、数字を決まった形で書き込む道具です。
+ * 最後の true は「小さい桁から先に書く(リトルエンディアン)」で、WAV の決まりです。
+ *
+ * @return {Blob} audio/wav の Blob
+ */
+function makeKeepAwakeSongBlob(){
+
+    const count = KEEP_AWAKE_SONG_SEC * KEEP_AWAKE_SONG_RATE;     // 値の数
+    const dataBytes = count * 2;                                  // 16bit = 2バイト
+
+    const buffer = new ArrayBuffer(44 + dataBytes);
+    const view = new DataView(buffer);
+
+    // 文字(4文字の目印)を書き込む小さな道具
+    const writeText = function(offset,text){
+        for(let i = 0; i < text.length; i++){ view.setUint8(offset + i,text.charCodeAt(i)); }
+    };
+
+    writeText(0,"RIFF");
+    view.setUint32(4,36 + dataBytes,true);          // この後ろの大きさ
+    writeText(8,"WAVE");
+    writeText(12,"fmt ");
+    view.setUint32(16,16,true);                     // fmt の説明の長さ
+    view.setUint16(20,1,true);                      // 1 = 圧縮しない(PCM)
+    view.setUint16(22,1,true);                      // 1 = モノラル
+    view.setUint32(24,KEEP_AWAKE_SONG_RATE,true);   // 1秒あたりの値の数
+    view.setUint32(28,KEEP_AWAKE_SONG_RATE * 2,true);   // 1秒あたりのバイト数
+    view.setUint16(32,2,true);                      // 1つの値のバイト数
+    view.setUint16(34,16,true);                     // 1つの値のビット数
+    writeText(36,"data");
+    view.setUint32(40,dataBytes,true);              // 音の値の大きさ
+
+    // 16bit の最大は 32767。0.001 なら 33(四捨五入)
+    const value = Math.round(KEEP_AWAKE_LEVEL * 32767);
+
+    for(let i = 0; i < count; i++){ view.setInt16(44 + i * 2,value,true); }
+
+    return new Blob([buffer],{ type:"audio/wav" });
+
+}
+
 
 // ==========================================================
 // 7. 小さな道具
 // ==========================================================
-
-/**
- * Chrome(Media Session)に伝える再生状態を書き換えます。
- * 対応していないブラウザでは何もしません。
- *
- * @param {string} state - "playing" / "paused"
- */
-function setKeepAwakePlaybackState(state){
-
-    if(!("mediaSession" in navigator)){ return; }
-
-    navigator.mediaSession.playbackState = state;
-
-}
 
 /**
  * 予約を1つ取り消します。
