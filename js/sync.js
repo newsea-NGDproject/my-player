@@ -533,6 +533,28 @@ v229で画面の縁に移した)。
 const SYNC_LAMP_FLASH_MS = 160;
 
 /*
+【v243】拍合わせ画面の縁の光り方(竹弘の要望 2026-10-18「拍合わせでフラッシュが
+すごく有効だと分かった。後光のフェードアウトと同時に、ぐるっと回って消えていく
+効果にできないか。試したい。やっぱり戻したいとなるかもしれない」)。
+
+    "spin"  … 光った瞬間は枠全体がパッと光り(拍の頭はぼやけない)、内側の後光は
+               その場でフェードアウト、枠の線は12時の位置から時計回りに
+               ぐるっと消えていく(c014.html の .sync-beat-spin)
+    "plain" … v229〜v242 の光り方(160msで枠と後光が一緒に消える。
+               c014.html の .sync-beat-on と @keyframes sync-beat-flash)
+
+⚠️ **元に戻す時は、ここを "plain" にするだけ**です(版番号は上げる)。"plain" の
+   CSS は v243 で1文字も変えていません。
+
+    SYNC_BEAT_SPIN_MS        … ぐるっと消えきるまでの長さ(ms)
+    SYNC_BEAT_SPIN_MAX_RATIO … ただし光る間隔のこの割合まで(次の光と重ならないように。
+                               130なら光る間隔 461ms × 0.6 = 約277ms)
+*/
+const SYNC_BEAT_FLASH_STYLE = "spin";
+const SYNC_BEAT_SPIN_MS = 280;
+const SYNC_BEAT_SPIN_MAX_RATIO = 0.6;
+
+/*
 拍合わせ画面のパッドで、1回に動かす量(ms。v229)。
 
     SYNC_NUDGE_SMALL_MS … 「10」のパッド。細かく合わせる
@@ -578,6 +600,17 @@ const SYNC_BLUETOOTH_OFF_TEXT =
 ③の合わせ直しを勧めます。
 
 ⚠️ 100ms は理屈から決めた目安です。実機で「点検」のログを見て見直すこと。
+
+【v242:実機で確かめられた → 眠った分は自動で直す】
+
+2026-10-18 の v241 のテスト2で、止めて画面を消している間に、指の時計が
+GALAXY は 327秒(5分43秒のうち)、XPERIA は 131秒止まっていました。
+スマホの時計は眠っている間も進むので、**差が開いた分 = 指の時計が止まっていた
+時間**です。そこで、差がプラスにこの境目を超えていたら、その分だけ基準を
+手前へ戻します(fixSyncAnchorAfterSleep)。止まる前と同じ「みんなの拍」に戻ります。
+
+    マイナスに開いた時(スマホの時計が戻された)は直しません。今までどおり
+    ③に「拍がずれたおそれ」を出します。
 */
 const SYNC_SHARED_DRIFT_WARN_MS = 100;
 
@@ -1461,6 +1494,13 @@ async function openSyncPanel(){
     その予約をここで止めます。
     */
     cancelSyncResume("同期モードの画面を開いた");
+
+    /*
+    【v242】止めている間にスマホが深く眠って指の時計が止まっていたら、みんなの
+    基準をその分戻します(fixSyncAnchorAfterSleep)。③の「◯分前に合わせました」・
+    拍合わせ画面・リードの「もう一度カチッ」が、本当の拍のまま使えるように。
+    */
+    fixSyncAnchorAfterSleep("同期モードの画面を開いた");
 
     /*
     ---- 音の出口を休ませない信号を流し始めます(v232) ----
@@ -3678,6 +3718,61 @@ function getSyncAnchorDriftMs(){
 }
 
 /**
+ * スマホが深く眠って指の時計(performance.now)が止まっていたら、その分だけ
+ * みんなの基準を直します(v242。SYNC_SHARED_DRIFT_WARN_MS の【v242】)。
+ *
+ * 【なぜ直せるのか】
+ *
+ *     スマホの時計 − 指の時計 … ふつうは一定。指の時計が止まっていた間だけ増える
+ *     増えた分(getSyncAnchorDriftMs)= 指の時計が止まっていた時間
+ *
+ * 基準(みんなの拍が来た瞬間)は指の時計の物差しで持っているので、指の時計が
+ * D ms 止まると、本当の拍より D ms 先を指すようになります。だから基準を D ms
+ * 手前へ戻せば、本当の拍に戻ります。2台がそれぞれ自分の D で直すので、2台の
+ * スマホの時計がずれていても関係ありません(それぞれのスマホの中の差しか使わない)。
+ *
+ * 一緒に動かすもの:
+ *     syncAnchorTapPerfMs … ③で叩いて求めた元の基準(早める/遅らせるの起点)
+ *     syncLeadGridPerfMs  … リードのカチッのリズムの位置
+ *     syncAnchorWallOffsetMs … 差の基準。直した後は差が0に戻る
+ *
+ *     呼ぶ所 … 同期モードの画面を開いた時 / 時刻ボタンでスタートする時 /
+ *              拍合わせ画面で光らせ始める時 / 一時停止から再開して合わせ直す時(5-5)
+ *
+ * @param  {string} why - 🐛パネルに出す場面
+ * @return {number} 直した量(ms)。直さなかった時は 0
+ */
+function fixSyncAnchorAfterSleep(why){
+
+    if(syncAnchorPerfMs === null){ return 0; }
+
+    const driftMs = getSyncAnchorDriftMs();
+
+    // プラスに境目を超えた時だけ(眠って指の時計が止まった時)。マイナスは直さない
+    if(driftMs <= SYNC_SHARED_DRIFT_WARN_MS){ return 0; }
+
+    syncAnchorPerfMs -= driftMs;
+
+    if(syncAnchorTapPerfMs !== null){ syncAnchorTapPerfMs -= driftMs; }
+
+    if(syncLeadGridPerfMs !== null){ syncLeadGridPerfMs -= driftMs; }
+
+    syncAnchorWallOffsetMs += driftMs;
+
+    // 次にまた眠った時も、知らせを1回出せるように
+    syncDriftLogged = false;
+
+    // 【開発用調査ログ】(v242)眠った分を直したことを、実機のログで確かめるため
+    console.log(
+        "同期モード : スマホが眠って指の時計が " + (driftMs / 1000).toFixed(1) + "秒 止まっていたので、" +
+        "みんなの基準をその分戻しました(" + why + ")"
+    );
+
+    return driftMs;
+
+}
+
+/**
  * スマホが眠るなどして、拍がずれたおそれがあるか(v227)。
  *
  * 初めて境目を超えた時に、🐛パネルへ1回だけ記録します
@@ -4649,7 +4744,42 @@ function startSyncBeatLamp(){
 
     if(syncLampTimerId){ return; }
 
+    // 【v242】眠って指の時計が止まっていたら、基準をその分戻してから光らせます
+    fixSyncAnchorAfterSleep("拍合わせ画面");
+
+    applySyncBeatFlashStyle();
+
     scheduleSyncBeatLamp();
+
+}
+
+/**
+ * 縁の光り方を、SYNC_BEAT_FLASH_STYLE に合わせます(v243)。
+ *
+ * "spin" の時は、縁に sync-beat-spin という印(クラス)を付け、ぐるっと消える長さを
+ * CSS の変数 --sync-beat-spin-ms で渡します。"plain" の時は印を外すだけで、
+ * v242 までの光り方に戻ります。
+ *
+ * 長さは SYNC_BEAT_SPIN_MS と「光る間隔 × SYNC_BEAT_SPIN_MAX_RATIO」の短い方です。
+ * 光る間隔はみんなのピッチで変わるので、光らせ始めるたびに決め直します。
+ */
+function applySyncBeatFlashStyle(){
+
+    if(!syncBeatFrameEl){ return; }
+
+    const spin = (SYNC_BEAT_FLASH_STYLE === "spin");
+
+    syncBeatFrameEl.classList.toggle("sync-beat-spin",spin);
+
+    if(!spin){ return; }
+
+    const spinMs = Math.round(Math.min(SYNC_BEAT_SPIN_MS,getSyncSharedPeriodMs() * SYNC_BEAT_SPIN_MAX_RATIO));
+
+    /*
+    setProperty は「CSS の変数に値を入れる」命令です。c014.html の
+    .sync-beat-spin のアニメーションの長さが、この値で決まります。
+    */
+    syncBeatFrameEl.style.setProperty("--sync-beat-spin-ms",spinMs + "ms");
 
 }
 
@@ -5116,6 +5246,9 @@ async function scheduleSyncStart(targetWallMs){
        v227で「みんなの時計」を使って始まりまで揃えようとしましたが、
        時計のずれが0.4秒を超えると成り立たないので、v228でこの形に戻しました。
     */
+    // 【v242】眠って指の時計が止まっていたら、基準をその分戻してから拍を選びます
+    fixSyncAnchorAfterSleep("時刻ボタンでスタート");
+
     const beatMs = 60000 / syncState.pitch;
 
     // 押された時刻を、performance.now() の物差しに直します
@@ -6809,14 +6942,25 @@ v239〜v240 では、同期スタート後のイヤホンの ⏸ を「音だけ
     ② 「止めた位置の直後の拍」を、みんなの拍の格子に乗せる瞬間を選ぶ
        (今から間に合う、いちばん近い格子の拍)
     ③ その瞬間より「頭出しの待ち」ぶん前に、その拍へ頭出しする
-    ④ 頭出しが終わったら、30msで音量を上げる
+    ④【v242】曲が動き出したら、音量0のまま位置を測って「揃ったか」を確かめる
+         ・ずれが SYNC_RESUME_VERIFY_OK_MS(±12ms)以内 → 30msで音量を上げる
+         ・外れていた → その場で測った頭出しの待ちで、次の格子の拍へもう一度頭出し
+           (頭出しは最大 SYNC_RESUME_SEEK_MAX 回。最後の回は外れていても音量を上げる)
     → 同期スタートの「頭出しで揃える」(syncFire)を短くしたものです
 
   竹弘の目標:**▶ から音が出るまで1秒に近づける**(それ以上だとタップミスと
-  思って、もう一度押してしまうため)。見込みは、ふつう 0.3〜1秒ほど:
+  思って、もう一度押してしまうため)。見込みは、ふつう 0.4〜1秒ほど:
 
       出口を起こす(0.01〜0.5秒)+ 頭出しの待ち(25〜50ms)
       + 余裕(SYNC_RESUME_MIN_LEAD_MS)+ 次の格子の拍まで(0〜1拍。ピッチ130なら0〜0.46秒)
+      + 確かめる時間(約0.1秒)。やり直した時は、さらに約0.5秒
+
+  ⚠️ v241 の実機テスト(2026-10-18)で、XPERIA は頭出しの待ちが再開のたびに
+     26〜112ms とばらつき、再開位置が +11 / +15 / −87 / +59ms と外れました
+     (GALAXY は 18〜20ms で毎回ほぼ同じ・±8ms)。竹弘の「XPERIA が少しずつ
+     遅れて来る」はこれでした。読みどおりに揃う前提をやめ、**音を出す前に
+     確かめる**ようにしたのが v242 です。確かめている間に合わせた拍(③)は
+     音量0のまま過ぎるので、聞こえ始めは拍の少し後(約0.1秒後)からになります。
 
 ------------------------------------------------------------
 【なぜ全体の音量つまみで消しておくのか】
@@ -6835,8 +6979,10 @@ v239〜v240 では、同期スタート後のイヤホンの ⏸ を「音だけ
 (GALAXY 約25ms / XPERIA 約50ms。同期スタートの「試し頭出し」の実測)。
 
     ・同期スタートで試し頭出しをしていれば、その値を使う(syncProbeSeekLag)
-    ・無ければ予備の値(SYNC_SEEK_LEAD_MS = 14ms)で頭出しし、再開した後の
-      位置の実測から直す(次の再開からは直した値)
+    ・無ければ予備の値(SYNC_SEEK_LEAD_MS = 14ms)で頭出しする
+    ・【v242】頭出しのたびに、④で本当の待ちを測り、次に使う値にする
+      (v241 は「再開した後の位置の実測」から直していましたが、XPERIA のように
+       毎回ばらつく機種では振り回されたので、④の測った値に替えました)
 
 ------------------------------------------------------------
 【合わせ直さない時(今までどおり、すぐ音を出す)】
@@ -6889,10 +7035,27 @@ const SYNC_RESUME_WAIT_MAX_MS = 1500;
 const SYNC_RESUME_MOVED_SEC = 0.03;
 
 /*
-再開した後の位置の実測から、頭出しの待ちを直す時の上限(ms)。
-これより大きくずれていたら、何か別の理由(途中で止まった・飛んだ)なので直しません。
+【v242】頭出しの後に「揃ったか」を確かめる時の決めごと(冒頭の【流れ】④)。
+
+    SYNC_RESUME_VERIFY_OK_MS       … このずれ(ms)以内なら「揃った」として音量を上げる。
+                                     接続の合格基準(30ms)より狭くし、実測で GALAXY が
+                                     収まっていた ±8ms より少し広くしてある
+    SYNC_RESUME_SEEK_MAX           … 頭出しの回数の上限(最初の1回 + やり直し)。
+                                     やり直すたびに約0.5秒延びるので、竹弘の目標(1秒)と
+                                     相談して2回まで
+    SYNC_RESUME_VERIFY_MOVED_SEC   … 頭出しした位置から、これだけ(実秒)進んでから測る
+                                     (動き出した直後は位置の読みがまだ落ち着かないため)
+    SYNC_RESUME_VERIFY_SAMPLES     … 何回測って平均するか
+    SYNC_RESUME_VERIFY_INTERVAL_MS … 測る間隔(ms)
+    SYNC_RESUME_VERIFY_WAIT_MAX_MS … 頭出しから、この時間(ms)たっても曲が動き出さなければ、
+                                     確かめるのをあきらめて音量を上げる(無音のままにしない)
 */
-const SYNC_RESUME_CALIBRATE_MAX_MS = 150;
+const SYNC_RESUME_VERIFY_OK_MS = 12;
+const SYNC_RESUME_SEEK_MAX = 2;
+const SYNC_RESUME_VERIFY_MOVED_SEC = 0.03;
+const SYNC_RESUME_VERIFY_SAMPLES = 2;
+const SYNC_RESUME_VERIFY_INTERVAL_MS = 30;
+const SYNC_RESUME_VERIFY_WAIT_MAX_MS = 800;
 
 /*
 再開の約束(v241)。null = 約束なし。
@@ -6908,6 +7071,10 @@ const SYNC_RESUME_CALIBRATE_MAX_MS = 150;
     targetSec  … 合わせ直す拍(曲の何秒目。止めた位置の直後の拍)
     wPerfMs    … その拍を鳴らす瞬間(みんなの拍 − 自分の遅延)
     lagMs      … 使った頭出しの待ち
+    seekCount  … 【v242】何回頭出ししたか(SYNC_RESUME_SEEK_MAX まで)
+    firstLagMs … 【v242】最初の頭出しで使った待ち(🐛パネル用)
+    firstLagMeasured … 【v242】その待ちが測った値か(false = 予備の値。🐛パネル用)
+    checks     … 【v242】確かめた結果の控え(🐛パネル用の文字)
     timerIds   … 予約した setTimeout の番号(取り消す時に使う)
 
 ⚠️ isSyncWarmingUp() は、これが null でない間 true を返します
@@ -6917,7 +7084,8 @@ let syncResume = null;
 
 /*
 このスマホの「頭出しの待ち」(ms)。null = まだ測っていない。
-同期スタートの試し頭出し(syncProbeSeekLag)と、再開した後の位置の実測で直します。
+同期スタートの試し頭出し(syncProbeSeekLag)と、【v242】再開の頭出しのたびに
+その場で測った値(verifySyncResume)で置き換えます。
 */
 let syncSeekLagMs = null;
 
@@ -7061,6 +7229,10 @@ function handleSyncPause(){
         targetSec:0,
         wPerfMs:0,
         lagMs:0,
+        seekCount:0,
+        firstLagMs:null,
+        firstLagMeasured:false,
+        checks:[],
         timerIds:[]
     };
 
@@ -7212,11 +7384,32 @@ function waitSyncResumeMoving(resume,startSec){
  * 「今 + 頭出しの待ち + 余裕」より後で、いちばん近い拍を選びます。
  * 頭出しの命令は、その瞬間の「頭出しの待ち」ぶん前に予約します。
  *
+ * 【v242】確かめて外れていた時のやり直し(verifySyncResume)も、ここを通ります。
+ * その時は、その場で測った待ち(syncSeekLagMs)で次の格子の拍を選び直し、
+ * 合わせる拍(曲の位置)も同じ拍数だけ先へ進めます(格子の拍どうしの間は
+ * ちょうど何拍かなので、曲の拍の上に乗ったまま)。
+ *
  * @param {Object} resume - この約束(syncResume)
  */
 function scheduleSyncResumeFire(resume){
 
+    /*
+    【v242】止めている間にスマホが深く眠って指の時計が止まっていたら、みんなの基準を
+    その分戻してから格子の拍を選びます(fixSyncAnchorAfterSleep)。画面を消して
+    止めるとほぼ必ず眠るので(v241 のテスト2:GALAXY 327秒・XPERIA 131秒)、これが
+    無いと、再開のたびに本当の拍からずれた格子へ合わせ直してしまいます。
+    */
+    fixSyncAnchorAfterSleep("一時停止から再開");
+
     const lagMs = (syncSeekLagMs !== null) ? syncSeekLagMs : SYNC_SEEK_LEAD_MS;
+
+    // 最初の頭出しで使った待ちを、🐛パネル用に控えます(測った値か予備の値か)
+    if(resume.firstLagMs === null){
+
+        resume.firstLagMs = lagMs;
+        resume.firstLagMeasured = (syncSeekLagMs !== null);
+
+    }
 
     const beatMs = 60000 / syncState.pitch;
 
@@ -7227,7 +7420,19 @@ function scheduleSyncResumeFire(resume){
     // その時刻以降に鳴らせる、最初の「みんなの拍」
     const stepCount = Math.ceil((earliestMs + latencyMs - syncAnchorPerfMs) / beatMs);
 
-    resume.wPerfMs = syncAnchorPerfMs + stepCount * beatMs - latencyMs;
+    const wPerfMs = syncAnchorPerfMs + stepCount * beatMs - latencyMs;
+
+    /*
+    【v242】やり直しの時は、合わせる拍を、選び直した瞬間までの拍数ぶん先へ進めます
+    (最初の時は wPerfMs がまだ0なので進めません)。
+    */
+    if(resume.seekCount > 0){
+
+        resume.targetSec += (wPerfMs - resume.wPerfMs) / 1000 * getSyncDeckBaseRate(resume.deck);
+
+    }
+
+    resume.wPerfMs = wPerfMs;
     resume.lagMs = lagMs;
 
     resume.timerIds.push(setTimeout(
@@ -7238,15 +7443,13 @@ function scheduleSyncResumeFire(resume){
 }
 
 /**
- * ③ 合わせ直す拍へ頭出しし、終わったら音量を上げます(v241)。
+ * ③ 合わせ直す拍へ頭出しします(v241。v242 から、この後に確かめる)。
  *
- * syncFire()(同期スタートの「頭出しで揃える」)と同じ書き方です。
+ * syncFire()(同期スタートの「頭出しで揃える」)と同じく、setTimeout が
+ * 遅れたぶん狙う位置を先へずらして打ち消します(syncFire の【遅れの打ち消し】)。
  *
- *     ・setTimeout が遅れたぶん、狙う位置を先へずらして打ち消す
- *       (syncFire の【遅れの打ち消し】)
- *     ・頭出しの終わりは3つの入口で待つ(もう終わっていた / seeked が届いた /
- *       0.1秒で時間切れ)。時間切れが無いと、万一 seeked が来なかった時に
- *       **永久に無音**になる
+ * v241 は頭出しが終わったらすぐ音量を上げていましたが、v242 からは
+ * verifySyncResume() で「揃ったか」を確かめてから上げます(冒頭の【流れ】④)。
  *
  * @param {Object} resume - この約束(syncResume)
  */
@@ -7259,6 +7462,17 @@ function syncResumeFire(resume){
     // 曲が替わった・止められた時は、何もしません(止めた時は 'pause' の側が引き継ぐ)
     if(deck !== audioPlayer || deck.paused){ return; }
 
+    // やり直しの拍が繋ぐ位置より後になっていたら、もう頭出しせずに音を出します
+    if(resume.targetSec >= resume.track.endTS){
+
+        resume.checks.push("やり直す拍が繋ぐ位置より後なので、このまま音を出します");
+
+        raiseSyncResume(resume,null);
+
+        return;
+
+    }
+
     const issuedAtMs = performance.now();
 
     // 本来の命令の瞬間(合わせる瞬間 − 頭出しの待ち)から、どれだけ遅れたか
@@ -7266,54 +7480,153 @@ function syncResumeFire(resume){
 
     const rate = getSyncDeckBaseRate(deck);
 
-    deck.currentTime = Math.max(0,resume.targetSec + lateMs / 1000 * rate);
+    const seekToSec = Math.max(0,resume.targetSec + lateMs / 1000 * rate);
 
-    let raised = false;
+    deck.currentTime = seekToSec;
 
-    const raise = function(why){
+    resume.seekCount += 1;
 
-        if(raised){ return; }
-
-        raised = true;
-
-        deck.removeEventListener("seeked",onSeeked);
-
-        // 頭出しを待つ間に止められた・取り消された時は、何もしません
-        if(syncResume !== resume || deck.paused){ return; }
-
-        raiseSyncResume(resume,issuedAtMs,lateMs,why);
-
-    };
-
-    const onSeeked = function(){ raise("頭出し完了"); };
-
-    if(!deck.seeking){
-
-        raise("待ち不要");
-
-        return;
-
-    }
-
-    deck.addEventListener("seeked",onSeeked);
-
-    resume.timerIds.push(setTimeout(function(){ raise("時間切れ"); },CONNECT_HEAD_SEEK_WAIT_MAX_SEC * 1000));
+    verifySyncResume(resume,issuedAtMs,seekToSec,lateMs);
 
 }
 
 /**
- * ④ 音量を上げて、合わせ直しを終えます(v241)。
+ * ④ 頭出しの後、音量0のまま「揃ったか」を確かめます(v242)。
+ *
+ * 曲が頭出しした位置から SYNC_RESUME_VERIFY_MOVED_SEC 秒ぶん進んだら、
+ * SYNC_RESUME_VERIFY_SAMPLES 回測って平均します。測るのは2つです。
+ *
+ *     ずれ        = (曲の位置 − 予定の位置)÷ 再生速度
+ *                   予定の位置 = 合わせる拍 +(今 − 合わせる瞬間)× 再生速度
+ *                   (measureSyncAlignment と同じ物差し。プラスは早い・マイナスは遅い)
+ *     本当の待ち  = (今 − 頭出しを命令した時刻)− 頭出しした位置から進んだぶん
+ *                   (syncProbeSeekLag と同じ考え方)
+ *
+ *     ・ずれが ±SYNC_RESUME_VERIFY_OK_MS 以内 → 音量を上げる(raiseSyncResume)
+ *     ・外れていて、まだやり直せる → 本当の待ちで次の格子の拍へもう一度
+ *       (scheduleSyncResumeFire)
+ *     ・外れていて、もうやり直せない → そのまま音量を上げる(無音のままにしない)
+ *
+ * 本当の待ちは、このスマホの頭出しの待ち(syncSeekLagMs)として、次の頭出しに使います。
  *
  * @param {Object} resume     - この約束(syncResume)
  * @param {number} issuedAtMs - 頭出しを命令した時刻
+ * @param {number} seekToSec  - 頭出しした位置(曲の何秒目)
  * @param {number} lateMs     - 命令の遅れ(位置をずらして打ち消し済み)
- * @param {string} why        - 頭出しの終わりをどの入口で知ったか
  */
-function raiseSyncResume(resume,issuedAtMs,lateMs,why){
+function verifySyncResume(resume,issuedAtMs,seekToSec,lateMs){
 
     const deck = resume.deck;
 
-    const doneAtMs = performance.now();
+    const rate = getSyncDeckBaseRate(deck);
+
+    const samples = [];
+
+    const average = function(list){ return list.reduce(function(a,b){ return a + b; },0) / list.length; };
+
+    const judge = function(){
+
+        const errMs = average(samples.map(function(s){ return s.errMs; }));
+
+        // 本当の待ち。ありえない値にならないよう、試し頭出しと同じ範囲に収めます
+        const lagMs = Math.min(Math.max(average(samples.map(function(s){ return s.lagMs; })),0),SYNC_PROBE_MAX_LAG_MS);
+
+        const usedLagMs = resume.lagMs;
+
+        syncSeekLagMs = lagMs;
+
+        resume.checks.push(
+            resume.seekCount + "回目 ずれ " + formatSyncSignedMs(errMs) +
+            "(頭出しの待ち 使った " + Math.round(usedLagMs) + "ms / 本当 " + Math.round(lagMs) + "ms" +
+            "・命令の遅れ " + formatSyncSignedMs(lateMs) + ")"
+        );
+
+        if(Math.abs(errMs) <= SYNC_RESUME_VERIFY_OK_MS){
+
+            raiseSyncResume(resume,errMs);
+
+            return;
+
+        }
+
+        if(resume.seekCount >= SYNC_RESUME_SEEK_MAX){
+
+            resume.checks.push("やり直しの上限なので、このまま音を出します");
+
+            raiseSyncResume(resume,errMs);
+
+            return;
+
+        }
+
+        // 外れていたので、本当の待ちで次の格子の拍へもう一度(音量0のまま)
+        scheduleSyncResumeFire(resume);
+
+    };
+
+    const check = function(){
+
+        // 取り消された・止められた・曲が替わった時は、何もしません(止めた時は 'pause' の側が引き継ぐ)
+        if(syncResume !== resume || deck.paused || deck !== audioPlayer){ return; }
+
+        const nowMs = performance.now();
+
+        // 頭出しした位置から、どれだけ進んだか(実秒)
+        const movedSec = (deck.currentTime - seekToSec) / rate;
+
+        if(!deck.seeking && movedSec >= SYNC_RESUME_VERIFY_MOVED_SEC){
+
+            const expectedSec = resume.targetSec + (nowMs - resume.wPerfMs) / 1000 * rate;
+
+            samples.push({
+                errMs: (deck.currentTime - expectedSec) / rate * 1000,
+                lagMs: (nowMs - issuedAtMs) - movedSec * 1000
+            });
+
+            if(samples.length >= SYNC_RESUME_VERIFY_SAMPLES){
+
+                judge();
+
+                return;
+
+            }
+
+            resume.timerIds.push(setTimeout(check,SYNC_RESUME_VERIFY_INTERVAL_MS));
+
+            return;
+
+        }
+
+        // いつまでも動き出さない時は、あきらめて音を出します(無音のままにしない)
+        if(nowMs - issuedAtMs >= SYNC_RESUME_VERIFY_WAIT_MAX_MS){
+
+            resume.checks.push(resume.seekCount + "回目 確かめられず(曲が動き出さなかった)");
+
+            raiseSyncResume(resume,null);
+
+            return;
+
+        }
+
+        resume.timerIds.push(setTimeout(check,SYNC_RESUME_POLL_MS));
+
+    };
+
+    check();
+
+}
+
+/**
+ * ⑤ 音量を上げて、合わせ直しを終えます(v241。v242 から、確かめた後に呼ばれる)。
+ *
+ * @param {Object}      resume - この約束(syncResume)
+ * @param {number|null} errMs  - 確かめたずれ(ms)。確かめられなかった時は null
+ */
+function raiseSyncResume(resume,errMs){
+
+    const deck = resume.deck;
+
+    const raisedAtMs = performance.now();
 
     /*
     次の曲へ繋ぐ準備が始まっていたら、取りやめます(冒頭の【接続の準備が…】)。
@@ -7348,8 +7661,10 @@ function raiseSyncResume(resume,issuedAtMs,lateMs,why){
     }
 
     /*
-    ノリノリアシスト:合わせた拍が来る瞬間(15ms後)まで黙らせておき、その時
-    すぐ予約させます(同期スタートの「頭から」と同じ。holdSyncMetronomeUntilStart)。
+    ノリノリアシスト:合わせた拍の15ms後まで黙らせておき、その時すぐ予約させます
+    (同期スタートの「頭から」と同じ。holdSyncMetronomeUntilStart)。
+    【v242】確かめている間に合わせた拍はもう過ぎているので、ふつうはすぐ予約され、
+    次の拍から鳴ります(曲の聞こえ始めと同じく、拍の少し後から)。
     ⚠️ 約束を消す(syncResume = null)**前に**呼ぶこと。間が空くと、その一瞬だけ
        isSyncWarmingUp() が false になり、カチッを早めに予約されるおそれがあるため。
     */
@@ -7359,42 +7674,25 @@ function raiseSyncResume(resume,issuedAtMs,lateMs,why){
 
     syncResume = null;
 
-    // 【開発用調査ログ】(v241)▶ から音が出るまでの時間を、実機で確かめるため
+    // 【開発用調査ログ】(v241。v242 で確かめた結果を足した)▶ から音が出るまでの時間と、揃い方を実機で確かめるため
     console.log(
         "同期モード : 再開 → みんなの拍に合わせ直しました",
-        ": ▶ から音を出すまで " + Math.round(resume.wPerfMs - resume.playAtMs) + "ms",
+        ": ▶ から音が出るまで " + Math.round(raisedAtMs - resume.playAtMs) + "ms",
         "(曲が動き出すまで " + Math.round(resume.movedAtMs - resume.playAtMs) + "ms" + (resume.moved ? "" : "・待ちきれず") + ")",
-        "/ 頭出しの待ち " + Math.round(doneAtMs - issuedAtMs) + "ms(" + why + ")",
-        "/ 頭出しを " + Math.round(resume.lagMs) + "ms 早く命令" + (syncSeekLagMs !== null ? "(測った値)" : "(予備の値)"),
-        "/ 命令の遅れ " + formatSyncSignedMs(lateMs) + "(位置をずらして打ち消し済み)",
+        "/ 確かめたずれ " + (errMs === null ? "測れず" : formatSyncSignedMs(errMs)),
+        "/ 頭出し " + resume.seekCount + "回 : " + resume.checks.join(" → "),
+        "/ 最初の頭出しの待ちは" + (resume.firstLagMeasured ? "測った値" : "予備の値"),
         "/ 位置 " + resume.pausedSec.toFixed(2) + "秒で止めて、" + resume.targetSec.toFixed(2) + "秒の拍から",
         "/ 時計の点検 " + formatSyncSignedMs(getSyncAnchorDriftMs()),
         (connecting ? "/ 繋ぐ準備をやり直します" : "")
     );
 
     /*
-    位置が予定どおりかを測り(同期スタートと同じ物差し)、ずれていたら
-    このスマホの頭出しの待ちを直します(次の再開から使う)。
-
-        ずれがプラス(予定より早い)… 待ちを長く見積もりすぎ → 待ちを減らす
-        ずれがマイナス(予定より遅い)… 待ちを短く見積もりすぎ → 待ちを増やす
-        → 直した待ち = 使った待ち − ずれ
+    音を出した後も、位置が予定どおりかを10回測って🐛パネルに出します
+    (同期スタートと同じ物差し)。v241 はこの結果で頭出しの待ちを直していましたが、
+    v242 からは④で頭出しのたびに測った値を使うので、ここは記録だけです。
     */
-    measureSyncAlignment(deck,resume.targetSec,resume.wPerfMs,"同期モード : 再開位置の実測",function(meanMs,count){
-
-        if(count < 3 || Math.abs(meanMs) > SYNC_RESUME_CALIBRATE_MAX_MS){ return; }
-
-        const before = resume.lagMs;
-
-        syncSeekLagMs = Math.min(Math.max(before - meanMs,0),SYNC_PROBE_MAX_LAG_MS);
-
-        // 【開発用調査ログ】(v241)
-        console.log(
-            "同期モード : 頭出しの待ちを直しました : " + Math.round(before) + "ms → " +
-            Math.round(syncSeekLagMs) + "ms(次の再開から)"
-        );
-
-    });
+    measureSyncAlignment(deck,resume.targetSec,resume.wPerfMs,"同期モード : 再開位置の実測");
 
 }
 
