@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v247)ノリRun
+        (v248)ノリRun
         メインメニュー
 
     </title>
@@ -7086,6 +7086,315 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             transform:translateX(-50%) translateY(0);
         }
 
+        /* ======================================================
+           同期モードの薄暗いロック画面(段④。v248。js/sync-lock.js)
+        ====================================================== */
+        /*
+        同期スタートした瞬間に、🕺ノリノリRun画面の上へかぶせる幕です。
+        ジャケ写の特大表示(#jacket-panel)と同じく、**薄く透けて下の画面が
+        見える**ようにしています(竹弘のイメージ)。
+
+        ⚠️ 「画面を覆う指定」(position:fixed / inset / z-index)を自分で書いています
+           (#jacket-panel のコメントにある v177 の事故と同じ理由)。
+
+        ⚠️ z-index は 2500。ほかのパネル(2000)より手前、横向きのお知らせ(9000)と
+           開発用デバッグログ(20000)より奥です。🐛 を押せるままにしておかないと、
+           実機テストでログが取れなくなるためです。
+
+        ⚠️ 背景をぼかす指定(backdrop-filter)は使いません。走っている間ずっと
+           画面に出ている幕なので、古いスマホ(XPERIA)の描画の負担を増やさないためです。
+        */
+        #sync-lock{
+            position:fixed;
+            top:0;
+            right:0;
+            bottom:0;
+            left:0;
+            z-index:2500;
+
+            /* 薄暗い幕。下のノリノリRun画面がうっすら透けて見えます */
+            background:rgba(8,6,12,0.72);
+
+            display:flex;
+            flex-direction:column;
+            align-items:center;
+            justify-content:center;
+
+            color:#f6edf2;
+
+            /*
+            指で長押しした時に文字が選ばれたり、2回叩いた時に拡大されたりしないように
+            します(manipulation =「拡大の操作だけ止める」)。
+            */
+            user-select:none;
+            -webkit-user-select:none;
+            touch-action:manipulation;
+        }
+
+        /* 確認などを出している間は、幕を少し濃くして後ろを目立たなくします */
+        #sync-lock.sync-lock-dim-more{
+            background:rgba(8,6,12,0.86);
+        }
+
+        /*
+        暁色の受け渡し(#jacket-panel と同じ書き方。くわしくはあちらのコメント)。
+        ⚠️ そのため #sync-lock は #app より後ろに書いてあります(~ が効くように)。
+        */
+        #app.norirun-mode ~ #sync-lock{
+            --theme-color:var(--theme-color-other);
+            --theme-rgb:var(--theme-rgb-other);
+        }
+
+        /* ---- 薄暗い画面(タイマー)---- */
+        #sync-lock-face{
+            display:flex;
+            flex-direction:column;
+            align-items:center;
+            gap:10px;
+
+            padding:24px 16px;
+            text-align:center;
+        }
+
+        .sync-lock-label{
+            margin:0;
+            font-size:0.95rem;
+            letter-spacing:0.08em;
+            opacity:0.8;
+        }
+
+        /*
+        走行タイマーの数字。同期モードの画面のモニタ(液晶)と同じ系統の見た目です。
+        tabular-nums は「数字の幅をそろえる」指定で、秒が進んでも数字が横に揺れません。
+        */
+        #sync-lock-timer{
+            margin:0;
+
+            font-family:"Menlo","Consolas",monospace;
+            font-size:clamp(3rem,16vw,5.2rem);
+            font-weight:bold;
+            font-variant-numeric:tabular-nums;
+            line-height:1.1;
+
+            color:var(--theme-color);
+            text-shadow:0 0 18px rgba(var(--theme-rgb),0.45);
+        }
+
+        #sync-lock-state{
+            margin:0;
+            font-size:0.95rem;
+            line-height:1.5;
+        }
+
+        /* 止めている間は、タイマーを少し暗くして「止まっている」と分かるようにします */
+        #sync-lock.sync-lock-paused #sync-lock-timer{
+            opacity:0.55;
+            text-shadow:none;
+        }
+
+        .sync-lock-hint{
+            margin:18px 0 0;
+            font-size:0.8rem;
+            line-height:1.6;
+            opacity:0.6;
+        }
+
+        /* ---- 触った時の確認(画面の下から出す)---- */
+        #sync-lock-sheet{
+            position:absolute;
+            left:0;
+            right:0;
+            bottom:0;
+
+            display:flex;
+            flex-direction:column;
+            gap:12px;
+
+            padding:18px 16px calc(18px + env(safe-area-inset-bottom));
+
+            background:linear-gradient(180deg,#1d1622 0%,#120e16 100%);
+            border-top:2px solid var(--theme-color);
+            border-radius:18px 18px 0 0;
+
+            box-shadow:0 -10px 30px rgba(0,0,0,0.5);
+        }
+
+        .sync-lock-sheet-title{
+            margin:0 0 4px;
+            text-align:center;
+            font-size:1rem;
+            font-weight:bold;
+            line-height:1.5;
+        }
+
+        /*
+        ボタンを2つ横に並べる段。grid で2列を「同じ幅」にしています
+        (flex:1 だと文字の長さで幅がずれることがあるため。竹弘の好み:縦のラインを揃える)。
+        */
+        .sync-lock-row{
+            display:grid;
+            grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+            gap:12px;
+        }
+
+        .sync-lock-btn{
+            /* 指で確実に押せる高さ(Material Design の48dp) */
+            min-height:48px;
+            margin:0;
+            padding:10px 8px;
+
+            border-radius:12px;
+            border:2px solid var(--theme-color);
+
+            background:transparent;
+            color:var(--theme-color);
+
+            font-size:1rem;
+            font-weight:bold;
+
+            cursor:pointer;
+        }
+
+        /* 主役のボタンは塗りつぶします(同期モードの画面の「決定」と同じ) */
+        .sync-lock-btn-primary{
+            background:var(--theme-color);
+            color:#ffffff;
+        }
+
+        .sync-lock-btn:active{
+            filter:brightness(0.85);
+        }
+
+        /* 横いっぱいのボタン(リードの「カチッを鳴らす」など) */
+        .sync-lock-btn-wide{
+            width:100%;
+        }
+
+        /*
+        スライド(誤操作防止。竹弘の要望)。溝の中のつまみを右端まで動かすと決まります。
+
+        touch-action:none は「この中では、ブラウザに指の動きを渡さない」指定です。
+        付けないと、横に動かした指がブラウザの「戻る」などの操作に取られてしまいます。
+        */
+        .sync-lock-slide{
+            position:relative;
+
+            display:flex;
+            align-items:center;
+            justify-content:center;
+
+            height:52px;
+            border-radius:26px;
+
+            background:rgba(var(--theme-rgb),0.14);
+            border:2px solid rgba(var(--theme-rgb),0.6);
+
+            touch-action:none;
+        }
+
+        .sync-lock-slide-text{
+            padding-left:44px;
+            font-size:0.92rem;
+            font-weight:bold;
+            color:var(--theme-color);
+            opacity:0.9;
+
+            /* 文字の上を指が通っても、つまみの動きを邪魔しないように */
+            pointer-events:none;
+        }
+
+        .sync-lock-slide-thumb{
+            position:absolute;
+            left:4px;
+            top:4px;
+
+            width:44px;
+            height:44px;
+            border-radius:50%;
+
+            display:flex;
+            align-items:center;
+            justify-content:center;
+
+            background:var(--theme-color);
+            color:#ffffff;
+            font-size:1.1rem;
+            font-weight:bold;
+
+            box-shadow:0 2px 8px rgba(0,0,0,0.45);
+
+            cursor:grab;
+            touch-action:none;
+        }
+
+        /* 終えるスライドは、押し間違えないよう少し落ち着いた色(夕暮れの紫)にします */
+        .sync-lock-slide-end{
+            background:rgba(150,110,190,0.14);
+            border-color:rgba(150,110,190,0.7);
+        }
+
+        .sync-lock-slide-end .sync-lock-slide-text{
+            color:#c9b3e6;
+        }
+
+        .sync-lock-slide-end .sync-lock-slide-thumb{
+            background:#8e6bb8;
+        }
+
+        /* ---- カチッの前の確認と、終わりの面(真ん中に出すカード)---- */
+        #sync-lock-confirm,
+        #sync-lock-finish{
+            position:absolute;
+            left:16px;
+            right:16px;
+            top:50%;
+            transform:translateY(-50%);
+
+            display:flex;
+            flex-direction:column;
+            align-items:stretch;
+            gap:10px;
+
+            padding:20px 16px;
+
+            background:linear-gradient(180deg,#1d1622 0%,#120e16 100%);
+            border:2px solid var(--theme-color);
+            border-radius:18px;
+
+            text-align:center;
+        }
+
+        .sync-lock-card-icon{
+            margin:0;
+            font-size:2rem;
+            line-height:1.2;
+        }
+
+        .sync-lock-card-title{
+            margin:0;
+            font-size:1.05rem;
+            font-weight:bold;
+            line-height:1.5;
+        }
+
+        .sync-lock-card-message{
+            margin:0;
+            font-size:0.9rem;
+            line-height:1.6;
+            opacity:0.85;
+        }
+
+        #sync-lock-finish-time{
+            margin:0;
+
+            font-family:"Menlo","Consolas",monospace;
+            font-size:clamp(2.4rem,12vw,3.6rem);
+            font-weight:bold;
+            font-variant-numeric:tabular-nums;
+
+            color:var(--theme-color);
+        }
+
     </style>
 
     <!--
@@ -8527,6 +8836,82 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
 </div>
 
 <!--
+    同期モードの薄暗いロック画面(段④。v248。js/sync-lock.js)。
+
+    同期スタートした瞬間に出て、音量以外の操作をロックします(音量はスマホ本体のボタン)。
+    どこかを触ると確認(#sync-lock-sheet)が下から出ます。
+
+    ⚠️ #app より後ろに置きます(暁色を「#app.norirun-mode ~ #sync-lock」で受け取るため。
+       ジャケ写の特大表示と同じ)。
+    ⚠️ 中身の出し分けは js/sync-lock.js の showSyncLockView() / refreshSyncLock() が行います。
+-->
+<div id="sync-lock" style="display:none;" role="dialog" aria-modal="true" aria-label="みんなで走る同期モードのロック画面">
+
+    <!-- 薄暗い画面:走行タイマー(1拍目からの経過時間。js/run-timer.js) -->
+    <div id="sync-lock-face">
+        <p class="sync-lock-label">🏃 走行タイマー</p>
+        <p id="sync-lock-timer">0:00:00</p>
+        <p id="sync-lock-state">▶ 走っています</p>
+        <p class="sync-lock-hint">
+            🔒 みんなで走る同期モード<br>
+            画面に触れるとメニュー<br>
+            音量はスマホのボタンで変えられます
+        </p>
+    </div>
+
+    <!-- 触った時の確認(画面の下から出る) -->
+    <div id="sync-lock-sheet" style="display:none;">
+
+        <p class="sync-lock-sheet-title">
+            みんなで走る同期モードの<br>
+            ロックを解除しますか?
+        </p>
+
+        <div class="sync-lock-row">
+            <button type="button" id="sync-lock-unlock" class="sync-lock-btn">ロック解除</button>
+            <button type="button" id="sync-lock-keep" class="sync-lock-btn sync-lock-btn-primary">解除しない</button>
+        </div>
+
+        <!-- 止めている時だけ出します(js/sync-lock.js の refreshSyncLock) -->
+        <div class="sync-lock-slide" id="sync-lock-resume" style="display:none;">
+            <span class="sync-lock-slide-text">スライドで再開</span>
+            <div class="sync-lock-slide-thumb">▶</div>
+        </div>
+
+        <!-- リードランナーのスマホだけに出します -->
+        <button type="button" id="sync-lock-lead" class="sync-lock-btn sync-lock-btn-wide" style="display:none;">🔊 カチッを鳴らす</button>
+
+        <div class="sync-lock-slide sync-lock-slide-end" id="sync-lock-end">
+            <span class="sync-lock-slide-text">スライドで同期モードを終える</span>
+            <div class="sync-lock-slide-thumb">■</div>
+        </div>
+
+    </div>
+
+    <!-- リードの「カチッを鳴らす」の前の確認 -->
+    <div id="sync-lock-confirm" style="display:none;">
+        <p class="sync-lock-card-icon">🔊</p>
+        <p class="sync-lock-card-title">Bluetoothイヤホンを<br>切りましたか?</p>
+        <p class="sync-lock-card-message" id="sync-lock-confirm-message"></p>
+        <div class="sync-lock-row">
+            <button type="button" id="sync-lock-confirm-ok" class="sync-lock-btn sync-lock-btn-primary">鳴らす</button>
+            <button type="button" id="sync-lock-confirm-cancel" class="sync-lock-btn">まだ</button>
+        </div>
+    </div>
+
+    <!-- 同期モードを終えた後 -->
+    <div id="sync-lock-finish" style="display:none;">
+        <p class="sync-lock-card-icon">🏁</p>
+        <p class="sync-lock-card-title">おつかれさまでした</p>
+        <p class="sync-lock-card-message">🏃 走行タイマー</p>
+        <p id="sync-lock-finish-time">0:00:00</p>
+        <p class="sync-lock-card-message" id="sync-lock-finish-note"></p>
+        <button type="button" id="sync-lock-finish-close" class="sync-lock-btn sync-lock-btn-primary">閉じる</button>
+    </div>
+
+</div>
+
+<!--
     設定 ⚙️ →「みんなで走る同期モード」で開く画面(v221。js/sync.js)。
 
     一緒に走る人と同じマイピッチを設定し、同じ時刻に曲をスタートする
@@ -8544,7 +8929,7 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
        どの段を見せるかは js/sync.js の refreshSyncPanel() が決めます。
 
     ⚠️ v221(段①)で ①、v222(段②)で ②、v224(段③)で ③ を作りました。
-       ④ 薄暗いロック画面は段④で作ります。
+       ④ 薄暗いロック画面は段④(v248)で、上の #sync-lock として作りました(js/sync-lock.js)。
 -->
 <div id="sync-panel" style="display:none;">
 
@@ -9775,6 +10160,11 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
 -->
 <script src="js/keep-awake.js"></script>
 <!--
+    走行タイマー(v248。1拍目からの経過時間)。同期モード専用にしない作りです。
+    読み込んだその場で bindDeckEvent(js/deck.js)を使うので、deck.js より後に置きます。
+-->
+<script src="js/run-timer.js"></script>
+<!--
     みんなで走る同期モード(v221)。
 
     ⚠️ js/norirun.js より後に読み込むこと。読み込んだその場で
@@ -9783,6 +10173,12 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
     押された時に呼ぶだけなので、順番には関係ありません。
 -->
 <script src="js/sync.js"></script>
+<!--
+    同期モードの薄暗いロック画面(段④。v248)。
+    ⚠️ js/sync.js と js/run-timer.js より後に置きます。sync.js の変数(syncState など)は
+       ボタンが押された時に使うだけですが、念のため後ろにしています。
+-->
+<script src="js/sync-lock.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>
