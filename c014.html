@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v240)ノリRun
+        (v241)ノリRun
         メインメニュー
 
     </title>
@@ -1221,51 +1221,6 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             text-align:center;
             color:var(--text-sub);
             font-size:0.85rem;
-        }
-
-        /*
-        【v239】同期モードで「音だけ消す」間の知らせ(js/sync.js の 5-5)。
-
-        副題(「メインメニュー」の行)の場所に出します。ふだんは隠しておき、
-        #upper-area に sync-muted という印(クラス)が付いた時だけ、副題と
-        入れ替えて見せます。JSは印を付け外しするだけです。
-        (副題の文字は js/norirun.js が書き換えるので、そちらには触りません)
-
-        色は var(--theme-color) なので、🕺ノリノリRunの間は暁色になります。
-        タップすると音を戻します(イヤホンが手元に無い時のため)。
-
-        中の2つの span に white-space:nowrap を付けているのは、狭い画面で
-        折り返す時に「🔇 音を消しています」「(曲は進んでいます)」の
-        区切りで折り返させるためです(日本語は放っておくと文字の途中で切れる)。
-        */
-        #sync-mute-badge{
-            display:none;
-            align-self:center;
-            margin:0;
-            padding:1px 10px;
-            border:1px solid var(--theme-color);
-            border-radius:999px;
-            background:transparent;
-            color:var(--theme-color);
-            font:inherit;
-            font-size:0.8rem;
-            line-height:1.4;
-            flex-wrap:wrap;
-            justify-content:center;
-            column-gap:4px;
-            cursor:pointer;
-        }
-
-        #sync-mute-badge > span{
-            white-space:nowrap;
-        }
-
-        #upper-area.sync-muted .sub-title{
-            display:none;
-        }
-
-        #upper-area.sync-muted #sync-mute-badge{
-            display:inline-flex;
         }
 
         /* ======================================================
@@ -7278,13 +7233,6 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             </div>
 
             <p class="sub-title">メインメニュー</p>
-
-            <!--
-                【v239】同期モードで「音だけ消す」間だけ、副題の代わりに出る知らせ。
-                出し入れは js/sync.js(5-5)が #upper-area の印で行い、見た目は CSS の
-                #sync-mute-badge。タップすると音を戻します。
-            -->
-            <button type="button" id="sync-mute-badge"><span>🔇 音を消しています</span><span>(曲は進んでいます)</span></button>
         </div>
 
         <!-- ===== エリア3〜4：再生中の曲情報 ===== -->
