@@ -368,7 +368,13 @@ setInterval(function(){
         " / 裏デッキ" + getDebugDeckName(idleDeck) +
         " currentTime=" + idleDeck.currentTime.toFixed(2) +
         " paused=" + idleDeck.paused +
-        " 音程維持=" + getDebugPitchState(idleDeck)
+        " 音程維持=" + getDebugPitchState(idleDeck) +
+        /*
+        v247:寝ずの番(レイヤー5。js/keep-awake.js)の様子も後ろに足します
+        (止めている間に、聞こえない曲が本当に進んでいるか・音の出口が起きているかを
+        見るため)。js/keep-awake.js が無い時は何も足しません。
+        */
+        (typeof describeKeepAwakeForLog === "function" ? " / " + describeKeepAwakeForLog() : "")
     );
 
 },10000);

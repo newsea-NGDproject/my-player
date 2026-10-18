@@ -366,7 +366,19 @@ function logMediaSessionAction(label){
     let mark = "";
 
     if(label === "⏸" && mainPaused && idlePaused){
-        mark = " ★止まっている時の ⏸(このままでは何も起きません)";
+
+        /*
+        v247:寝ずの番(レイヤー5。js/keep-awake.js)が聞こえない曲を鳴らしている間は、
+        Chrome から見て再生中なので ⏸ が届くのが正しい動きで、寝ずの番が「再開して」
+        として引き受けます。★(食い違いの印)は付けず、そう書きます。
+        */
+        if(typeof isKeepAwakeSounding === "function" && isKeepAwakeSounding()){
+            mark = " (寝ずの番が起こしている間の ⏸ → 再開の合図として扱います)";
+        }
+        else{
+            mark = " ★止まっている時の ⏸(このままでは何も起きません)";
+        }
+
     }
     else if(label === "▶" && !mainPaused){
         mark = " ★鳴っている時の ▶";
