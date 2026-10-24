@@ -133,12 +133,15 @@
  寝ずの番に起きていてほしい係は、名前の付いた**札**を掛けます。
  寝ずの番は、札が1枚でも掛かっていれば起き、全部外れたら休みます。
 
-     hangKeepAwakeTag(名前, ⏸が届いた時に呼ぶ関数)
+     hangKeepAwakeTag(名前, ⏸が届いた時に呼ぶ関数, すぐ起こすか)
      removeKeepAwakeTag(名前, 理由)
 
- いまの札は1枚だけです。
+ いまの札は2枚です。
 
-     「同期の一時停止」… js/sync.js の 5-5(同期スタート後に止めた時)
+     「同期の一時停止」  … js/sync.js の 5-5(同期スタート後に止めた時)
+     「同期スタートの待ち」… js/sync.js の時刻ボタン(v249。押してから曲が本当に鳴り始めるまで。
+                            ⏸ の受け手は無し・すぐ起こす。理由は js/sync.js の
+                            SYNC_START_KEEP_AWAKE_TAG のコメント)
 
  「起こすかどうか」はこのファイルの refreshKeepAwake() の1か所で決めます。
 
@@ -307,15 +310,28 @@ let keepAwakeGaveUp = false;
  * 「起こしておいて」の札を掛けます。同じ名前の札がもう掛かっていれば、
  * 中身(⏸ が届いた時に呼ぶ関数)だけ置き換えます。
  *
+ * 【v249】startNow
+ *
+ * ふつうは KEEP_AWAKE_START_DELAY_MS(1.5秒)待ってから起こします(竹弘が止めた
+ * 直後に、Chrome とイヤホンへ「止まった」をはっきり伝えるため。冒頭の
+ * 【「止まった」と「再生中」の間を空ける理由】)。
+ *
+ * true を渡すと、待たずに**この場で**起こします。曲がもうしばらく前から止まって
+ * いて「止まった」は伝わり済みの時に、人の操作の中で(ボタンを押した瞬間に)
+ * 聞こえない曲を鳴らし始めたい時に使います。人の操作の中なら、その後すぐ
+ * 画面を消されても play() が断られません(同期モードの時刻ボタン。js/sync.js の
+ * SYNC_START_KEEP_AWAKE_TAG のコメント)。
+ *
  * @param {string}        name       - 札の名前(🐛パネルにも出す)
  * @param {Function|null} onPauseKey - 起こしている間にイヤホン・通知の ⏸ が届いた時に
  *                                     呼ぶ関数(「再開して」の合図)。無ければ null
+ * @param {boolean}       [startNow] - 【v249】true = 1.5秒待たずに、すぐ起こす(省くと待つ)
  */
-function hangKeepAwakeTag(name,onPauseKey){
+function hangKeepAwakeTag(name,onPauseKey,startNow){
 
     keepAwakeTags.set(name,{ onPauseKey:onPauseKey || null, hungAtMs:performance.now() });
 
-    refreshKeepAwake("札「" + name + "」を掛けた");
+    refreshKeepAwake("札「" + name + "」を掛けた",startNow === true);
 
 }
 
@@ -462,10 +478,12 @@ function handleKeepAwakePauseKey(){
  *
  * 起こす時は、すぐには起こさず KEEP_AWAKE_START_DELAY_MS 待ちます
  * (冒頭の【「止まった」と「再生中」の間を空ける理由】)。
+ * 【v249】startNow が true の時だけ、待たずにこの場で起こします(hangKeepAwakeTag のコメント)。
  *
- * @param {string} why - きっかけ(休む時に🐛パネルへ出す)
+ * @param {string}  why        - きっかけ(休む時に🐛パネルへ出す)
+ * @param {boolean} [startNow] - 【v249】true = 待たずに、すぐ起こす
  */
-function refreshKeepAwake(why){
+function refreshKeepAwake(why,startNow){
 
     const wanted = keepAwakeTags.size > 0 && !keepAwakeHandingOff && !keepAwakeGaveUp;
 
@@ -479,8 +497,26 @@ function refreshKeepAwake(why){
 
     }
 
-    // もう起こしている・起こしている途中・起こす予約がある時は、そのままにします
-    if(keepAwakeSounding || keepAwakeStarting || keepAwakeStartTimerId){ return; }
+    // もう起こしている・起こしている途中の時は、そのままにします
+    if(keepAwakeSounding || keepAwakeStarting){ return; }
+
+    /*
+    【v249】すぐ起こす頼みなら、待っている予約があっても取り消して、この場で起こします。
+    ⚠️ 竹弘の曲が鳴っている時は、startKeepAwakeSound() が自分で断ります
+       (isKeepAwakeStillWanted。今までどおり)。
+    */
+    if(startNow === true){
+
+        clearKeepAwakeTimer("start");
+
+        startKeepAwakeSound();
+
+        return;
+
+    }
+
+    // 起こす予約がもうある時は、そのままにします
+    if(keepAwakeStartTimerId){ return; }
 
     keepAwakeStartTimerId = setTimeout(function(){
 

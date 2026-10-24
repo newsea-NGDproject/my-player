@@ -614,6 +614,38 @@ v229までは3秒でした。v230から、この間に「鳴り出しの遅れ�
 const SYNC_WARMUP_SEC = 6;
 
 /*
+【v249】時刻ボタンを押してから曲が本当に鳴り始めるまで、寝ずの番(レイヤー5。
+js/keep-awake.js)に掛けておく札の名前と、スタートの後に「本当に鳴ったか」を
+確かめるまでの時間(ms)。
+
+竹弘の実機(2026-10-24):時刻ボタンを押してカウントダウンが始まったところで、
+電源ボタンを押して画面を消すと、曲が鳴らないことがあった(ロック画面の
+走行タイマーが 0:00:00 のまま止まっていた)。規則性はつかめなかった。
+
+    のりの解析:カウントダウンの間、曲は止まっていて無音です(同期モードの
+    画面の −80dB の信号も、画面が消えた時に電池のため止める。v232)。
+    開始の6秒前(syncWarmup)に、アプリが曲を音量0で鳴らし始めますが、
+    **画面が消えた無音のページが自分で呼ぶ play() は、Android の Chrome に
+    断られることがある**(v144 の教訓と同じ。js/player.js の loop 属性のコメント)。
+    開始の瞬間の play()(syncFire の保険)も同じく断られ、それでもスタートの
+    片付け(finishSyncStart)は進むので、ロック画面が出て、タイマーは曲が鳴るのを
+    待ったまま 0:00:00 で止まる。
+    電源ボタンを押したのが開始の6秒前より後なら、もう鳴っているので無事。
+    だから規則性が見えにくかった。
+
+→ 時刻ボタンを押した瞬間から寝ずの番を起こし、聞こえない曲で「鳴っている
+  ページ」のままにします(holdSyncStartKeepAwake)。画面を消しても play() が断られず、
+  タイマーの間引き(1秒単位にまとめられる。v247 の XPERIA)も起きません。
+  札を外すのは、スタートの SYNC_START_CHECK_MS 後に確かめた時
+  (checkSyncStartedPlaying)と、やめた時(cancelSyncCountdown)です。
+
+⚠️ それでも鳴らなかった時の保険も checkSyncStartedPlaying にあります
+   (「止めています」の姿にして、再開したらみんなの拍に合わせ直す)。
+*/
+const SYNC_START_KEEP_AWAKE_TAG = "同期スタートの待ち";
+const SYNC_START_CHECK_MS = 1500;
+
+/*
 狙いの位置へ動かす命令(頭出し)を、何ms早く出すか。
 
 ⚠️ v230から、これは「試し頭出しで測れなかった時の予備の値」です。
@@ -1126,6 +1158,12 @@ let syncKeepAwakeNode = null;
 
 // スタートした後に信号を止める予約(setTimeout の受付番号)。予約していない時は0
 let syncKeepAwakeStopTimerId = 0;
+
+/*
+【v249】スタートの後に「曲が本当に鳴ったか」を確かめる予約(setTimeout の受付番号)。
+予約していない時は0。checkSyncStartedPlaying() のコメント。
+*/
+let syncStartCheckTimerId = 0;
 
 /*
 同期モードの画面を「開いている途中」か(v240。v241 で使い道を変えた)。
@@ -5135,6 +5173,24 @@ async function scheduleSyncStart(targetWallMs){
     */
     startSyncKeepAwake();
 
+    /*
+    【v249】寝ずの番(レイヤー5)を、いま(人の操作の中で)すぐ起こします。
+    曲が鳴り始めるまでの間に画面を消されても、play() が断られないようにするためです
+    (定数 SYNC_START_KEEP_AWAKE_TAG のコメント)。
+
+    前のスタートの「鳴ったか確かめる」予約が残っていたら取り消します
+    (札は同じ名前なので、このカウントダウンが引き継ぐ)。
+    */
+    if(syncStartCheckTimerId){
+
+        clearTimeout(syncStartCheckTimerId);
+
+        syncStartCheckTimerId = 0;
+
+    }
+
+    holdSyncStartKeepAwake();
+
     // ---- ① 🕺ノリノリRun再生に入り、みんなのピッチにします ----
 
     if(!isNoriRunMode){
@@ -5178,6 +5234,14 @@ async function scheduleSyncStart(targetWallMs){
         return;
 
     }
+
+    /*
+    【v249】曲を載せる時(一覧のトップの曲から)は、playTrack() を消音で借りて
+    一瞬鳴らします(prepareSyncPlan)。寝ずの番は「竹弘の曲が鳴っている」と見て
+    起こすのをやめていることがあるので、曲を止め直した今、もう一度頼みます
+    (もう起きていれば何もしない)。
+    */
+    holdSyncStartKeepAwake();
 
     // ---- ③ いつ動くかを決めます ----
 
@@ -6292,6 +6356,15 @@ function finishSyncStart(){
     */
     if(typeof showSyncLock === "function"){ showSyncLock(firstBeatPerfMs); }
 
+    /*
+    【v249】少し待ってから、曲が本当に鳴っているかを確かめます(checkSyncStartedPlaying)。
+    寝ずの番の札「同期スタートの待ち」は、そこで外します(ここではまだ外さない)。
+    ⚠️ syncStartTimerIds には入れません(上で取り消し済みの、カウントダウンの予約の入れ物のため)。
+    */
+    if(syncStartCheckTimerId){ clearTimeout(syncStartCheckTimerId); }
+
+    syncStartCheckTimerId = setTimeout(checkSyncStartedPlaying,SYNC_START_CHECK_MS);
+
 }
 
 /**
@@ -6449,6 +6522,9 @@ function cancelSyncCountdown(notice){
 
     releaseSyncWakeLock();
 
+    // 【v249】寝ずの番の札「同期スタートの待ち」も外します(曲を止めた後に)
+    releaseSyncStartKeepAwake("カウントダウンを取りやめた");
+
     syncState.startNotice = notice || "";
 
     refreshSyncStartStep();
@@ -6540,6 +6616,99 @@ function releaseSyncWakeLock(){
     syncWakeLock = null;
 
     lock.release().catch(function(){ /* すでに外れていても構いません */ });
+
+}
+
+/**
+ * 寝ずの番(レイヤー5。js/keep-awake.js)に札「同期スタートの待ち」を掛けて、
+ * すぐ起こしてもらいます(v249)。
+ *
+ * 時刻ボタンを押した時(人の操作の中)と、曲を用意し終えた時に呼びます。
+ * 理由は定数 SYNC_START_KEEP_AWAKE_TAG のコメント(画面を消されても、開始の
+ * 6秒前の play() が断られないように)。何度呼んでも札は1枚です。
+ *
+ * ⏸ の受け手は付けません(2つ目の null)。カウントダウンの間にイヤホンの ⏸ が
+ * 届いた時は、今までどおりの ⏸ として扱われます(js/media-session.js)。
+ * 曲がまだ止まっている間なら何も起きず、先に鳴らし始めた後なら曲が止まり、
+ * 開始の瞬間に syncFire() の保険が鳴らし直します。
+ *
+ * 3つ目の true は「1.5秒待たずに、すぐ起こして」の頼みです(js/keep-awake.js の
+ * hangKeepAwakeTag)。ボタンを押してすぐ電源ボタンを押されても間に合うように、
+ * 人の操作の中で聞こえない曲を鳴らし始めます。
+ *
+ * ⚠️ typeof で確かめるのは、js/keep-awake.js が無い時(読み込めなかった時・将来
+ *    外した時)にも、スタートそのものは止めないためです(releaseSyncKeepAwake と同じ)。
+ */
+function holdSyncStartKeepAwake(){
+
+    if(typeof hangKeepAwakeTag !== "function"){ return; }
+
+    hangKeepAwakeTag(SYNC_START_KEEP_AWAKE_TAG,null,true);
+
+}
+
+/**
+ * 札「同期スタートの待ち」を外します(v249)。掛かっていなければ何もしません。
+ *
+ * @param {string} why - 外す理由(🐛パネルに出す)
+ */
+function releaseSyncStartKeepAwake(why){
+
+    if(typeof removeKeepAwakeTag !== "function"){ return; }
+
+    removeKeepAwakeTag(SYNC_START_KEEP_AWAKE_TAG,why);
+
+}
+
+/**
+ * スタートの SYNC_START_CHECK_MS 後に、曲が本当に鳴っているかを確かめます(v249)。
+ * finishSyncStart() が予約します。
+ *
+ *     鳴っている             … 札「同期スタートの待ち」を外すだけ
+ *     止まっていて
+ *       再開の約束がある     … 鳴った後に止められた(5-5 が約束を作った)。札を外すだけ
+ *       再開の約束が無い     … ★スタートの play() が断られた(定数 SYNC_START_KEEP_AWAKE_TAG の
+ *                              コメント)。ここで約束を作る(handleSyncPause)
+ *
+ * 【なぜ約束を作るのか】
+ *
+ * play() が断られた時は、曲が一度も鳴っていないので 'pause' の知らせが来ず、
+ * 5-5 の「再開したら、みんなの拍に合わせ直す」約束ができません。そのまま
+ * イヤホンの ▶ やロック画面のスライドで再開すると、**合わせ直さずに鳴り、
+ * この人だけみんなの拍から外れます。** 約束を作れば、止めて再開した時と
+ * 同じ道を通ります:
+ *
+ *     ・ロック画面は「⏸ 止めています(再開すると、みんなの拍に合わせ直します)」
+ *     ・寝ずの番に札「同期の一時停止」が掛かり、イヤホン1回で再開できる(v245〜v247)
+ *     ・再開したら、みんなの拍に合わせ直して鳴る(v241・v242)
+ *
+ * ⚠️ 札「同期スタートの待ち」は、約束を作った**後**に外します。先に外すと、
+ *    寝ずの番が一度休んでから起き直す(1.5秒の待ち)ことになり、その間に
+ *    また「画面が消えた無音のページ」になってしまうためです。
+ */
+function checkSyncStartedPlaying(){
+
+    syncStartCheckTimerId = 0;
+
+    /*
+    同期モードを終えた・画面を開き直した(syncState.running が false)・次の
+    カウントダウンが始まった時は、約束は作らず、札だけ外します
+    (次のカウントダウンは、自分で同じ札を掛け直しています)。
+    */
+    if(isSyncResumeWanted() && audioPlayer.paused && !isConnectSilence() && !syncResume && !syncCountdown){
+
+        console.warn(
+            "同期モード : スタートの瞬間に曲が鳴りませんでした(画面が消えていて play() が断られた可能性)。" +
+            "止めている扱いにします → イヤホンかロック画面のスライドで再開すると、みんなの拍に合わせ直します"
+        );
+
+        handleSyncPause();
+
+    }
+
+    if(syncCountdown){ return; }
+
+    releaseSyncStartKeepAwake(audioPlayer.paused ? "スタート後に曲が止まっていた" : "曲が鳴り始めた");
 
 }
 
