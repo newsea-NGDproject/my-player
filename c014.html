@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v248)ノリRun
+        (v249)ノリRun
         メインメニュー
 
     </title>
@@ -7129,9 +7129,12 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             user-select:none;
             -webkit-user-select:none;
             touch-action:manipulation;
+
+            /* 幕の濃さの切り替えも、メニューの動き(0.28秒)と揃えて滑らかにします(v249) */
+            transition:background 0.28s ease;
         }
 
-        /* 確認などを出している間は、幕を少し濃くして後ろを目立たなくします */
+        /* メニューなどを出している間は、幕を少し濃くして後ろを目立たなくします */
         #sync-lock.sync-lock-dim-more{
             background:rgba(8,6,12,0.86);
         }
@@ -7199,7 +7202,26 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             opacity:0.6;
         }
 
-        /* ---- 触った時の確認(画面の下から出す)---- */
+        /*
+        ---- 触った時のメニュー(画面の下から「ニョキッ」と上がってくる。v249)----
+
+        竹弘の指定(2026-10-24):「ウサギアイコン『検索』ボタンを押した時のように、
+        ニョキッと滑らかにメニューが下から上がってくる感じ」。
+        → 検索モード(#upper-area の transition)と同じ 0.28秒・ease にしています。
+
+        【隠し方】display:none は使いません(動きの途中が無くなり「パッ」と出るため)。
+
+            閉じている … transform:translateY(100%)(自分の高さぶん下 = 画面の外)+ visibility:hidden
+            開いている … transform:translateY(0) + visibility:visible(.sync-lock-sheet-open)
+
+        visibility:hidden の間は、見えないだけでなく指のタッチも受け付けません
+        (隠れたメニューのボタンを、ポケットの中で押してしまわないため)。
+
+        ⚠️ 閉じる時は、visibility を「0.28秒待ってから」hidden にします
+           (transition の visibility 0s linear 0.28s = 「0秒かけて、0.28秒後に」)。
+           すぐ hidden にすると、下がっていく途中が見えずに消えてしまいます。
+           開く時は待たずに visible にします(下の .sync-lock-sheet-open)。
+        */
         #sync-lock-sheet{
             position:absolute;
             left:0;
@@ -7217,24 +7239,123 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             border-radius:18px 18px 0 0;
 
             box-shadow:0 -10px 30px rgba(0,0,0,0.5);
+
+            transform:translateY(100%);
+            visibility:hidden;
+            transition:transform 0.28s ease, visibility 0s linear 0.28s;
         }
 
-        .sync-lock-sheet-title{
-            margin:0 0 4px;
-            text-align:center;
-            font-size:1rem;
-            font-weight:bold;
-            line-height:1.5;
+        #sync-lock-sheet.sync-lock-sheet-open{
+            transform:translateY(0);
+            visibility:visible;
+            transition:transform 0.28s ease, visibility 0s;
         }
 
         /*
-        ボタンを2つ横に並べる段。grid で2列を「同じ幅」にしています
-        (flex:1 だと文字の長さで幅がずれることがあるため。竹弘の好み:縦のラインを揃える)。
+        ---- (2) ノリノリアシストの4つのボタン(v249)----
+
+        竹弘の指定:「offの絵文字・カチッ・ピッ・セット1 の4つを横並びに正方形ボタンで
+        1列。サイズはジャケ写で使ったサイズくらい。設定中の内容がボタンでわかるように」。
+
+        ・正方形の一辺は --sync-lock-assist-size(56px)。ジャケのボタン(上限48px)より
+          少し大きくし、すぐ上下のスライドの見た目の高さ(52px + 枠線2px×2 = 56px)と
+          揃えています(走りながら汗の付いた指で押すため。竹弘の好み:線を揃える)
+        ・正方形は aspect-ratio:1/1 に決めさせます(ジャケのボタンと同じ。数字を1つにする)
+        ・並びは中央寄せ(justify-content:center)。左右反転(追加2)をしても崩れません
+          (ジャケのボタンと同じ考え方。竹弘「画面中央を芯に左右に均等に」)
+        ・押せる範囲は、正方形と下の名前を合わせた全体(<button> がまるごと包む)
         */
-        .sync-lock-row{
-            display:grid;
-            grid-template-columns:minmax(0,1fr) minmax(0,1fr);
-            gap:12px;
+        .sync-lock-assist-title{
+            margin:4px 0 0;
+            text-align:center;
+            font-size:0.85rem;
+            letter-spacing:0.06em;
+            opacity:0.8;
+        }
+
+        .sync-lock-assist-row{
+            --sync-lock-assist-size:56px;
+
+            display:flex;
+            justify-content:center;
+            gap:16px;
+        }
+
+        .sync-lock-assist{
+            display:flex;
+            flex-direction:column;
+            align-items:center;
+            gap:4px;
+
+            margin:0;
+            padding:0;
+            border:none;
+            background:transparent;
+            color:inherit;
+
+            cursor:pointer;
+        }
+
+        .sync-lock-assist-face{
+            box-sizing:border-box;
+            width:var(--sync-lock-assist-size);
+            aspect-ratio:1 / 1;
+
+            display:flex;
+            align-items:center;
+            justify-content:center;
+
+            border:2px solid rgba(var(--theme-rgb),0.55);
+            border-radius:10px;
+            background:rgba(255,255,255,0.06);
+
+            /* 絵文字の大きさは、正方形の一辺に対する割合(ジャケのボタンと同じ考え方) */
+            font-size:calc(var(--sync-lock-assist-size) * 0.5);
+            line-height:1;
+        }
+
+        .sync-lock-assist-name{
+            font-size:0.78rem;
+            line-height:1.2;
+            opacity:0.8;
+            white-space:nowrap;
+        }
+
+        /* いまの設定のボタン:暁色で塗りつぶして光らせ、名前も暁色の太字にします */
+        .sync-lock-assist.sync-lock-assist-on .sync-lock-assist-face{
+            background:var(--theme-color);
+            border-color:var(--theme-color);
+            box-shadow:0 0 14px rgba(var(--theme-rgb),0.6);
+        }
+
+        .sync-lock-assist.sync-lock-assist-on .sync-lock-assist-name{
+            color:var(--theme-color);
+            font-weight:bold;
+            opacity:1;
+        }
+
+        .sync-lock-assist:active .sync-lock-assist-face{
+            filter:brightness(0.85);
+        }
+
+        /*
+        押せないボタン(🎉 セット1。⑮ モリアゲアシストを作るまで)。
+        ⚠️ 消さずに薄くします(竹弘の流儀。ボタンの位置が変わらず、「今は押せない」と見て分かる)。
+           絵文字の色は CSS の color では変わらないので、filter:grayscale で色味を抜きます
+           (ジャケのボタンの押せない姿と同じ)。
+        */
+        .sync-lock-assist:disabled{
+            cursor:default;
+        }
+
+        .sync-lock-assist:disabled .sync-lock-assist-face{
+            border-color:rgba(255,255,255,0.2);
+            filter:grayscale(1);
+            opacity:0.4;
+        }
+
+        .sync-lock-assist:disabled .sync-lock-assist-name{
+            opacity:0.4;
         }
 
         .sync-lock-btn{
@@ -7263,11 +7384,6 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
 
         .sync-lock-btn:active{
             filter:brightness(0.85);
-        }
-
-        /* 横いっぱいのボタン(リードの「カチッを鳴らす」など) */
-        .sync-lock-btn-wide{
-            width:100%;
         }
 
         /*
@@ -7341,8 +7457,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             background:#8e6bb8;
         }
 
-        /* ---- カチッの前の確認と、終わりの面(真ん中に出すカード)---- */
-        #sync-lock-confirm,
+        /* ---- 終わりの面(真ん中に出すカード。v248 の「カチッの前の確認」は v249 で外した)---- */
         #sync-lock-finish{
             position:absolute;
             left:16px;
@@ -8839,7 +8954,7 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
     同期モードの薄暗いロック画面(段④。v248。js/sync-lock.js)。
 
     同期スタートした瞬間に出て、音量以外の操作をロックします(音量はスマホ本体のボタン)。
-    どこかを触ると確認(#sync-lock-sheet)が下から出ます。
+    どこかを触るとメニュー(#sync-lock-sheet)が下から出ます(v249 で中身を作り直し)。
 
     ⚠️ #app より後ろに置きます(暁色を「#app.norirun-mode ~ #sync-lock」で受け取るため。
        ジャケ写の特大表示と同じ)。
@@ -8859,44 +8974,62 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
         </p>
     </div>
 
-    <!-- 触った時の確認(画面の下から出る) -->
-    <div id="sync-lock-sheet" style="display:none;">
+    <!--
+        触った時のメニュー(画面の下から「ニョキッ」と上がってくる。v249 で作り直し)。
 
-        <p class="sync-lock-sheet-title">
-            みんなで走る同期モードの<br>
-            ロックを解除しますか?
-        </p>
+        ⚠️ display で出し入れしません。CSS の .sync-lock-sheet-open を付け外しして、
+           画面の下へずらして隠す ⇔ 上げて見せる、を 0.28秒で動かします
+           (js/sync-lock.js の showSyncLockView のコメント)。
+        ⚠️ 「ロック解除」「解除しない」とリードの「🔊 カチッを鳴らす」は v249 で外しました
+           (理由は js/sync-lock.js の冒頭)。
+    -->
+    <div id="sync-lock-sheet" aria-hidden="true">
 
-        <div class="sync-lock-row">
-            <button type="button" id="sync-lock-unlock" class="sync-lock-btn">ロック解除</button>
-            <button type="button" id="sync-lock-keep" class="sync-lock-btn sync-lock-btn-primary">解除しない</button>
+        <!-- (1) 一時停止 ⇔ 再開。文字と記号は js/sync-lock.js の refreshSyncLock がいまの状態で入れ替えます -->
+        <div class="sync-lock-slide" id="sync-lock-pause">
+            <span class="sync-lock-slide-text" id="sync-lock-pause-text">スライドで一時停止</span>
+            <div class="sync-lock-slide-thumb" id="sync-lock-pause-thumb">❚❚</div>
         </div>
 
-        <!-- 止めている時だけ出します(js/sync-lock.js の refreshSyncLock) -->
-        <div class="sync-lock-slide" id="sync-lock-resume" style="display:none;">
-            <span class="sync-lock-slide-text">スライドで再開</span>
-            <div class="sync-lock-slide-thumb">▶</div>
+        <!--
+            (2) ノリノリアシスト。⚙️ の「🏃 ノリノリアシスト」と同じ設定です(押すと保存される)。
+            いまの設定のボタンが光ります(.sync-lock-assist-on)。
+            🎉 セット1 は ⑮ モリアゲアシストを作る時に使えるようにします(今は押せない)。
+            ⚠️ data-sync-lock-assist の値は js/sync-lock.js の setSyncLockAssist が読みます。
+        -->
+        <p class="sync-lock-assist-title">🏃 ノリノリアシスト</p>
+
+        <div class="sync-lock-assist-row">
+
+            <button type="button" class="sync-lock-assist" data-sync-lock-assist="off" aria-pressed="false" title="鳴らさない">
+                <span class="sync-lock-assist-face">🔇</span>
+                <span class="sync-lock-assist-name">OFF</span>
+            </button>
+
+            <button type="button" class="sync-lock-assist" data-sync-lock-assist="click" aria-pressed="false" title="カチッで鳴らす">
+                <span class="sync-lock-assist-face">🥁</span>
+                <span class="sync-lock-assist-name">カチッ</span>
+            </button>
+
+            <button type="button" class="sync-lock-assist" data-sync-lock-assist="beep" aria-pressed="false" title="ピッで鳴らす">
+                <span class="sync-lock-assist-face">📻</span>
+                <span class="sync-lock-assist-name">ピッ</span>
+            </button>
+
+            <button type="button" class="sync-lock-assist" data-sync-lock-assist="set1" aria-pressed="false" disabled
+                    title="モリアゲアシストで使えるようになります">
+                <span class="sync-lock-assist-face">🎉</span>
+                <span class="sync-lock-assist-name">セット1</span>
+            </button>
+
         </div>
 
-        <!-- リードランナーのスマホだけに出します -->
-        <button type="button" id="sync-lock-lead" class="sync-lock-btn sync-lock-btn-wide" style="display:none;">🔊 カチッを鳴らす</button>
-
+        <!-- (3) 同期モードを終える -->
         <div class="sync-lock-slide sync-lock-slide-end" id="sync-lock-end">
             <span class="sync-lock-slide-text">スライドで同期モードを終える</span>
             <div class="sync-lock-slide-thumb">■</div>
         </div>
 
-    </div>
-
-    <!-- リードの「カチッを鳴らす」の前の確認 -->
-    <div id="sync-lock-confirm" style="display:none;">
-        <p class="sync-lock-card-icon">🔊</p>
-        <p class="sync-lock-card-title">Bluetoothイヤホンを<br>切りましたか?</p>
-        <p class="sync-lock-card-message" id="sync-lock-confirm-message"></p>
-        <div class="sync-lock-row">
-            <button type="button" id="sync-lock-confirm-ok" class="sync-lock-btn sync-lock-btn-primary">鳴らす</button>
-            <button type="button" id="sync-lock-confirm-cancel" class="sync-lock-btn">まだ</button>
-        </div>
     </div>
 
     <!-- 同期モードを終えた後 -->
