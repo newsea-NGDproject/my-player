@@ -2521,6 +2521,44 @@ async function confirmTapPhase(){
     */
     refreshRow(finishedTrackId);
 
+    /*
+    ---- 測った曲が今の曲なら、新しいBPMを当て直します(v253) ----
+
+    【v252までの穴】
+    保存した後に作り直していたのは、曲一覧のその行(🛌→🕺)だけでした。
+    上半分の「元ピッチ」の数字と、いま鳴っている曲の速さ(playbackRate)を
+    決める applyTrackTempo()(js/pitch.js)は、**曲を鳴らし始めた時にしか**
+    呼ばれません(js/upper-area.js の updatePitchDisplay)。そのため、
+    今かかっている曲を測ると、選び直すまで古いBPMのままでした
+    (竹弘の要望 2026-10-25「タップ補正後すぐに反映して欲しい」)。
+
+    ⚠️ 見た目だけの話ではありませんでした。🕺ノリノリRun再生では
+
+        曲の速さ       … 古いBPMで決めた倍率のまま(マイピッチ ÷ 古いBPM)
+        接続・アシスト … 新しいBPMで計算する
+                         (getTrackRate も getEffectiveBaseBpm も、保存した
+                          manualBPM をその場で読むため)
+
+    と食い違い、走るテンポもカチッも少しずつずれていきます。
+
+    【なぜ閉じた後で呼ぶのか】
+    閉じる前は #app が隠れていて、定規の大きさが測れないためです
+    (closeTapCorrection が refreshAppHeight を呼んでいるのと同じ理由)。
+    閉じる処理の中の play() は、音を出すのを予約するだけで、実際に
+    鳴り出すのはこの処理が終わった後です。同じ流れの中で当て直すので、
+    古い速さで鳴るとしても鳴り出しのごく一瞬だけです。
+
+    ⚠️ 測った曲が今の曲でない時は何もしません。その曲は次に鳴らす時に
+       updatePitchDisplay から新しいBPMが当たります。
+    ⚠️ applyTrackTempo はマイピッチを書き換えません(中で keepMyPitch を
+       立てて applyTempo を呼ぶため。v171)。走るテンポはそのままです。
+    */
+    if(finishedTrackId === currentTrackId){
+
+        applyTrackTempo(libraryMap[finishedTrackId]);
+
+    }
+
 }
 
 
