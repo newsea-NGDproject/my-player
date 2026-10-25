@@ -16,6 +16,7 @@
      → 真ん中へ
      ↓ 一番下へ
      🔍 検索モードへ(v140で追加。js/search.js が担当)
+     🎵 今の曲へ(右上。v255で追加。js/list-follow.js が担当)
 
 ----------------------------------------------------------------------
 
@@ -73,6 +74,8 @@
 
  ドラッグ中の行が指についてくる仕組み(js/drag-sort.js)と同じ
  やり方で、このアプリの中で実績のある手法です。
+
+ 経緯 → devlog/画面とその他.md(🎵 今の曲へ。v255)
 ======================================================================
 */
 
@@ -88,12 +91,18 @@
 
 項目を増やしたい時(例えば左に検索を足す時)は、この配列に
 1行足してHTMLにボタンを1つ置くだけで済みます。
+
+⚠️ v255で、初めて**斜め**の行き先(右上 = "upright")を足しました。
+   竹弘の指定(2026-10-25):「今の曲へのジャンプは、右上で。今の曲にあう
+   アイコンの絵文字で」→ 🎵。上(↑)と右(→)の両方から 48px 離れた角に
+   置くので、隣のボタンとの間は今までと同じ 8px 空きます(重なりません)。
 */
 const JUMP_DIRECTIONS = [
-    { action:"top",    dir:"up"    },
-    { action:"mid",    dir:"right" },
-    { action:"end",    dir:"down"  },
-    { action:"search", dir:"left"  }
+    { action:"top",    dir:"up"      },
+    { action:"mid",    dir:"right"   },
+    { action:"end",    dir:"down"    },
+    { action:"search", dir:"left"    },
+    { action:"now",    dir:"upright" }
 ];
 
 /*
@@ -171,6 +180,12 @@ function openJumpMenu(){
         if(item.dir === "down"){  offsetY =  JUMP_MENU_DISTANCE; }
         if(item.dir === "right"){ offsetX =  JUMP_MENU_DISTANCE; }
         if(item.dir === "left"){  offsetX = -JUMP_MENU_DISTANCE; }
+
+        // 右上(v255)は、右へも上へも同じだけずらします
+        if(item.dir === "upright"){
+            offsetX =  JUMP_MENU_DISTANCE;
+            offsetY = -JUMP_MENU_DISTANCE;
+        }
 
         /*
         ボタンの左上の座標を決めます。
@@ -294,7 +309,7 @@ function updateJumpSelection(clientX,clientY){
 /**
  * 指定された行き先へ、曲一覧をスクロールします。
  *
- * @param {string} action - "top" / "mid" / "end" / "search"
+ * @param {string} action - "top" / "mid" / "end" / "search" / "now"(v255)
  */
 function jumpTo(action){
 
@@ -312,6 +327,29 @@ function jumpTo(action){
         return;
 
     }
+
+    /*
+    「🎵 今の曲へ」(v255)も、中身は js/list-follow.js に任せます。
+    今の曲の行を上から2段目へ一気に動かします(一覧に無い時はお知らせだけ)。
+
+    ⚠️ typeof で確かめてから呼びます(あちらが読み込めなかった時に、
+       ほかの行き先まで動かなくならないように)。
+    */
+    if(action === "now"){
+
+        if(typeof jumpToPlayingRow === "function"){ jumpToPlayingRow(); }
+
+        return;
+
+    }
+
+    /*
+    ↑ → ↓ で飛んだ時も「竹弘が一覧を触った」に数えます(v255)。
+
+    曲が変わると一覧が今の曲へ付いていく(js/list-follow.js)ので、数えないと、
+    「一番上へ」で飛んで見ている最中に曲が変わった瞬間、今の曲へ連れ戻されます。
+    */
+    if(typeof noteListTouched === "function"){ noteListTouched(); }
 
     /*
     あと何pxスクロールできるかを求めます。

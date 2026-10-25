@@ -36,6 +36,8 @@
 
  逆に、このファイルの refreshRow() は metadata.js から呼ばれます。
  (解析が1曲終わるたびに、その行の表示を最新にするため)
+
+ 経緯 → devlog/画面とその他.md(曲一覧を今の曲へ。v255)・devlog/ジャケ写.md(getTrackCover)
 ======================================================================
 */
 
@@ -545,6 +547,19 @@ function markPlayingRow(trackId){
     });
 
     if(!trackId){ return; }
+
+    /*
+    曲が変わったので、一覧を今の曲の所へ動かす係を呼びます(v255)。
+
+    中身は js/list-follow.js です(一覧を10秒触っていなければ、今の曲を
+    上から2段目へ。もう見えていれば動かさない。接続で2曲が重なっている
+    間は、終わるまで待つ)。ここは「曲が変わる瞬間に必ず通る」場所なので、
+    手で選んだ時も、⏭ の時も、接続で入れ替わった時も、この1行で付いていきます。
+
+    ⚠️ typeof で確かめてから呼びます。あちらが読み込めなかった時にここで
+       エラーになると、下の色の付け替えまで止まってしまうためです。
+    */
+    if(typeof followPlayingRow === "function"){ followPlayingRow(trackId); }
 
     // 新しく鳴り始めた曲の行に付けます
     const rows = menuListEl.querySelectorAll(".music-row");
