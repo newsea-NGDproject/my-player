@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v255)ノリRun
+        (v256)ノリRun
         メインメニュー
 
     </title>
@@ -10278,10 +10278,10 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
 <script src="js/jump.js"></script>
 <script src="js/search.js"></script>
 <!--
-    曲一覧を「今の曲」へ動かす係(v255)。曲が変わった時・🐇の🎵・モードの切り替えで使う。
-    ⚠️ config.js(menuListEl)と HTML の #sort-menu より後ならどこでもよい
-       (ほかのファイルの関数は、関数の中からだけ使う)。js/list-view.js・js/jump.js・
-       js/norirun.js から呼ばれるが、どれも typeof で確かめてから呼ぶ
+    曲一覧を「今の曲」へ動かす係(v255)。🐇の🎵 と、モードの切り替えで使う
+    (v256 で「曲が変わった時に自動で付いていく」形は外した。竹弘「お節介機能に思えてきた」)。
+    ⚠️ config.js(menuListEl)より後ならどこでもよい(ほかのファイルの関数は、関数の中から
+       だけ使う)。js/jump.js・js/norirun.js から呼ばれるが、どちらも typeof で確かめてから呼ぶ
 -->
 <script src="js/list-follow.js"></script>
 <script src="js/norirun.js"></script>
