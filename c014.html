@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v254)ノリRun
+        (v255)ノリRun
         メインメニュー
 
     </title>
@@ -8457,6 +8457,9 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
      ↑ … 一番上へ(TOP)
      → … 真ん中へ(MID)
      ↓ … 一番下へ(END)
+     🔍 … 検索モードへ(左。v140)
+     🎵 … 今の曲へ(右上。v255、竹弘の指定「今の曲へのジャンプは、右上で。
+           今の曲にあうアイコンの絵文字で」。中身は js/list-follow.js)
 
  data-jump は js/jump.js がボタンを見分けるための目印です。
 ================================================================ -->
@@ -8466,6 +8469,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <button type="button" class="jump-option" data-jump="mid">→</button>
     <button type="button" class="jump-option" data-jump="end">↓</button>
     <button type="button" class="jump-option" data-jump="search">🔍</button>
+    <button type="button" class="jump-option" data-jump="now">🎵</button>
 
 </div>
 
@@ -10273,6 +10277,13 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
 <script src="js/drag-sort.js"></script>
 <script src="js/jump.js"></script>
 <script src="js/search.js"></script>
+<!--
+    曲一覧を「今の曲」へ動かす係(v255)。曲が変わった時・🐇の🎵・モードの切り替えで使う。
+    ⚠️ config.js(menuListEl)と HTML の #sort-menu より後ならどこでもよい
+       (ほかのファイルの関数は、関数の中からだけ使う)。js/list-view.js・js/jump.js・
+       js/norirun.js から呼ばれるが、どれも typeof で確かめてから呼ぶ
+-->
+<script src="js/list-follow.js"></script>
 <script src="js/norirun.js"></script>
 <script src="js/lamp.js"></script>
 <script src="js/metadata.js"></script>
