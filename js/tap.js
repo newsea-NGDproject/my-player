@@ -2396,6 +2396,34 @@ async function saveTapResult(){
         track.startTS = tapState.startTS;
         track.endTS = tapState.endTS;
 
+        /*
+        ---- メインメニューの再生ピッチ(userBPM)を消します(v254) ----
+
+        userBPM は「メインメニューでこの曲を何BPMで鳴らすか」を、竹弘が
+        定規で選んだ値です。再生の速さは userBPM ÷ 元ピッチ で決まります
+        (js/pitch.js の applyTrackTempo)。
+
+        【v253 の実機テストで分かった穴(竹弘 2026-10-25)】
+        前に 156.60 と測ってあった曲を 78.20 に測り直すと、userBPM は 157 の
+        ままだったので、157 ÷ 78.20 ≒ 2倍(上限)の速さで鳴り出しました。
+        元ピッチの物差しが変わったのに、古い物差しで決めた数字だけが残った
+        ためです(v252 までも、次にその曲を選んだ時に同じことが起きていた)。
+
+            竹弘:「変わった時の再生ピッチって意味がないから、これも新規で
+                   曲を読み込んだ時と同じ処理で、元ピッチに書き換えないと」
+
+        → 新しく読み込んだ曲と同じ「無し」(null。js/scanner.js の初期値)に
+          戻します。次に鳴らす時は元ピッチ(等速)からです。
+
+        ⚠️ 測り直しでBPMがほとんど変わらなかった時も消します(竹弘の言う
+           「新規で曲を読み込んだ時と同じ」。ノリ注入をやり直した曲は、
+           元ピッチから始まる、と覚えておけば迷わないため)。
+        ⚠️ 🕺ノリノリRun再生は userBPM を使わない(いつもマイピッチ)ので、
+           走る速さには影響しません。
+        */
+        const oldUserBpm = track.userBPM;
+        track.userBPM = null;
+
         await idbPut(STORE_MUSIC,track);
 
         console.log(
@@ -2404,7 +2432,8 @@ async function saveTapResult(){
             "/ BPM " + tapState.bpm.toFixed(2),
             "/ 1拍目 " + tapState.startTS.toFixed(3) + "s",
             "/ 13拍目 " + tapState.endTS.toFixed(3) + "s",
-            "/ 遅延 " + tapState.latencyMs + "ms"
+            "/ 遅延 " + tapState.latencyMs + "ms",
+            "/ 再生ピッチ " + (oldUserBpm ? oldUserBpm + " → 元ピッチに戻しました" : "無し(元ピッチのまま)")
         );
 
         return true;
@@ -2552,6 +2581,9 @@ async function confirmTapPhase(){
        updatePitchDisplay から新しいBPMが当たります。
     ⚠️ applyTrackTempo はマイピッチを書き換えません(中で keepMyPitch を
        立てて applyTempo を呼ぶため。v171)。走るテンポはそのままです。
+    ⚠️ (v254)メインメニューでは、saveTapResult が userBPM を消しているので、
+       ここで当て直すと元ピッチ(等速)で鳴ります。消さないと、古い元ピッチで
+       決めた再生ピッチのまま倍率だけ変わり、2倍で鳴ることがありました。
     */
     if(finishedTrackId === currentTrackId){
 
