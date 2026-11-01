@@ -50,6 +50,8 @@
  「曲一覧と同じものを使う」ためです。同じ関数を使っていれば、
  将来どちらかの表示を直した時に、片方だけ古いまま取り残される
  ことがありません。
+
+ ジャケットの経緯 → devlog/ジャケ写.md
 ================================================================
 */
 
@@ -153,8 +155,14 @@ function refreshNowPlayingJacket(track){
     /*
     どの画像を出すかは getTrackCover()(js/list-view.js)が決めます。
     差し替えがあればそちら、無ければ元のジャケットです。
+
+    ⚠️ ここでは getTrackCoverBig() を使います(v261)。どちらを出すかの判断は
+       getTrackCover のままで、その「大きい方の箱」をもらう関数です
+       (元のジャケット → 480点 / 自作 → 1080点まで)。
+       曲一覧と同じ getTrackCover() は160点の小さい箱を返すので、ここで使うと
+       引き伸ばしでぼやけます(v260 で竹弘「とても気になります」)。
     */
-    const cover = getTrackCover(track);
+    const cover = getTrackCoverBig(track);
 
     if(cover){
 

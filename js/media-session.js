@@ -42,6 +42,8 @@
  ブラウザも存在します。"mediaSession" in navigator で対応状況を
  確かめ、対応していなければ何もせず終わります(このアプリの他の
  機能には影響しません)。
+
+ 経緯 → devlog/イヤホン・一時停止・寝ずの番.md(ロック画面のジャケットは devlog/ジャケ写.md)
 ======================================================================
 */
 
@@ -93,41 +95,37 @@ function updateMediaSessionMetadata(track){
     ⚠️ **ロック画面もここに合わせます。** 曲一覧・上半分・特大表示だけ
        差し替わって、ロック画面だけ元の絵のまま…という食い違いが
        起きないように、4か所すべてが同じ関数を見る形にしています(v207)。
+
+    ⚠️ ここでは getTrackCoverBig() を使います(v261)。どちらを出すかの判断は
+       getTrackCover のままで、その「大きい方の箱」をもらう関数です
+       (元のジャケット → 480点 / 自作 → 1080点まで)。曲一覧と同じ160点の
+       小さい箱だと、ロック画面では引き伸ばしでぼやけます(v260 で竹弘
+       「とても気になります」)。
     */
-    const cover = getTrackCover(track);
+    const cover = getTrackCoverBig(track);
 
     if(cover){
 
         mediaSessionArtworkUrl = URL.createObjectURL(cover);
 
+        const artworkItem = {
+            src: mediaSessionArtworkUrl,
+            type: "image/jpeg"
+        };
+
         /*
-        cover_art は docs/db-schema.md の通り、一辺 COVER_ART_SIZE px の
-        正方形へ縮小済みのJPEGです。sizes にその実際の値を伝えます。
-
-        ⚠️ **数値を書き写さず、js/metadata.js の定数から組み立てます。**
-           v205まではここに "96x96" と直接書いてあり、v206で保存解像度を
-           96→480pxに上げた時に**ここだけ古い値が残ってロック画面に
-           嘘のサイズを伝える**ところでした(CLAUDE.mdの「同じ数値を
-           2か所に書かない」の実例)。定数を見に行く形なら、次に解像度を
-           変えてもここは自動で追従します。
-
         sizes は「この画像は何ドット四方か」をOSに伝えるものです。
         Androidのロック画面は複数の候補から適した大きさを選ぶ作りなので、
         ここが実物と食い違うと、選ばれなかったり粗く表示されたりします。
-
-        ⚠️ 読み込み順の補足:c014.html では js/metadata.js が
-           このファイルより**後ろ**に並んでいます。それでも大丈夫なのは、
-           この行が動くのは**曲が鳴り始めた時**で、その頃には全部の
-           <script> が読み終わっているからです(読み込んだ瞬間に
-           使うのであれば順番を気にする必要があります)。
+        大きさが分からない絵では、sizes を書きません(下の関数の説明)。
         */
-        const coverSizeText = COVER_ART_SIZE + "x" + COVER_ART_SIZE;
+        const coverSizeText = describeMediaSessionCoverSize(track,cover);
 
-        artwork.push({
-            src: mediaSessionArtworkUrl,
-            sizes: coverSizeText,
-            type: "image/jpeg"
-        });
+        if(coverSizeText !== ""){
+            artworkItem.sizes = coverSizeText;
+        }
+
+        artwork.push(artworkItem);
 
     }
 
@@ -141,6 +139,56 @@ function updateMediaSessionMetadata(track){
         artist: track.artist || "",
         artwork: artwork
     });
+
+}
+
+/**
+ * ロック画面に伝える絵の大きさ(sizes。"480x480" の形)を返します(v261)。
+ *
+ * DB の箱は、それぞれ決まった大きさの正方形に縮めて入れてあります
+ * (docs/db-schema.md・js/metadata.js の定数):
+ *
+ *     cover_art_mid                     … COVER_ART_MID_SIZE(480点)
+ *     cover_art・cover_art_custom        … COVER_ART_SIZE(160点)
+ *     cover_art_custom_big(自作の大きい箱)… 曲ごとに違う(1080点まで。元の写真が
+ *                                          小さい時は引き伸ばさないため)→ ""
+ *
+ * "" の時は sizes を書きません。sizes は省いてよい項目で、Chrome は大きさの
+ * 書いていない絵も、候補が1枚なら使います(届いた絵の本当の大きさで描く)。
+ * 嘘の大きさを書くより安全です。⚠️ 自作ジャケットの曲のロック画面に絵が出るかは、
+ * v261 の実機で確かめる(出なければ、大きい箱の本当の大きさを調べて書く形にする)。
+ *
+ * ⚠️ **数値を書き写さず、js/metadata.js の定数から組み立てます。**
+ *    v205まではここに "96x96" と直接書いてあり、v206で保存解像度を
+ *    96→480pxに上げた時に**ここだけ古い値が残ってロック画面に
+ *    嘘のサイズを伝える**ところでした(CLAUDE.mdの「同じ数値を
+ *    2か所に書かない」の実例)。定数を見に行く形なら、次に解像度を
+ *    変えてもここは自動で追従します。
+ *
+ * ⚠️ どの絵を出すかは決めません(それは getTrackCover / getTrackCoverBig)。
+ *    渡された絵がどの箱のものかを見て、大きさを答えるだけです。
+ *
+ * ⚠️ 読み込み順の補足:c014.html では js/metadata.js が
+ *    このファイルより**後ろ**に並んでいます。それでも大丈夫なのは、
+ *    この関数が動くのは**曲が鳴り始めた時**で、その頃には全部の
+ *    <script> が読み終わっているからです(読み込んだ瞬間に
+ *    使うのであれば順番を気にする必要があります)。
+ *
+ * @param  {Object} track … 1曲分のデータ
+ * @param  {Blob}   cover … getTrackCoverBig が返した絵
+ * @return {string} "480x480" の形。大きさが決まっていない絵は ""
+ */
+function describeMediaSessionCoverSize(track,cover){
+
+    if(cover === track.cover_art_mid){
+        return COVER_ART_MID_SIZE + "x" + COVER_ART_MID_SIZE;
+    }
+
+    if(cover === track.cover_art || cover === track.cover_art_custom){
+        return COVER_ART_SIZE + "x" + COVER_ART_SIZE;
+    }
+
+    return "";
 
 }
 

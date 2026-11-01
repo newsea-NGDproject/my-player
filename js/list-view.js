@@ -310,10 +310,11 @@ function createRowElement(trackId){
  *    だけで元に戻ります。この関数が自動的に cover_art を返すためで、
  *    「今どちらを表示中か」という旗を別に持つ必要がありません。
  *
- * ⚠️ (v260 = ①-2)自作ジャケットは「小さい箱(cover_art_custom。160点)」と
- *    「大きい箱(cover_art_custom_big。1080点まで)」の2つを持つようになりました。
- *    この関数が返すのは、いつも**小さい方**です(曲一覧・上半分・ロック画面用)。
- *    特大表示だけは、すぐ下の getTrackCoverBig() で大きい方を使います。
+ * ⚠️ (v260〜v261 = ①-2)元のジャケットも自作ジャケットも、大きさ違いの箱を
+ *    2つずつ持つようになりました(元 = 160点 + 480点 / 自作 = 160点 + 1080点まで)。
+ *    この関数が返すのは、いつも**小さい方(160点)**で、使うのは曲一覧だけです。
+ *    大きく見せる場所(上半分・ロック画面・特大表示)は、すぐ下の
+ *    getTrackCoverBig() で大きい方を使います。
  *
  * @param  {Object} track … libraryMap から取り出した1曲分のデータ
  * @return {Blob|null}    … 表示に使う画像。どちらも無ければ null
@@ -360,19 +361,22 @@ function getTrackCover(track){
 }
 
 /**
- * 特大表示で出すジャケットを1つ返します(v260 = ①-2)。
+ * 大きく見せる場所(上半分・ロック画面・特大表示)で出すジャケットを1つ返します
+ * (v260 = ①-2 で特大表示用に作り、v261 で上半分・ロック画面も使うようにした)。
  *
  * **どちらの絵を出すか(元か自作か)は、getTrackCover() に決めさせます。**
- * この関数がするのは、自作に決まった時に「大きい箱があれば、そちらに差し替える」だけです。
+ * この関数がするのは、決まった方の「大きい方の箱があれば、そちらに差し替える」だけです。
  * 判断の式を2か所に書かないためです(CLAUDE.md の「決めるのは1か所」)。
  *
  *     getTrackCover の答え     この関数の答え
- *     元のジャケット(160点)   → そのまま(特大表示は開いた時に曲のファイルから読み直す。js/jacket.js「3-1.」)
- *     自作の小さい箱(160点)   → 大きい箱(cover_art_custom_big)。まだ無ければ小さい箱のまま
+ *     元のジャケット(160点)   → 中くらいの箱(cover_art_mid。480点)。まだ無ければ160点のまま
+ *                               (特大表示は、開いた後に曲のファイルから読み直す。js/jacket.js「3-1.」)
+ *     自作の小さい箱(160点)   → 大きい箱(cover_art_custom_big。1080点まで)。まだ無ければ小さい箱のまま
  *     無し                     → null
  *
- * ⚠️ 大きい箱がまだ無いのは、v259 までに作った自作で、起動時の並べ直し
- *    (js/metadata.js の arrangeCustomCoverBoxes)がまだ済んでいない間だけです。
+ * ⚠️ 大きい方の箱がまだ無いのは、起動時の取り直し(js/metadata.js の analyzeCoverArt・
+ *    arrangeCustomCoverBoxes)がその曲まで済んでいない間だけです。
+ * ⚠️ 名前に Big と付いているのは、最初は特大表示だけが使っていたためです(v260)。
  *
  * @param  {Object} track … libraryMap から取り出した1曲分のデータ
  * @return {Blob|null}
@@ -383,6 +387,10 @@ function getTrackCoverBig(track){
 
     if(cover && cover === track.cover_art_custom && track.cover_art_custom_big){
         return track.cover_art_custom_big;
+    }
+
+    if(cover && cover === track.cover_art && track.cover_art_mid){
+        return track.cover_art_mid;
     }
 
     return cover;
