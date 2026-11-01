@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v261)ノリRun
+        (v262)ノリRun
         メインメニュー
 
     </title>
@@ -3876,10 +3876,13 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
              効く/効かないが分かれるので、親を見て決めること)
 
         ⚠️ object-fit:cover にしているのは、**撮れる範囲と見えている
-           範囲を一致させる**ためです。カメラの映像は横長(4:3など)
-           ですが、枠は正方形なので、はみ出す左右は切り落として
-           中央の正方形だけを見せます。撮る時もまったく同じ
+           範囲を一致させる**ためです。カメラの映像は横長(4:3など。
+           v262 からは 1920×1080 の 16:9 を頼んでいる)ですが、枠は正方形なので、
+           はみ出す左右は切り落として中央の正方形だけを見せます。撮る時もまったく同じ
            「中央の正方形」を切り出すので、**見たままが保存されます。**
+        ⚠️ カメラのズームが使えない端末でピンチした時は、js/jacket-camera.js がこの映像に
+           transform:scale(倍率)を付けて真ん中を大きく見せます(v262。枠は overflow:hidden
+           なので、はみ出した外側は見えない)。撮る時も同じ倍率で真ん中を切り取ります。
         */
         .jacket-live-video{
             width:100%;
@@ -3917,6 +3920,42 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             justify-content:center;
 
             background:#000;
+
+            /*
+            ⚠️ touch-action:none(v262)は「この枠の中の指の動きを、ブラウザが
+               スクロールや拡大に使わない」という指定です。ピンチで拡大・縮小する
+               指の動きを、js/jacket-camera.js がそのまま受け取るためです。
+               (映像を流している間だけ。ふつうの特大表示には付きません)
+            */
+            touch-action:none;
+        }
+
+        /*
+        カメラの映像の右下に置く、倍率の札です(v262)。
+        最初は「🤏 少し離してピンチで拡大」、ピンチした後は「🤏 ×2.0」(js/jacket-camera.js の
+        updateLiveZoomLabel)。
+
+        ⚠️ pointer-events:none … 札の上に指が乗っても、ピンチの邪魔をしません。
+        ⚠️ white-space:nowrap … 札の言葉を途中で折り返しません(短い1行)。
+        ⚠️ 映像が拡大されても(切り抜き)、札は枠に対して置いているので大きくなりません。
+        */
+        .jacket-live-zoom{
+            position:absolute;
+            right:8px;
+            bottom:8px;
+
+            padding:3px 10px;
+            border-radius:999px;
+
+            background:rgba(0,0,0,0.55);
+            color:#fff;
+
+            font-size:0.75rem;
+            font-weight:700;
+            line-height:1.4;
+            white-space:nowrap;
+
+            pointer-events:none;
         }
 
         /*
@@ -4112,7 +4151,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         色は 🗑️ ボタン(#jacket-btn-overwrite)と同じ赤なので、「この赤いボタン = この確認」と
         目でつながります。
         ⚠️ 影は場所を取らないので、文字の大きさ・置き場所は1pxも変わりません。
-        ⚠️ カメラが使えなかった理由(js/jacket.js の abortLiveCamera)も、同じ見た目で出ます。
+        ⚠️ カメラが使えなかった理由(js/jacket-camera.js の abortLiveCamera)も、同じ見た目で出ます。
         */
         /*
         ⚠️⚠️ **出す場所は、曲名・アーティストの2行の真ん中です(v257)。**
@@ -10462,6 +10501,14 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
     借りるので、あちらより後に読み込みます。
 -->
 <script src="js/jacket.js"></script>
+<!--
+    特大表示の中のアプリ内カメラ(v262 = ①-3 で js/jacket.js から切り出した)。
+
+    ⚠️ **必ず js/jacket.js のすぐ後ろに置きます。** 読み込んだその場で、
+       js/jacket.js の部品(jacketBigEl・📸 と ✕ のボタン)に受け口を付けるためです
+       (CLAUDE.md の「読み込み順の罠」)。
+-->
+<script src="js/jacket-camera.js"></script>
 <!--
     定規の部品(v221)。どこにでも置ける「指でなぞってBPMを選ぶ定規」。
 
