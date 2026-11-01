@@ -18,11 +18,13 @@
    **アーティスト名の下**に、その時ボタンを2つ置く予定です。
 
    ------------------------------------------------------------
-   【今の形(v257。①-1 特大表示のジャケ)】
+   【今の形(v257〜v258。①-1 特大表示のジャケ)】
 
    置き場所 … 置き方 A(竹弘の指定 2026-10-25)。ジャケは上半分の角丸
-              カードの中いっぱい。曲名・アーティスト・ボタンは、その下の
-              曲一覧の操作パネルと1段目の欄まで(「1. 大きさと置き場所」)
+              カードの中いっぱい。曲名・アーティストは、その下の曲一覧の
+              操作パネルの段の真ん中。ボタンは、曲一覧のいちばん上の行の欄の
+              真ん中(v258。「1. 大きさと置き場所」)
+   長い名前 … タッチで横に流して全文を見せる(v258。メニュー画面と同じ)
    画質     … 開いた瞬間は DB の絵を出し、静かな時に曲のファイルから
               元のジャケを読み直して、ふわっと鮮明な絵に入れ替える
               (「3-1. 元のファイルから読み直す」)
@@ -38,38 +40,58 @@
 
 
 // ==========================================================
-// 1. 大きさと置き場所の決め方(v257 で作り直した。置き方 A)
+// 1. 大きさと置き場所の決め方(v257 で作り直した。置き方 A。v258 で文字とボタンを段の真ん中へ)
 // ==========================================================
 /*
 竹弘の指定(2026-10-25。置き方 A):
 
     ジャケ                       … 上半分の角丸カード(#upper-area)の中いっぱい
     曲名・アーティスト・ボタン   … その下の、曲一覧の操作パネル(🔁⇅⏮■⏭🐇↩)と
-                                   曲一覧の1段目の欄まで。2段目から下には被せない
+                                   曲一覧のいちばん上の行の欄まで。その下の行には被せない
     グレーの幕・縁取り・影       … 今のまま(竹弘「グレー画面上で浮いた感じの表現も
                                    気に入っているのでそのままに」)
 
     竹弘:「決して、今のメニューレイアウトを変えたいという内容ではありません」
     → 動かすのは特大表示だけ。上半分と曲一覧の作りには触りません。
 
-【2段目から下に被せない理由(竹弘)】
+竹弘の指定(2026-11-01。v257 を実機で見て):
 
- 1段目に今の曲が居れば、その名前は特大表示に出ている。2曲目以降は 🎵 を押すと
- 2段目に来る(js/list-follow.js の「上から2段目」)。だから1段目までは隠してよい。
+    操作パネルを1段目、曲一覧を2段目以降とした時、
+        曲名・アーティスト … 1段目の中に収め、上下・左右とも真ん中に
+                             (下段の角丸の中に収める。v257 は曲名の上がカードの縁
+                              ぎりぎりで、長い曲名は左右がカードから少しはみ出していた)
+        ボタン 🖼️ 📁 📷    … 2段目(曲一覧のいちばん上の行の欄)の真ん中に
+        長い名前           … メニュー画面と同じく、タッチで流して全体を読める(「4. 受け口」)
+
+    竹弘:「1段目、2段目の中で、ズレていたり、はみ出ていたりする事の方が
+           見た目が気になる事がわかった」
+
+    ⚠️ 「1段目」の数え方が v257 までと違います。v257 までのコメントと CLAUDE.md の
+       「曲一覧の1段目」は、曲一覧のいちばん上の行(= 竹弘の今の数え方の2段目)でした。
+       取り違えないよう、ここから下では「操作パネルの段」「曲一覧のいちばん上の行」と書きます。
+
+【曲一覧の上から2行目より下に被せない理由(竹弘 2026-10-25)】
+
+ いちばん上の行に今の曲が居れば、その名前は特大表示に出ている。2曲目以降は 🎵 を押すと
+ 上から2行目に来る(js/list-follow.js の「上から2段目」)。だから、いちばん上の行までは隠してよい。
 
 【決め方 ―― layoutJacketBig() が、開くたびに本物の画面を測ります】
 
     ① ジャケの一辺 = 上半分のカードの短い辺 − 内側の余白(JACKET_BIG_INSET_PX)× 2
        カードの真ん中に置く
-    ② 曲名からボタンまでの高さを測り、ボタンの下端が「曲一覧の1段目の下端」を
-       越えるなら、越えないところまでジャケを小さくする(真ん中に置いたまま)
+    ② 曲名・アーティストの箱 = 操作パネルの段と同じ場所・同じ大きさ(findJacketNamesSlot)。
+       2行は、その中で上下・左右とも真ん中に並ぶ(c014.html の #jacket-big-names)
+    ③ ボタンの行 = 曲一覧のいちばん上の行の欄と同じ場所・同じ大きさ(findJacketButtonSlot)。
+       ボタンは、その中で上下・左右とも真ん中に並ぶ
 
- ⚠️ 足し算で決め打ちしません。文字の行の高さは、書体や端末で数pxずつ変わるためです
+ ⚠️ 足し算で決め打ちしません。段や行の場所・高さは、書体や端末で数pxずつ変わるためです
     (足し算の見積もりが実測と6pxずれたことがある。devlog/ジャケ写.md)。
+ ⚠️ 文字とボタンはジャケの続きに並べず、段の場所へ直接置きます(v258)。だから
+    ジャケの大きさとは関係なく、いつも段の真ん中に来ます。
  ⚠️ ジャケの大きさを変えると、DB の絵を「何点で出すか」も変わります。鮮明さは
     「3-1. 元のファイルから読み直す」が受け持つので、ここでは気にしなくてよい。
  ⚠️ 置き場所を変えたら sandbox/measure-jacket-layout.html で測り直すこと。
-    あのページは、この下の layoutJacketBig() をこのファイルから取り出して、
+    あのページは、この下の layoutJacketBig() などをこのファイルから取り出して、
     本物の c014.html の画面の上でそのまま動かします。
 */
 
@@ -92,7 +114,7 @@ const JACKET_BIG_BORDER_PX = 3;
 
 /*
 曲一覧の1行の高さが測れなかった時(一覧が空・検索で隠れている時など)に使う値です。
-c014.html の .music-row の height と同じ数字です。
+c014.html の .music-row の height と同じ数字です(ボタンの行を置く欄の高さ。findJacketButtonSlot)。
 */
 const JACKET_BIG_ROW_FALLBACK_PX = 56;
 
@@ -140,8 +162,9 @@ const JACKET_BUTTON_GAP_PX = 8;
    (これより小さくすると押し間違いが増えます)。走りながら操作する
    アプリなので、ここは削りすぎないこと。
 
-⚠️ (v257)置き方 A では、ボタンの高さが増えるとそのぶん「1段目まで」に
-   収めるためにジャケが小さくなります。上限を上げる時は測り直すこと。
+⚠️ (v258)ボタンは曲一覧のいちばん上の行の欄(高さ 56px)の真ん中に置きます。
+   48px なら上下に 4px ずつ空いて、行の中に収まります。上限を上げる時は
+   行からはみ出さないか、sandbox/measure-jacket-layout.html で測り直すこと。
 */
 const JACKET_BUTTON_MAX_PX = 48;
 
@@ -156,8 +179,20 @@ const jacketBigTitleEl   = document.getElementById("jacket-big-title");
 const jacketBigArtistEl  = document.getElementById("jacket-big-artist");
 
 /*
+曲名・アーティストの文字そのもの(中の <span>)です(v258)。
+
+外側の jacketBigTitleEl / jacketBigArtistEl は「窓」で、文字はこの span に入れます。
+タッチした時は、窓の中でこの span を横にずらして全文を見せます
+(js/list-view.js の triggerMarquee。メニュー画面の曲名と同じ作り)。
+⚠️ 文字を窓に直接入れると(textContent)、中の span ごと消えて流せなくなります。
+*/
+const jacketBigTitleTextEl  = document.getElementById("jacket-big-title-text");
+const jacketBigArtistTextEl = document.getElementById("jacket-big-artist-text");
+
+/*
 曲名とアーティストの2行を包む箱です(v257)。赤い注意書きは、この箱の
 真ん中に重ねて出します(showJacketWarning)。
+v258 から、この箱を操作パネルの段と同じ場所・大きさに置きます(layoutJacketBig)。
 */
 const jacketBigNamesEl   = document.getElementById("jacket-big-names");
 
@@ -295,13 +330,22 @@ let jacketCameraWanted = false;
 const jacketUpperAreaEl = document.getElementById("upper-area");
 
 /*
-曲一覧の窓枠です(v257)。特大表示の文字とボタンを「1段目の欄まで」に
-収めるために、1段目がどこにあるかを測るのに使います(layoutJacketBig)。
+曲一覧の窓枠です(v257)。ボタンの行を置く「曲一覧のいちばん上の行の欄」が
+どこにあるかを測るのに使います(findJacketButtonSlot)。
 
 ⚠️ 名前は jacket で始めています。js/config.js などに同じ名前の const が
    あると、読み込んだ瞬間にエラーになり、このファイルが丸ごと動かなくなるためです。
 */
 const jacketListViewportEl = document.getElementById("list-viewport");
+
+/*
+下段の角丸カード(曲一覧のカード)です(v258)。曲名・アーティストを置く
+「操作パネルの段」(この中の .section-title)を探すのに使います(findJacketNamesSlot)。
+
+⚠️ 操作パネルの段には id がありません。完成している曲一覧の HTML に id を足さずに
+   済むよう、このカードの中から探します。
+*/
+const jacketListAreaEl = document.getElementById("list-area");
 
 /*
 ⚠️ **元のファイルからの読み直し(v257)の控えです。**
@@ -376,19 +420,30 @@ function openJacketView(){
     // ---- 曲名とアーティスト ----
     // buildTitleText() も js/list-view.js から借ります
     // (タイトルが空の曲ではファイル名を出してくれます)
-    jacketBigTitleEl.textContent  = buildTitleText(track);
-    jacketBigArtistEl.textContent = track.artist || "";
+    /*
+    ⚠️ 文字は窓の中の span に入れます(v258。部品の解説)。
+    ⚠️ 前に開いた時に流れている途中だった印(scroll-active)は外します。
+       画面を閉じると動きは止まりますが、印が付いたまま出し直すと、
+       開いた瞬間に頭から勝手に流れ出すためです。
+    */
+    jacketBigTitleTextEl.textContent  = buildTitleText(track);
+    jacketBigArtistTextEl.textContent = track.artist || "";
+
+    jacketBigTitleTextEl.classList.remove("scroll-active");
+    jacketBigArtistTextEl.classList.remove("scroll-active");
 
     // ---- ボタンの押せる / 押せないを決めます ----
     refreshJacketButtons(track);
 
     /*
-    ---- 大きさと置き場所(置き方 A。v257)----
+    ---- 大きさと置き場所(置き方 A。v257。v258 で文字とボタンを段の真ん中へ)----
 
-    ⚠️ **画面に出してから測ります。** display:none のままだと、曲名やボタンの
-       高さが0として返り、測れないためです。出してから大きさを決めるまでは
-       同じ処理の中で続けて行うので、途中の姿が竹弘の目に映ることはありません
-       (ブラウザは、処理が一区切りつくまで画面を描き直さない)。
+    ⚠️ **画面に出してから測ります。** display:none の中の部品は、場所も高さも
+       0として返り、測れないためです(v258 で測るのは後ろのメニュー側の部品だけ
+       ですが、この画面の部品を測る時のために、この順番を守ります)。
+       出してから置き場所を決めるまでは同じ処理の中で続けて行うので、途中の姿が
+       竹弘の目に映ることはありません(ブラウザは、処理が一区切りつくまで画面を
+       描き直さない)。
     */
     jacketPanelEl.style.display = "flex";
 
@@ -401,18 +456,19 @@ function openJacketView(){
 
 
 /**
- * 特大表示の大きさと置き場所を決めます(置き方 A。v257)。
+ * 特大表示の大きさと置き場所を決めます(置き方 A。v257。v258 で文字とボタンを段の真ん中へ)。
  *
  * 考え方は「1. 大きさと置き場所の決め方」。開いた直後(画面に出した後)に呼びます。
  *
  * ⚠️ この関数は sandbox/measure-jacket-layout.html が、このファイルから
  *    文字として取り出して、そのまま動かします(本物の計算を測るため)。
  *    中で使ってよいのは、このファイルの const(JACKET_ で始まる定数と
- *    jacket で始まる部品)と applyJacketBigSize / findJacketBigLimitBottom だけです。
+ *    jacket で始まる部品)と applyJacketBigSize / findJacketNamesSlot /
+ *    findJacketButtonSlot / placeJacketBox だけです。
  *    ほかのファイルの名前を足す時は、あのページにも用意すること。
  *
  * @return {Object} { size:ジャケの一辺, buttonSize:ボタンの一辺,
- *                    spare:ボタンの下端から1段目の下端までの余り(px)}
+ *                    namesSlot:曲名の箱を置いた欄, buttonSlot:ボタンの行を置いた欄 }
  */
 function layoutJacketBig(){
 
@@ -426,55 +482,41 @@ function layoutJacketBig(){
     // 小さくなりすぎない下限(何が写っているか分からなくなるため)
     size = Math.max(size,JACKET_BIG_MIN_SIZE_PX);
 
-    let buttonSize = applyJacketBigSize(size,upperRect);
+    const buttonSize = applyJacketBigSize(size,upperRect);
+
+    // ② 曲名・アーティストの箱 → 操作パネルの段(竹弘の数え方の1段目)
+    const namesSlot = findJacketNamesSlot();
+
+    placeJacketBox(jacketBigNamesEl,namesSlot);
 
     /*
-    ② 曲名からボタンまでの高さを、本物で測ります。
+    ③ ボタンの行 → 曲一覧のいちばん上の行の欄(竹弘の数え方の2段目)
 
-    ジャケの下端から「ふつうのボタンの行」の下端までです。開いた直後は
-    いつもふつうの状態(🖼️ 📁 📷)なので、この行が出ています。
-    ⚠️ ほかの行(確認中・上書きの確認など)もボタンの大きさは同じなので、
-       行が入れ替わっても高さは変わりません(c014.html の aspect-ratio)。
+    ⚠️ 5つの行(ふつう・確認中・アートワーク・上書きの確認・カメラ)を、どれも
+       同じ欄に置きます。出ているのはいつも1つだけ(refreshJacketButtons)なので、
+       行が入れ替わってもボタンの場所は動きません。
     */
-    const infoHeight =
-        jacketBigButtonsEl.getBoundingClientRect().bottom -
-        jacketBigEl.getBoundingClientRect().bottom;
+    const buttonSlot = findJacketButtonSlot();
 
-    const limitBottom = findJacketBigLimitBottom();
+    const buttonRows = [
+        jacketBigButtonsEl,
+        jacketConfirmButtonsEl,
+        jacketArtworkButtonsEl,
+        jacketOverwriteButtonsEl,
+        jacketCameraButtonsEl
+    ];
 
-    const centerY = upperRect.top + upperRect.height / 2;
-
-    /*
-    ジャケをカードの真ん中に置いたまま、ボタンの下端がちょうど1段目の下端に
-    来る一辺です。
-
-        ボタンの下端 = 真ん中 + 一辺 ÷ 2 + 下の高さ ≦ 1段目の下端
-        → 一辺 ≦ (1段目の下端 − 下の高さ − 真ん中)× 2
-    */
-    const fitSize = Math.floor((limitBottom - infoHeight - centerY) * 2);
-
-    if(fitSize < size){
-
-        size = Math.max(fitSize,JACKET_BIG_MIN_SIZE_PX);
-
-        /*
-        ⚠️ ジャケが160pxより小さくなると、ボタンも小さくなります
-           ((一辺 − 間隔×2)÷ 3)。その時は下の高さも減るので、
-           はみ出すことはありません(余る方へずれる)。
-        */
-        buttonSize = applyJacketBigSize(size,upperRect);
-
+    for(const row of buttonRows){
+        placeJacketBox(row,buttonSlot);
     }
 
-    const spare = limitBottom - jacketBigButtonsEl.getBoundingClientRect().bottom;
-
-    return { size:size, buttonSize:buttonSize, spare:spare };
+    return { size:size, buttonSize:buttonSize, namesSlot:namesSlot, buttonSlot:buttonSlot };
 
 }
 
 
 /**
- * ジャケの一辺を当てはめます(ジャケの枠・ボタンの行・ボタンの大きさ・置き場所)。
+ * ジャケの一辺を当てはめます(ジャケの枠・ジャケの置き場所・ボタンの大きさ)。
  *
  * layoutJacketBig() が、決めた一辺で呼びます。
  *
@@ -496,7 +538,9 @@ function applyJacketBigSize(size,upperRect){
     ---- 置き場所 ----
 
     ジャケをカードの真ん中に置きます。#jacket-panel-inner の上の余白で、
-    ジャケの上端の高さを決めます(下の曲名・ボタンは、その続きに並ぶ)。
+    ジャケの上端の高さを決めます。
+    (v258 から、曲名・ボタンはジャケの続きに並ばず、layoutJacketBig が
+     段の場所へ直接置きます。だからここで決めるのはジャケだけです)
 
     ⚠️ 左右は、パネルの「真ん中寄せ」(c014.html の #jacket-panel の
        align-items:center)にまかせています。上半分のカードも画面の真ん中に
@@ -507,35 +551,12 @@ function applyJacketBigSize(size,upperRect){
     jacketPanelInnerEl.style.marginTop = Math.round(top) + "px";
 
     /*
-    ⚠️⚠️ **ボタン行にも同じ幅を入れます(v209で追加)。**
-
-    竹弘の実機報告(v208):
-        「ジャケ幅ではなく、曲名もしくはアーティスト名、ファイル名で
-          幅が決まっている。ボタン3つは、ジャケ幅に合わせて欲しい」
-
-    CSSの width:100% は「親の幅」ですが、その親
-    (#jacket-panel-inner)は**中でいちばん広い部品に合わせて広がる**
-    ので、長い曲名があると親ごと広がり、ボタンもそれに付き合って
-    いました。
-
-    → ここでジャケットと**まったく同じ数字**を渡します。
-      上で計算した size をそのまま使うので、**2か所で別々に
-      計算することはありません**(片方だけ直す事故が起きない)。
-
-    ⚠️ 曲名・アーティスト名の幅は今のままでOK(竹弘の指定)。
-       揃えるのはボタンだけです。
+    ⚠️ ボタンの行の幅は、v209〜v257 はここでジャケの幅に合わせていました
+       (長い曲名で行が広がり、ボタンも広がっていたため。竹弘「ボタン3つは、
+       ジャケ幅に合わせて欲しい」)。v258 からは行を欄の場所・幅に置きます
+       (layoutJacketBig)。ボタン1つの大きさは下の計算でジャケの幅から決まり、
+       行の幅には左右されません(v213 で px に固定したため)。
     */
-    const buttonRows = [
-        jacketBigButtonsEl,
-        jacketConfirmButtonsEl,
-        jacketArtworkButtonsEl,
-        jacketOverwriteButtonsEl,
-        jacketCameraButtonsEl
-    ];
-
-    for(const row of buttonRows){
-        if(row){ row.style.width = size + "px"; }
-    }
 
     /*
     ⚠️⚠️ **ボタン1つの幅を「3つ並ぶ時の大きさ」で固定します(v213)。**
@@ -569,7 +590,7 @@ function applyJacketBigSize(size,upperRect){
     /*
     ⚠️ 上限(JACKET_BUTTON_MAX_PX)で頭を押さえます(v214)。
        ボタンは**正方形**なので、幅をそのまま使うと高さも同じだけ
-       増えてしまい、1段目に収めるためにジャケが小さくなるためです。
+       増えてしまい、曲一覧の行(56px)からはみ出すためです。
     */
     const buttonSize = Math.min(
         Math.floor((size - JACKET_BUTTON_GAP_PX * 2) / 3),
@@ -592,19 +613,50 @@ function applyJacketBigSize(size,upperRect){
 
 
 /**
- * 特大表示の文字とボタンを、どこまで下に置いてよいかを返します(v257)。
+ * 曲名・アーティストの箱を置く欄を返します(v258)。
  *
- * 竹弘の指定「曲一覧の1段目の欄まで」= 曲一覧の窓枠の上端 + 1行の高さ です。
+ * 操作パネルの段(#list-area の .section-title。🔁⇅⏮■⏭🐇↩ が並ぶ段)と
+ * 同じ場所・同じ大きさです。
  *
- * ⚠️ 1段目に今どの曲の行が来ているか(スクロールの位置)とは関係なく、
- *    「1段目の欄」の場所で決めます。行がスクロールの途中で半分見えていても、
- *    欄の場所は変わらないためです。
+ * この段は、下段の角丸カードの余白の内側いっぱいに広がっています。だからこの
+ * 欄に置けば、2行は角丸の中に収まります(竹弘「下段の角丸の中に曲名と
+ * アーティスト名を収めたい」)。長い名前は欄の幅で切れ、タッチで流して読みます。
  *
- * @return {number} 画面の上からの位置(px)
+ * @return {Object|null} { left, top, width, height }(画面の左上からの px)。
+ *                       段が見つからない時は null(置かずに、CSS の場所のまま)
  */
-function findJacketBigLimitBottom(){
+function findJacketNamesSlot(){
 
-    if(!jacketListViewportEl){ return window.innerHeight; }
+    const opsEl = jacketListAreaEl ? jacketListAreaEl.querySelector(".section-title") : null;
+
+    if(!opsEl){ return null; }
+
+    const rect = opsEl.getBoundingClientRect();
+
+    return { left:rect.left, top:rect.top, width:rect.width, height:rect.height };
+
+}
+
+
+/**
+ * ボタンの行を置く欄を返します(v258)。
+ *
+ * 曲一覧のいちばん上の行の欄 = 曲一覧の窓枠の上端から、1行の高さぶんです。
+ * 左右は窓枠の幅(操作パネルの段と同じ幅)なので、ボタンは曲名と同じ
+ * 縦の線(カードの真ん中)の上に並びます。
+ *
+ * ⚠️ 今その欄にどの曲の行が来ているか(スクロールの位置)とは関係なく、
+ *    欄の場所で決めます。行がスクロールの途中で半分見えていても、
+ *    欄の場所は変わらないためです。
+ * ⚠️ 曲の行は窓枠より右が2px 狭い(c014.html の .music-list の padding-right)ので、
+ *    行の真ん中はカードの真ん中より1px 左です。1px は目に見えないので、
+ *    曲名と同じ縦の線に揃える方を選びました(左右反転の時も崩れない)。
+ *
+ * @return {Object|null} { left, top, width, height }(画面の左上からの px)
+ */
+function findJacketButtonSlot(){
+
+    if(!jacketListViewportEl){ return null; }
 
     const viewportRect = jacketListViewportEl.getBoundingClientRect();
 
@@ -617,7 +669,37 @@ function findJacketBigLimitBottom(){
         ? firstRow.offsetHeight
         : JACKET_BIG_ROW_FALLBACK_PX;
 
-    return viewportRect.top + rowHeight;
+    return {
+        left   : viewportRect.left,
+        top    : viewportRect.top,
+        width  : viewportRect.width,
+        height : rowHeight
+    };
+
+}
+
+
+/**
+ * 特大表示の箱(曲名の箱・ボタンの行)を、決めた欄にぴったり重ねます(v258)。
+ *
+ * 箱の中身は、c014.html の CSS で上下・左右とも真ん中に並びます
+ * (#jacket-big-names・ボタンの行の align-items / justify-content)。
+ *
+ * ⚠️ 箱は c014.html で position:absolute にしてあり、位置の基準は画面いっぱいの幕
+ *    (#jacket-panel。position:fixed で、画面の左上が 0,0)です。だから
+ *    getBoundingClientRect() で測った画面の上の位置を、そのまま left / top に入れられます。
+ *
+ * @param {HTMLElement} boxEl … 置く箱
+ * @param {Object|null} slot  … findJacketNamesSlot / findJacketButtonSlot の答え
+ */
+function placeJacketBox(boxEl,slot){
+
+    if(!boxEl || !slot){ return; }
+
+    boxEl.style.left   = slot.left   + "px";
+    boxEl.style.top    = slot.top    + "px";
+    boxEl.style.width  = slot.width  + "px";
+    boxEl.style.height = slot.height + "px";
 
 }
 
@@ -855,10 +937,11 @@ function setRowVisible(rowEl,visible){
  *
  * ⚠️⚠️ **出す場所は、曲名・アーティストの2行の場所です(v257)。**
  *
- *    竹弘の答え(2026-10-25):上書きの最終確認の赤い文字が2段目に被るなら避けたい
- *    → 確かめている間だけ、曲名・アーティストの2行の場所に出す(のりの案に竹弘が OK)。
- *    置き方 A で文字とボタンを「1段目まで」に収めるため、ボタンの下に
- *    注意書きのための1行(v213〜v256)を空けておく余裕が無くなったためです。
+ *    竹弘の答え(2026-10-25):上書きの最終確認の赤い文字が、曲一覧の上から2行目に
+ *    被るなら避けたい → 確かめている間だけ、曲名・アーティストの2行の場所に出す
+ *    (のりの案に竹弘が OK)。置き方 A で文字とボタンを「曲一覧のいちばん上の行まで」に
+ *    収めるため、ボタンの下に注意書きのための1行(v213〜v256)を空けておく余裕が
+ *    無くなったためです。v258 からは、操作パネルの段の真ん中に出ます。
  *
  *    出している間は、2行に .jacket-names-warning を付けて**隠します**
  *    (visibility:hidden。場所はそのまま残る)。注意書きはその真ん中に重ねて
@@ -2410,6 +2493,42 @@ if(npJacketEl){
 if(jacketPanelEl){
 
     jacketPanelEl.addEventListener("click",closeJacketView);
+
+}
+
+/*
+曲名・アーティストをタッチすると、横に流して全文を見せます(v258、竹弘の指定)。
+
+    「曲名やアーティスト名が長い場合、メニュー画面と同じでタッチすることで
+      スクロールさせて全体を読めるようにして欲しい」
+
+js/list-view.js の triggerMarquee() をそのまま借ります(上半分の曲名の
+js/upper-area.js と同じ借り方)。渡すのは外側の「窓」で、あの関数は窓の中の
+最初の子(文字の入った span)を動かします。流れる速さも戻り方も、メニュー画面と
+まったく同じになります。
+
+⚠️ stopPropagation() が要ります(すぐ上の「どこをタップしても閉じる」)。
+   無いと、流し始めた瞬間に画面が閉じます。
+⚠️ 押せるのは文字の上だけです。窓は文字の幅に縮んでいるので(c014.html)、
+   文字の横の何も無い所を押せば、今までどおり閉じます。
+⚠️ 赤い注意書きを出している間は、2行は visibility:hidden で隠れていて
+   タッチを受けません(押すと幕まで届いて閉じる。今までどおり)。
+*/
+if(jacketBigTitleEl){
+
+    jacketBigTitleEl.addEventListener("click",function(event){
+        event.stopPropagation();
+        triggerMarquee(jacketBigTitleEl);
+    });
+
+}
+
+if(jacketBigArtistEl){
+
+    jacketBigArtistEl.addEventListener("click",function(event){
+        event.stopPropagation();
+        triggerMarquee(jacketBigArtistEl);
+    });
 
 }
 
