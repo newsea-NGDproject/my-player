@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v256)ノリRun
+        (v257)ノリRun
         メインメニュー
 
     </title>
@@ -3353,20 +3353,26 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         }
 
         /*
-        竹弘の指定「表示エリアは上半分のエリア内」を実現する箱です。
+        ジャケット・曲名・アーティスト・ボタンを縦に並べる箱です。
 
-        height:50% で上半分ぶんの高さを取り、margin-bottom:auto で
-        上へ寄せます。その中で縦横とも中央に揃えるので、
-        **上半分のちょうど真ん中**にジャケットが出ます。
+        【v257 置き方 A(竹弘の指定 2026-10-25)】
+            ジャケ … 上半分の角丸カードの中いっぱい(カードの真ん中)
+            曲名からボタンまで … その下、曲一覧の操作パネルと1段目の欄まで
+
+        ⚠️ **上下の位置は js/jacket.js が決めます。** 開くたびに本物の画面を測り、
+           この箱の margin-top(ジャケの上端の高さ)を px で入れます
+           (applyJacketBigSize)。ここで高さや真ん中寄せを決めないのは、
+           「ジャケはカードの真ん中・文字は1段目まで」が端末ごとに違う位置に
+           なるためです(v256 までは height:50% の中で真ん中寄せ)。
+        margin-bottom:auto は、残りを下の余白にして、箱を上へ寄せる指定です。
         */
         #jacket-panel-inner{
-            height:50%;
             margin-bottom:auto;
 
             display:flex;
             flex-direction:column;
             align-items:center;
-            justify-content:center;
+            justify-content:flex-start;
 
             /*
             ⚠️ **v208で gap:12px をやめ、部品ごとに間隔を決めました。**
@@ -3411,9 +3417,20 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
            **すぐ下の兄弟セレクタで受け渡しています。**
 
         幅と高さは js/jacket.js がその場で計算して入れます
-        (今のジャケットの4倍。詳しくはあちらのコメント)。
+        (上半分のカードの中いっぱい。詳しくはあちらの「1. 大きさと置き場所」)。
+
+        ⚠️ **box-sizing:border-box にしています(v257)。** js/jacket.js が入れる
+           一辺が「縁取りを含む外側の大きさ」になり、カードの中に収まるかの
+           計算とそのまま合います(content-box だと縁取りの 3px × 2 が外に足される)。
+           ⚠️ border の太さを変えたら、js/jacket.js の JACKET_BIG_BORDER_PX も一緒に。
+
+        position:relative は、読み直した鮮明な絵(.jacket-big-hd)を
+        この枠の中にぴったり重ねるための基準です(v257)。
         */
         #jacket-big{
+            box-sizing:border-box;
+            position:relative;
+
             border:3px solid var(--theme-color);
             border-radius:10px;
             overflow:hidden;
@@ -3432,12 +3449,70 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         }
 
         /*
+        曲のファイルから読み直した、鮮明な絵です(v257。js/jacket.js の「3-1.」)。
+
+        開いた瞬間は DB の絵(.jacket-big-img)が出ていて、読み直しが終わると
+        この絵がその上に重なり、ふわっと(0.45秒で)入れ替わります。
+        竹弘:「最初はぼやけた絵でよく、時間をかけて鮮明になってよい」。
+
+        ⚠️ position:absolute + inset:0 で、縁取りの内側にぴったり重ねます
+           (下の DB の絵と同じ場所・同じ大きさ)。
+        ⚠️ 絵は js/jacket.js が「画面に出す点の数」でほどいて作るので、
+           ここで width/height を 100% にしても、引き伸ばしにはなりません
+           (元の絵が小さい曲だけは、元の絵の点の数のまま広がる)。
+        */
+        .jacket-big-hd{
+            position:absolute;
+            inset:0;
+
+            width:100%;
+            height:100%;
+            display:block;
+
+            opacity:0;
+            transition:opacity 0.45s ease;
+        }
+
+        .jacket-big-hd.jacket-big-hd-on{
+            opacity:1;
+        }
+
+        /*
         曲名とアーティスト。
 
         幕の上に出るので、色は白で固定します(テーマの文字色を使うと
         暗い幕の上で読めなくなる場合があるため)。
         長い名前は「…」で省略します。
         */
+        /*
+        曲名とアーティストの2行を包む箱です(v257)。
+
+        赤い注意書き(#jacket-warning)は、この箱の真ん中に重ねて出します
+        (竹弘の答え 2026-10-25:確かめている間だけ、曲名・アーティストの場所に)。
+        出している間は .jacket-names-warning が付き、2行を visibility:hidden で
+        隠します。**隠しても場所は残るので、ジャケもボタンも動きません。**
+
+        ⚠️ ジャケとの間(8px)は、曲名ではなくこの箱に付けています。曲名に
+           付けると、箱の中に余白が入り、注意書きの真ん中が4px下へずれるためです。
+        ⚠️ max-width:100% は、長い曲名で箱が画面からはみ出さないための指定です。
+           中の曲名・アーティストの max-width:100% は、この箱の幅を指します。
+        */
+        #jacket-big-names{
+            position:relative;
+            max-width:100%;
+
+            display:flex;
+            flex-direction:column;
+            align-items:center;
+
+            margin-top:8px;
+        }
+
+        #jacket-big-names.jacket-names-warning #jacket-big-title,
+        #jacket-big-names.jacket-names-warning #jacket-big-artist{
+            visibility:hidden;
+        }
+
         #jacket-big-title,
         #jacket-big-artist{
             max-width:100%;
@@ -3454,12 +3529,10 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             font-weight:700;
 
             /*
-            ジャケットとの間(v208)。
-            ⚠️ v214で 10px → 8px。竹弘の「警告メッセージがギリギリ
-               なので上にずらして欲しい」に応えて、上下の余白を
-               少しずつ削って場所を作っています。
+            ジャケットとの間(v208。v214で 10px → 8px)は、v257 から
+            包む箱(#jacket-big-names)の margin-top に移しました(理由はあちら)。
             */
-            margin-top:8px;
+            margin-top:0;
         }
 
         #jacket-big-artist{
@@ -3965,43 +4038,41 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
            暗い赤だと幕に溶けて読めません。
         */
         /*
-        ⚠️⚠️ **この行は、出ていない時も場所を空けたままにします(v213)。**
+        ⚠️⚠️ **出す場所は、曲名・アーティストの2行の真ん中です(v257)。**
 
-        竹弘の指摘(2026-09-21):
-            「メッセージが2行に渡り表示される為、ジャケ写の位置と曲名、
-              アーティスト名、ボタンの位置、全てがズレ動くのが
-              見栄えがよくありません。表示位置を固定としたいです」
+        竹弘の答え(2026-10-25):上書きの最終確認の赤い文字は、2段目に被るなら
+        避けたい → 確かめている間だけ、曲名・アーティストの2行の場所に出す。
+        置き方 A で文字とボタンを「曲一覧の1段目まで」に収めるため、ボタンの下に
+        注意書きの1行(v213〜v256)を空けておく余裕が無くなったためです。
 
-        v212は display:none で出し入れしていたので、出た瞬間に
-        その行のぶんだけ**上の全部が押し上げられて**いました。
+        【場所が動かない仕組み】
 
-        → **高さを決め打ちにして、いつも1行ぶん場所を取る。**
-          js/jacket.js は文字を入れるか空にするかだけを切り替えます
-          (display は触りません)。
+        position:absolute で、包む箱(#jacket-big-names)の真ん中に重ねます。
+        自分は場所を取らず、出している間は js/jacket.js が2行を隠します
+        (visibility:hidden。場所は残る)。だから出しても消しても、ジャケも
+        ボタンも1pxも動きません(竹弘の指定「表示位置を固定としたい」2026-09-21)。
 
-        ⚠️ **必ず1行に収めます。** white-space:nowrap で折り返しを
-           禁じ、文字の大きさは画面幅に合わせて縮みます
-           (狭い端末でもはみ出さないため)。2行になると高さが
-           変わり、また全部が動きます。
-
-        ⚠️ 文言を足す時は、1行のままか必ず確かめること。
+        ⚠️ **必ず1行に収めます。** white-space:nowrap で折り返しを禁じ、
+           文字の大きさは画面幅に合わせて縮みます(狭い端末でもはみ出さないため)。
+           left:50% + translateX(-50%) で真ん中に置くので、2行より幅が広くても
+           左右に同じだけ広がります(曲名が短い曲でも真ん中のまま)。
+        ⚠️ 文言を足す時は、1行のままか必ず確かめること
+           (sandbox/measure-jacket-layout.html が幅を測ります)。
         */
         #jacket-warning{
-            /* v214で 8px → 6px(上に詰めるため) */
-            margin-top:6px;
+            position:absolute;
+            top:50%;
+            left:50%;
+            transform:translate(-50%,-50%);
 
-            /* ★ いつも1行ぶんの場所を確保する */
-            height:1.25em;
             line-height:1.25;
 
             white-space:nowrap;
 
             color:#ff6b6b;
-            font-size:min(3.4vw,13px);
+            font-size:min(3.6vw,14px);
             font-weight:700;
             text-align:center;
-
-            max-width:100%;
         }
 
         /*
@@ -8158,8 +8229,22 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
 <div id="jacket-panel" style="display:none;">
     <div id="jacket-panel-inner">
         <div id="jacket-big"></div>
-        <div id="jacket-big-title"></div>
-        <div id="jacket-big-artist"></div>
+
+        <!-- ------------------------------------------------------
+         曲名・アーティストの2行と、赤い注意書き(v257)
+
+         注意書きは、確かめている間だけ、この2行の場所に重ねて出ます
+         (竹弘の答え 2026-10-25)。出ている間は2行を隠し(場所は残す)、
+         消すと2行が戻ります。js/jacket.js の showJacketWarning() が切り替えます。
+
+         ⚠️ **#jacket-warning に style="display:none" は付けません。**
+            文字を入れるか空にするかだけで出し入れします(空なら何も見えない)。
+        ------------------------------------------------------ -->
+        <div id="jacket-big-names">
+            <div id="jacket-big-title"></div>
+            <div id="jacket-big-artist"></div>
+            <div id="jacket-warning"></div>
+        </div>
 
         <!-- ------------------------------------------------------
          アーティスト名の下のボタン3つ(v208、竹弘の指定)
@@ -8294,16 +8379,10 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
 
         </div>
 
-        <!-- ------------------------------------------------------
-         注意書きの行(v210で新設、v213で「常に場所を確保」へ)
-
-         ⚠️ **style="display:none" は付けません。** 出し入れすると
-            その瞬間に上の全部(ジャケット・曲名・アーティスト・
-            ボタン)が動きます。**いつも1行ぶん場所を取ったまま**に
-            して、js/jacket.js は文字を入れるか空にするかだけを
-            切り替えます(高さはCSSで固定)。
-        ------------------------------------------------------ -->
-        <div id="jacket-warning"></div>
+        <!--
+         注意書きの行(v210で新設)は、v257 で曲名・アーティストの場所
+         (上の #jacket-big-names の中)へ移しました。
+        -->
 
     </div>
 </div>
