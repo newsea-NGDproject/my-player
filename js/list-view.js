@@ -24,6 +24,9 @@
  他は、表示する文字を作る小さな部品です
  (buildTitleText / buildMetaHtml / formatDuration / escapeHtml)。
 
+ どのジャケットを出すかの判断(getTrackCover / getTrackCoverBig)もここにあります。
+ ジャケットの経緯 → devlog/ジャケ写.md
+
 ----------------------------------------------------------------------
 
 【他のファイルとの関係】
@@ -307,6 +310,11 @@ function createRowElement(trackId){
  *    だけで元に戻ります。この関数が自動的に cover_art を返すためで、
  *    「今どちらを表示中か」という旗を別に持つ必要がありません。
  *
+ * ⚠️ (v260 = ①-2)自作ジャケットは「小さい箱(cover_art_custom。160点)」と
+ *    「大きい箱(cover_art_custom_big。1080点まで)」の2つを持つようになりました。
+ *    この関数が返すのは、いつも**小さい方**です(曲一覧・上半分・ロック画面用)。
+ *    特大表示だけは、すぐ下の getTrackCoverBig() で大きい方を使います。
+ *
  * @param  {Object} track … libraryMap から取り出した1曲分のデータ
  * @return {Blob|null}    … 表示に使う画像。どちらも無ければ null
  */
@@ -348,6 +356,36 @@ function getTrackCover(track){
     今までどおり「自作があればそちら、無ければ元」です。
     */
     return track.cover_art_custom || track.cover_art || null;
+
+}
+
+/**
+ * 特大表示で出すジャケットを1つ返します(v260 = ①-2)。
+ *
+ * **どちらの絵を出すか(元か自作か)は、getTrackCover() に決めさせます。**
+ * この関数がするのは、自作に決まった時に「大きい箱があれば、そちらに差し替える」だけです。
+ * 判断の式を2か所に書かないためです(CLAUDE.md の「決めるのは1か所」)。
+ *
+ *     getTrackCover の答え     この関数の答え
+ *     元のジャケット(160点)   → そのまま(特大表示は開いた時に曲のファイルから読み直す。js/jacket.js「3-1.」)
+ *     自作の小さい箱(160点)   → 大きい箱(cover_art_custom_big)。まだ無ければ小さい箱のまま
+ *     無し                     → null
+ *
+ * ⚠️ 大きい箱がまだ無いのは、v259 までに作った自作で、起動時の並べ直し
+ *    (js/metadata.js の arrangeCustomCoverBoxes)がまだ済んでいない間だけです。
+ *
+ * @param  {Object} track … libraryMap から取り出した1曲分のデータ
+ * @return {Blob|null}
+ */
+function getTrackCoverBig(track){
+
+    const cover = getTrackCover(track);
+
+    if(cover && cover === track.cover_art_custom && track.cover_art_custom_big){
+        return track.cover_art_custom_big;
+    }
+
+    return cover;
 
 }
 

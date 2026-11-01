@@ -28,6 +28,9 @@
    画質     … 開いた瞬間は DB の絵を出し、静かな時に曲のファイルから
               元のジャケを読み直して、ふわっと鮮明な絵に入れ替える
               (「3-1. 元のファイルから読み直す」)
+              自作ジャケは読み直す元が無いので、DB の「大きい箱」
+              (cover_art_custom_big。1080点まで)を出す(v260 = ①-2。
+              どの絵かは js/list-view.js の getTrackCoverBig)
    注意書き … 上書きの確認などの赤い文字は、曲名・アーティストの2行の
               場所に出す(その間だけ2行を隠す)
 
@@ -262,8 +265,10 @@ let jacketViewTrackId = null;
 ただ、それは押す前ではなく**撮った後**に置く方が自然で、
 しかも「今ジャケットが何に設定されているか」に左右されません。
 
-⚠️ 中身は**すでに480pxへ縮小済み**です。確認の段階で原寸を
-   抱えておくと、大きな写真でメモリを無駄に使うためです。
+⚠️ 中身は**すでに「大きい箱」の大きさ(COVER_ART_BIG_SIZE = 1080点まで)へ
+   縮小済み**です(v260。v208〜v259 は480px)。確認の段階で原寸を抱えておくと、
+   大きな写真でメモリを無駄に使うためです。小さい箱(160点)は、保存する時に
+   ここから作ります(applyJacketPending)。
 */
 let jacketPendingBlob = null;
 
@@ -730,10 +735,11 @@ function renderJacketBig(track){
 
     ① まだ保存していない画像を預かっていれば、**それを優先**します
        (撮った直後の確認中。竹弘が ✓ を押すまでDBには入りません)
-    ② それが無ければ getTrackCover()(js/list-view.js)に任せます
-       (差し替えがあればそちら、無ければ元のジャケット)
+    ② それが無ければ getTrackCoverBig()(js/list-view.js)に任せます
+       (差し替えがあればそちら、無ければ元のジャケット。v260 から、差し替えは
+        特大表示用の「大きい箱」を出す。どちらを出すかの判断は getTrackCover のまま)
     */
-    const cover = jacketPendingBlob || getTrackCover(track);
+    const cover = jacketPendingBlob || getTrackCoverBig(track);
 
     if(cover){
 
@@ -2043,10 +2049,14 @@ function cancelLiveCamera(event){
 /**
  * 『📸』が押された時の処理です。今映っている瞬間を切り取ります。
  *
- * ⚠️⚠️ **切り取る大きさと画質は、他の取り込みとまったく同じ定数**
- *    (COVER_ART_SIZE / COVER_ART_QUALITY)を使います。竹弘の指定
+ * ⚠️⚠️ **切り取る大きさと画質は、📁 の取り込みとまったく同じ定数**
+ *    (COVER_ART_BIG_SIZE / COVER_ART_QUALITY)を使います。竹弘の指定
  *    「1曲あたりのファイルサイズが大きくならないように、取込時に
  *      解像度を今のジャケ写サイズに解像度変更は絶対して欲しい」。
+ *    v260(①-2)から、撮った絵は「大きい箱」の大きさ(1080点まで)で預かり、
+ *    小さい箱(160点)は保存の時に作ります(applyJacketPending)。
+ *    ⚠️ 映像より大きくはしません(引き伸ばさない)。今の映像は Chrome の標準の
+ *       640×480 なので、真ん中の正方形は 480点です(映像を大きく借りるのは ①-3)。
  *
  * ⚠️ shrinkImageBlob()(js/metadata.js)を通していないのは、あちらが
  *    **ファイル(Blob)を受け取る**作りで、映像のひとコマは渡せない
@@ -2076,12 +2086,6 @@ function shootFromLiveCamera(event){
 
     try{
 
-        const canvas = document.createElement("canvas");
-        canvas.width  = COVER_ART_SIZE;
-        canvas.height = COVER_ART_SIZE;
-
-        const context = canvas.getContext("2d");
-
         /*
         ---- 中央を正方形に切り取ります ----
 
@@ -2092,10 +2096,21 @@ function shootFromLiveCamera(event){
         const sourceX = (video.videoWidth  - side) / 2;
         const sourceY = (video.videoHeight - side) / 2;
 
+        /*
+        描く大きさ = 大きい箱の一辺。ただし映像の正方形より大きくはしない(v260。上の解説)。
+        */
+        const outSize = Math.min(side,COVER_ART_BIG_SIZE);
+
+        const canvas = document.createElement("canvas");
+        canvas.width  = outSize;
+        canvas.height = outSize;
+
+        const context = canvas.getContext("2d");
+
         context.drawImage(
             video,
             sourceX,sourceY,side,side,
-            0,0,COVER_ART_SIZE,COVER_ART_SIZE
+            0,0,outSize,outSize
         );
 
         // 撮ったのでカメラは止めます(ランプを消す)
@@ -2120,6 +2135,7 @@ function shootFromLiveCamera(event){
             console.log(
                 "カメラで撮りました :",
                 track.file_name,
+                outSize + "点",
                 Math.round(blob.size / 1024) + "KB",
                 "(まだ保存していません)"
             );
@@ -2247,7 +2263,8 @@ function confirmJacketOverwrite(event){
 /**
  * 写真が選ばれた(または撮られた)時の処理です。
  *
- * ⚠️ **ここではまだDBに書きません。** 480pxに縮小して預かり、
+ * ⚠️ **ここではまだDBに書きません。** 大きい箱の大きさ(1080点まで。v260。
+ *    v208〜v259 は480px)に縮小して預かり、
  *    ジャケット枠に映して竹弘に見てもらいます。保存するのは
  *    ✓ が押された時(applyJacketPending)です。
  */
@@ -2274,7 +2291,7 @@ async function handleJacketFileChosen(event){
     try{
 
         /*
-        ---- 480px角のJPEGに縮小します ----
+        ---- 「大きい箱」の大きさ(1080点まで)のJPEGに縮小します(v260)----
 
         shrinkImageBlob() は js/metadata.js の関数で、**埋め込み
         ジャケットを取り込む時とまったく同じもの**です。中央を正方形に
@@ -2284,20 +2301,24 @@ async function handleJacketFileChosen(event){
            竹弘の指定「1曲あたりのファイルサイズが大きくならないように、
            取込時に解像度を今のジャケ写サイズに解像度変更は絶対して
            取り込んで欲しい」に対して、ここに別の数字を書くと、将来
-           COVER_ART_SIZE を変えた時に**ここだけ古いサイズのまま**
-           残ります。
+           大きさを変えた時に**ここだけ古いサイズのまま**残ります。
 
         スマホの写真は4000×3000(1200万画素)ほどありますが、
-        480px角にすると約1/26になり、他のジャケットと同じ
-        数十KBに収まります。
+        1080点角にすると約1/10になり、1曲 100〜300KB ほどに収まります。
+        v208〜v259 は480px(元のジャケと同じ大きさ)でした。v260(①-2)から、
+        特大表示用の大きい箱(COVER_ART_BIG_SIZE)の大きさで預かり、曲一覧などに
+        使う小さい箱(160点)は、保存する時にここから作ります(applyJacketPending)。
 
+        ⚠️ 最後の true は「元の写真が1080点より小さければ、引き伸ばさない」です
+           (竹弘「引き伸ばしはしない」。shrinkImageBlob の keepSmall)。
         ⚠️ **縮小は「確認の前」にやります。** 後回しにすると、
            確認している間ずっと1200万画素を抱えることになります。
         */
         const blob = await shrinkImageBlob(
             file,
-            COVER_ART_SIZE,
-            COVER_ART_QUALITY
+            COVER_ART_BIG_SIZE,
+            COVER_ART_QUALITY,
+            true
         );
 
         if(!blob){
@@ -2350,15 +2371,38 @@ async function applyJacketPending(){
     try{
 
         /*
+        ---- 小さい箱(160点)を作ります(v260 = ①-2)----
+
+        預かっているのは「大きい箱」の大きさ(1080点まで)の絵です。曲一覧・上半分・
+        ロック画面に使う小さい箱は、ここで同じ関数(shrinkImageBlob)で作ります。
+
+        ⚠️ **何かを書き換える前に作ります。** 作れなかった時に、片方の箱だけ
+           新しい絵になる食い違いを起こさないためです(作れなければ何も保存しない)。
+        */
+        const smallBlob = await shrinkImageBlob(
+            blob,
+            COVER_ART_SIZE,
+            COVER_ART_QUALITY
+        );
+
+        if(!smallBlob){
+            console.error("ジャケットの保存に失敗 : 小さい箱の絵を作れませんでした");
+            return;
+        }
+
+        /*
         ⚠️⚠️ **cover_art(元のジャケット)には一切触りません。**
            竹弘の指定「もともとあるジャケ写は上書きしない」。
            差し替えは cover_art_custom という別の場所に入れるので、
            何度撮り直しても元の絵は無傷で残ります。
 
-        ⚠️ 一方 cover_art_custom は**1つしか持ちません。** だから
+        ⚠️ 一方、自作の箱(小さい箱と大きい箱の1組)は**1つしか持ちません。** だから
            ここへ来る前に上書き確認をはさんでいます(v210)。
+        ⚠️ 2つの箱は必ず一緒に書きます(v260)。小さい箱 = cover_art_custom(160点)、
+           大きい箱 = cover_art_custom_big(1080点まで。特大表示だけが使う)。
         */
-        track.cover_art_custom = blob;
+        track.cover_art_custom     = smallBlob;
+        track.cover_art_custom_big = blob;
 
         /*
         ⚠️ 作ったばかりの絵を見せないと意味がないので、旗も
@@ -2379,7 +2423,8 @@ async function applyJacketPending(){
         console.log(
             "ジャケットを差し替えました :",
             track.file_name,
-            Math.round(blob.size / 1024) + "KB"
+            "大きい箱 " + Math.round(blob.size / 1024) + "KB",
+            "/ 小さい箱 " + Math.round(smallBlob.size / 1024) + "KB"
         );
 
     }
@@ -2440,6 +2485,21 @@ async function chooseArtwork(use){
         jacketUiState = "normal";
 
         refreshCoverEverywhere(track);
+
+        /*
+        ⚠️ 元のジャケットに切り替えた時は、曲のファイルからの読み直しを始めます(v260)。
+
+           開いた時に自作ジャケを出していると、読み直しは始まりません(startJacketReload)。
+           v260 から DB の元のジャケは160点なので、このままだと閉じて開き直すまで、
+           ぼやけた絵のままになるためです。
+           鮮明な絵がもうある時(この画面で一度元を出していた時。refreshCoverEverywhere の
+           renderJacketBig がもう重ねている)と、読み直しの途中の時は、何もしません。
+        ⚠️ 大きさは今のジャケの枠の一辺(縁取りを含む外側)を渡します(開いた時の
+           layoutJacketBig の答えと同じ数字)。
+        */
+        if(use === "original" && !shouldShowJacketHd(track) && !jacketReload){
+            startJacketReload(track,jacketBigEl.offsetWidth);
+        }
 
         console.log(
             "ジャケットを切り替えました :",

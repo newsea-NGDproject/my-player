@@ -43,6 +43,8 @@
    refreshRow()          → list-view.js(解析が済んだ行を差し替える)
    setLampPhase()        → lamp.js(進捗ランプの表示)
    idbPut()              → db.js(解析結果をDBへ保存)
+
+ ジャケットの経緯 → devlog/ジャケ写.md
 ======================================================================
 */
 
@@ -88,15 +90,41 @@ const META_ANALYZER_VERSION = 2;
 v206で 2 に上げた。下の COVER_ART_SIZE を 96 → 480 にしたので、
 **竹弘がDBをクリアしなくても、起動時に369曲が自動で取り直される。**
 (これが無いと「取得済み」の印が付いた曲は96pxのまま永久に残る)
+
+v260(①-2)で 3 に上げた。COVER_ART_SIZE を 480 → 160 に戻したので、
+次の起動で全曲のジャケットが160点で取り直される(DBクリアは要らない)。
+⚠️ この取り直しの時に、自作ジャケットも「小さい箱 + 大きい箱」の2つに
+   並べ直す(arrangeCustomCoverBoxes。analyzeCoverArt の中から呼ぶ)。
 */
-const COVER_ANALYZER_VERSION = 2;
+const COVER_ANALYZER_VERSION = 3;
 
 /*
 DBに保存するジャケット画像の一辺の長さ(ピクセル)。
-**480 = 480×480ドットの正方形**(約23万画素)。
+**160 = 160×160ドットの正方形**(v260 から。v206〜v259 は 480)。
 
 ------------------------------------------------------------
-【なぜ96pxから480pxに上げたのか(v206、竹弘の判断 2026-09-21)】
+【なぜ480pxから160pxに戻したのか(v260 = ①-2、竹弘の判断 2026-10-25)】
+
+    竹弘:「NoriRunDB のジャケは一覧用に小さく戻す」
+          (インストール後の最初の読み込みが、480点にしてから遅くなったため)
+
+480 にしたのは特大表示のためだった(下の v206 の説明)。v257(①-1)から、
+特大表示は**開いた時だけ曲のファイルから元のジャケを読み直す**ようになった
+(js/jacket.js の「3-1.」)ので、DB に大きな絵を持つ理由が無くなった。
+
+DB の絵を使うのは、曲一覧(44px)・上半分のジャケ(約76px)・ロック画面。
+    曲一覧    44px × 端末の倍率 約2.6 ≒ 115点
+    上半分    76px × 約2.6           ≒ 200点
+昔の96点では上半分とロック画面がぼやけていたので、それより上の **160点** に
+した(竹弘 OK 2026-10-25)。上半分は少しだけ引き伸ばしになるが、ぼやけは小さい。
+
+⚠️ **自作ジャケット(📷・📁)は別です。** 読み直す元のファイルが無く、DB にしか
+   無いので、特大表示用に大きい箱(COVER_ART_BIG_SIZE)にも保存する(下)。
+⚠️ ロック画面に伝える大きさ(js/media-session.js の sizes)は、この定数から
+   組み立てているので、ここを変えれば自動で "160x160" になる。
+
+------------------------------------------------------------
+【(ここから下は v206 の話)なぜ96pxから480pxに上げたのか(v206、竹弘の判断 2026-09-21)】
 
 v204でジャケットの特大表示を作ったところ、竹弘の実機で
 「画質はひどすぎた」となった。96px角を3〜4倍に引き伸ばして
@@ -134,7 +162,28 @@ v72から変わらない(竹弘の判断、2026-08-08)。480pxは
    元が持っていない細かさは出てこない(引き伸ばしになる)。
 ------------------------------------------------------------
 */
-const COVER_ART_SIZE = 480;
+const COVER_ART_SIZE = 160;
+
+/*
+自作ジャケット(📷 カメラ・📁 マイファイル)の「大きい箱」の一辺(ピクセル)です(v260 = ①-2)。
+
+竹弘の指定(2026-10-25):「自作ジャケは特大表示用に大きく DB に保存」
+(保存するのは竹弘が作った1曲ずつなので、時間は気にしない)
+
+自作ジャケットは、DB の中にしか無い絵です(元のジャケと違って、曲のファイルから
+読み直せない)。だから特大表示で鮮明に見せるには、大きいまま DB に持つしかありません。
+
+【1080 という数字】
+特大表示の一辺(縁取りの内側)× 端末の倍率 = 画面に出す点の数:
+    竹弘の端末(ブラウザ)    341px × 2.625 ≒  895点
+    竹弘の端末(インストール版)378px × 2.625 ≒  992点
+→ スマホならどれも 1080 に収まる(タブレットは少し足りないが、十分きれい)。
+
+⚠️ 元の写真がこれより小さい時は、引き伸ばさずに元の大きさのまま保存します
+   (shrinkImageBlob の keepSmall。竹弘「引き伸ばしはしない」)。
+⚠️ 1曲あたり 100〜300KB ほど。自作するのは一部の曲だけなので、DB は膨らみません。
+*/
+const COVER_ART_BIG_SIZE = 1080;
 
 // 保存するJPEGの画質(0〜1)。0.8は画質とサイズのバランスが良い定番の値。
 const COVER_ART_QUALITY = 0.8;
@@ -426,7 +475,8 @@ async function analyzeOneTrack(trackId){
  * 【処理の流れ】
  *   ① ファイルの権限を確認して開く
  *   ② タグの中から画像データ(picture)を取り出す
- *   ③ COVER_ART_SIZE 角のJPEGに縮小する(v206から480px)
+ *   ③ COVER_ART_SIZE 角のJPEGに縮小する(v206〜v259 は480px、v260 から160px)
+ *   ③' 自作ジャケットがあれば、2つの箱に並べ直す(v260。arrangeCustomCoverBoxes)
  *   ④ DBへ保存し、画面のその行だけ差し替える
  *
  * ジャケットが入っていないファイルも珍しくありません。
@@ -476,6 +526,16 @@ async function analyzeCoverArt(trackId){
             }
 
         }
+
+        /*
+        ③' 自作ジャケットを2つの箱に並べ直します(v260)。
+
+        v259 までに作った自作ジャケットは、480点の箱1つだけでした。
+        ジャケットを取り直すこの機会に、1回だけ並べ直します
+        (COVER_ANALYZER_VERSION を 3 に上げたので、全曲がここを1回通る)。
+        ⚠️ 元のジャケット(上)とは関係なく、自作が無い曲・並べ直し済みの曲では何もしません。
+        */
+        await arrangeCustomCoverBoxes(track);
 
         // 画像が無かった場合も「調べ終わった」印は付けます
         track.is_cover_analyzed = true;
@@ -557,8 +617,19 @@ function extractPictureBlob(tags){
  * ジャケットは正方形が多いものの、まれに横長・縦長の画像もあります。
  * そのまま縮めると絵が歪むため、中央を正方形に切り取ってから縮小します
  * (写真アプリのサムネイルと同じ考え方)。
+ *
+ * 【keepSmall(v260)】
+ * true を渡すと、元の絵の短い辺が size より小さい時に、引き伸ばさずに
+ * 元の大きさのまま正方形にします(自作ジャケットの大きい箱で使う。竹弘
+ * 「引き伸ばしはしない」)。省くと今までどおり、いつも size に合わせます
+ * (DB の小さい絵は、小さい元の絵でも一覧の大きさに揃える)。
+ *
+ * @param {Blob}    blob      … 元の画像
+ * @param {number}  size      … 正方形の一辺(px)
+ * @param {number}  quality   … JPEG の画質(0〜1)
+ * @param {boolean} keepSmall … 元の絵が小さい時は引き伸ばさない(省略時 false)
  */
-async function shrinkImageBlob(blob,size,quality){
+async function shrinkImageBlob(blob,size,quality,keepSmall){
 
     let bitmap = null;
 
@@ -572,18 +643,24 @@ async function shrinkImageBlob(blob,size,quality){
         */
         bitmap = await createImageBitmap(blob);
 
+        // 元画像の短い方の辺に合わせて、中央から正方形に切り取ります
+        const sourceSize = Math.min(bitmap.width,bitmap.height);
+
+        /*
+        描く先の一辺です。keepSmall の時だけ、元の絵より大きくしません(上の解説)。
+        */
+        const outSize = keepSmall ? Math.min(size,sourceSize) : size;
+
         /*
         canvas(キャンバス)は、JavaScriptから絵を描ける画用紙です。
         画面には表示せず、縮小した画像を作るための作業台として使います。
         */
         const canvas = document.createElement("canvas");
-        canvas.width = size;
-        canvas.height = size;
+        canvas.width = outSize;
+        canvas.height = outSize;
 
         const context = canvas.getContext("2d");
 
-        // 元画像の短い方の辺に合わせて、中央から正方形に切り取ります
-        const sourceSize = Math.min(bitmap.width,bitmap.height);
         const sourceX = (bitmap.width - sourceSize) / 2;
         const sourceY = (bitmap.height - sourceSize) / 2;
 
@@ -596,7 +673,7 @@ async function shrinkImageBlob(blob,size,quality){
         context.drawImage(
             bitmap,
             sourceX,sourceY,sourceSize,sourceSize,
-            0,0,size,size
+            0,0,outSize,outSize
         );
 
         // canvasの内容を、保存できるJPEGファイルの形に変換します
@@ -627,6 +704,58 @@ async function shrinkImageBlob(blob,size,quality){
         }
 
     }
+
+}
+
+/**
+ * 自作ジャケットを「小さい箱 + 大きい箱」の2つに並べ直します(v260 = ①-2)。
+ *
+ * 【2つの箱】
+ *
+ *     cover_art_custom     … 小さい箱(COVER_ART_SIZE = 160点)。曲一覧・上半分・ロック画面
+ *     cover_art_custom_big … 大きい箱(COVER_ART_BIG_SIZE まで)。特大表示だけ
+ *
+ * v259 までの自作ジャケットは、480点の箱1つ(cover_art_custom)だけでした。
+ * その 480点の絵を**縮め直さずにそのまま**大きい箱へ移し、そこから160点の
+ * 小さい箱を作ります(竹弘の指定「今ある480点の自作は大きい方へ移す」)。
+ *
+ * ⚠️ 自作が無い曲・すでに2つの箱がある曲では、何もしません。だから何度呼んでも
+ *    同じ結果です(analyzeCoverArt の取り直しのたびに呼んでも壊れない)。
+ * ⚠️ 新しく作る自作ジャケットは、保存の時に2つの箱へ入れます
+ *    (js/jacket.js の applyJacketPending)。ここを通るのは v259 までの分だけです。
+ * ⚠️ DB への書き込みは、呼んだ側(analyzeCoverArt)がまとめて行います。
+ *
+ * @param  {Object}  track … libraryMap の1曲分(中身を書き換える)
+ * @return {Promise<boolean>} 並べ直したら true
+ */
+async function arrangeCustomCoverBoxes(track){
+
+    if(!track || !track.cover_art_custom || track.cover_art_custom_big){ return false; }
+
+    const smallBlob = await shrinkImageBlob(
+        track.cover_art_custom,
+        COVER_ART_SIZE,
+        COVER_ART_QUALITY
+    );
+
+    /*
+    ⚠️ 小さい箱を作れなかった時は、何も動かしません。大きい箱にだけ移して
+       小さい箱を空にすると、曲一覧からジャケットが消えてしまうためです
+       (次の取り直しで、もう一度挑戦します)。
+    */
+    if(!smallBlob){ return false; }
+
+    track.cover_art_custom_big = track.cover_art_custom;
+    track.cover_art_custom     = smallBlob;
+
+    console.log(
+        "自作ジャケットを2つの箱に並べ直しました :",
+        track.file_name,
+        "大きい箱 " + Math.round(track.cover_art_custom_big.size / 1024) + "KB",
+        "/ 小さい箱 " + Math.round(smallBlob.size / 1024) + "KB"
+    );
+
+    return true;
 
 }
 
