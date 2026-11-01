@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v257)ノリRun
+        (v258)ノリRun
         メインメニュー
 
     </title>
@@ -3355,16 +3355,21 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         /*
         ジャケット・曲名・アーティスト・ボタンを縦に並べる箱です。
 
-        【v257 置き方 A(竹弘の指定 2026-10-25)】
-            ジャケ … 上半分の角丸カードの中いっぱい(カードの真ん中)
-            曲名からボタンまで … その下、曲一覧の操作パネルと1段目の欄まで
+        【v257 置き方 A(竹弘の指定 2026-10-25)。v258 で文字とボタンを段の真ん中へ】
+            ジャケ             … 上半分の角丸カードの中いっぱい(カードの真ん中)
+            曲名・アーティスト … 曲一覧の操作パネルの段の真ん中(#jacket-big-names)
+            ボタン             … 曲一覧のいちばん上の行の欄の真ん中(ボタンの行)
 
         ⚠️ **上下の位置は js/jacket.js が決めます。** 開くたびに本物の画面を測り、
            この箱の margin-top(ジャケの上端の高さ)を px で入れます
            (applyJacketBigSize)。ここで高さや真ん中寄せを決めないのは、
-           「ジャケはカードの真ん中・文字は1段目まで」が端末ごとに違う位置に
-           なるためです(v256 までは height:50% の中で真ん中寄せ)。
+           カードの真ん中が端末ごとに違う位置になるためです
+           (v256 までは height:50% の中で真ん中寄せ)。
         margin-bottom:auto は、残りを下の余白にして、箱を上へ寄せる指定です。
+
+        ⚠️ v258 から、この箱の中で並んでいるのはジャケだけです。曲名の箱と
+           ボタンの行は position:absolute で並びから外し、js/jacket.js が段の場所へ
+           直接置きます(placeJacketBox)。
         */
         #jacket-panel-inner{
             margin-bottom:auto;
@@ -3395,6 +3400,9 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
                 ボタン3つ
 
             間隔は下の各要素の margin で付けます。
+            ⚠️ v258 から、ジャケと曲名・アーティストとボタンの間は「段の場所」で
+               決まります(上の説明)。今も効いているのは、曲名とアーティストの間の
+               2px だけです(#jacket-big-artist の margin-top)。
             */
             gap:0;
 
@@ -3482,30 +3490,37 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
 
         幕の上に出るので、色は白で固定します(テーマの文字色を使うと
         暗い幕の上で読めなくなる場合があるため)。
-        長い名前は「…」で省略します。
+        長い名前は箱の幅で切れ、タッチで横に流して全文を見せます(v258。下の説明)。
         */
         /*
         曲名とアーティストの2行を包む箱です(v257)。
+
+        ⚠️⚠️ **v258 から、この箱を操作パネルの段(🔁⇅⏮■⏭🐇↩)と同じ場所・
+           同じ大きさに置きます。** js/jacket.js が開くたびに段を測り、left・top・
+           width・height を px で入れます(findJacketNamesSlot / placeJacketBox)。
+           竹弘の指定(2026-11-01):「曲名、アーティスト名を1段目内で収め上下、
+           左右で中央合わせの均等に配置」「下段の角丸の中に曲名とアーティスト名を
+           収めたい」。段は下段のカードの余白の内側いっぱいなので、ここに置けば
+           角丸の中に収まります。
+           position:absolute の基準は画面いっぱいの幕(#jacket-panel)です。
+           justify-content / align-items:center で、2行を段の上下・左右の真ん中に置きます。
 
         赤い注意書き(#jacket-warning)は、この箱の真ん中に重ねて出します
         (竹弘の答え 2026-10-25:確かめている間だけ、曲名・アーティストの場所に)。
         出している間は .jacket-names-warning が付き、2行を visibility:hidden で
         隠します。**隠しても場所は残るので、ジャケもボタンも動きません。**
-
-        ⚠️ ジャケとの間(8px)は、曲名ではなくこの箱に付けています。曲名に
-           付けると、箱の中に余白が入り、注意書きの真ん中が4px下へずれるためです。
-        ⚠️ max-width:100% は、長い曲名で箱が画面からはみ出さないための指定です。
-           中の曲名・アーティストの max-width:100% は、この箱の幅を指します。
         */
         #jacket-big-names{
-            position:relative;
-            max-width:100%;
+            position:absolute;
+            left:0;
+            top:0;
+            width:100%;
+            box-sizing:border-box;
 
             display:flex;
             flex-direction:column;
             align-items:center;
-
-            margin-top:8px;
+            justify-content:center;
         }
 
         #jacket-big-names.jacket-names-warning #jacket-big-title,
@@ -3513,14 +3528,43 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             visibility:hidden;
         }
 
+        /*
+        曲名・アーティストの「窓」です(v258)。
+
+        タッチで横に流す仕組み(js/list-view.js の triggerMarquee。メニュー画面と
+        同じ)は、「幅の決まった窓の中で、中の span を横にずらす」形で動きます。
+        だから窓は overflow:hidden で、はみ出た文字を隠します。
+
+        ⚠️ **「…」の省略はやめました(v258)。** 中の span は流すために
+           inline-block にしていて、その形だと「…」は付かず、文字が丸ごと
+           消えて「…」だけになるためです。メニュー画面の曲名と同じく、
+           はみ出した所で切れて見えます。
+        ⚠️ 窓の幅は「文字の幅、ただし箱の幅まで」(max-width:100%)です。短い名前は
+           真ん中に、箱より長い名前は箱の左端から並んで右端で切れます(収まらない
+           行は左寄せになる、ブラウザの決まり)。左端から並ぶので、流すと末尾まで読めます。
+        ⚠️ line-height:1.2 は、2行を操作パネルの段(約40px)の中に収めるための指定です。
+           ブラウザまかせ(normal)だと書体によって行が高くなり、段からはみ出します。
+        */
         #jacket-big-title,
         #jacket-big-artist{
             max-width:100%;
             text-align:center;
 
             overflow:hidden;
-            text-overflow:ellipsis;
             white-space:nowrap;
+
+            line-height:1.2;
+        }
+
+        /*
+        窓の中の文字そのもの(v258)。
+
+        inline-block にするのは、transform(横にずらす)を効かせるためです
+        (ふつうの文字の span には transform が効きません)。
+        */
+        #jacket-big-title > span,
+        #jacket-big-artist > span{
+            display:inline-block;
         }
 
         #jacket-big-title{
@@ -3529,8 +3573,9 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             font-weight:700;
 
             /*
-            ジャケットとの間(v208。v214で 10px → 8px)は、v257 から
-            包む箱(#jacket-big-names)の margin-top に移しました(理由はあちら)。
+            ジャケットとの間(v208〜v256 は曲名の margin-top、v257 は包む箱の
+            margin-top:8px)は、v258 でなくなりました。包む箱を操作パネルの段に
+            直接置くためです(#jacket-big-names の説明)。
             */
             margin-top:0;
         }
@@ -3603,14 +3648,29 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         ⚠️ 曲名・アーティスト名・ファイル名の幅は**今のままでOK**
            (竹弘の指定)。揃えるのはボタンだけです。
 
-        ここに書いてある width は、万一JSが走らなかった時の保険です。
+        ⚠️⚠️ **v258 から、行は曲一覧のいちばん上の行の欄に置きます。**
+           js/jacket.js が開くたびに欄を測り、left・top・width・height を px で
+           入れます(findJacketButtonSlot / placeJacketBox)。竹弘の指定
+           (2026-11-01):ボタンは2段目(曲一覧のいちばん上の行)の中の真ん中に。
+           position:absolute の基準は画面いっぱいの幕(#jacket-panel)です。
+           align-items:center で上下の真ん中、justify-content:center で左右の真ん中に
+           並びます。5つの行はどれも同じ欄に置くので、入れ替わっても動きません。
+           ボタン1つの大きさは今までどおりジャケの幅から決まります(下の説明)。
+
+        ここに書いてある left・top・width は、万一JSが走らなかった時の保険です。
         */
         #jacket-big-buttons,
         #jacket-confirm-buttons,
         #jacket-artwork-buttons,
         #jacket-overwrite-buttons,
         #jacket-camera-buttons{
+            position:absolute;
+            left:0;
+            top:0;
+            box-sizing:border-box;
+
             display:flex;
+            align-items:center;
 
             /*
             ⚠️ 間隔は js/jacket.js が渡します(v213)。ボタンの幅を
@@ -3637,8 +3697,10 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             width:100%;
             max-width:100%;
 
-            /* アーティスト名との間(v208。v214で 12px → 10px) */
-            margin-top:10px;
+            /*
+            アーティスト名との間(v208〜v257 は margin-top:10px)は、v258 で
+            なくなりました。行は欄の場所に直接置くためです(上の説明)。
+            */
         }
 
         #jacket-big-buttons button,
@@ -4040,10 +4102,11 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         /*
         ⚠️⚠️ **出す場所は、曲名・アーティストの2行の真ん中です(v257)。**
 
-        竹弘の答え(2026-10-25):上書きの最終確認の赤い文字は、2段目に被るなら
-        避けたい → 確かめている間だけ、曲名・アーティストの2行の場所に出す。
-        置き方 A で文字とボタンを「曲一覧の1段目まで」に収めるため、ボタンの下に
+        竹弘の答え(2026-10-25):上書きの最終確認の赤い文字は、曲一覧の上から2行目に
+        被るなら避けたい → 確かめている間だけ、曲名・アーティストの2行の場所に出す。
+        置き方 A で文字とボタンを「曲一覧のいちばん上の行まで」に収めるため、ボタンの下に
         注意書きの1行(v213〜v256)を空けておく余裕が無くなったためです。
+        v258 からは、操作パネルの段の真ん中に出ます(包む箱がその段に置かれるため)。
 
         【場所が動かない仕組み】
 
@@ -8241,8 +8304,14 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             文字を入れるか空にするかだけで出し入れします(空なら何も見えない)。
         ------------------------------------------------------ -->
         <div id="jacket-big-names">
-            <div id="jacket-big-title"></div>
-            <div id="jacket-big-artist"></div>
+            <!--
+             (v258)外側の div は「窓」、中の span が文字そのものです。タッチで
+             span を窓の中で横に流して全文を見せます(js/jacket.js の「4. 受け口」)。
+             ⚠️ 窓と中身の順番を崩さないこと。流す関数(triggerMarquee)は、
+                窓の中の**最初の子**を動かします。
+            -->
+            <div id="jacket-big-title"><span id="jacket-big-title-text"></span></div>
+            <div id="jacket-big-artist"><span id="jacket-big-artist-text"></span></div>
             <div id="jacket-warning"></div>
         </div>
 
