@@ -33,6 +33,8 @@
               どの絵かは js/list-view.js の getTrackCoverBig)
    注意書き … 上書きの確認などの赤い文字は、曲名・アーティストの2行の
               場所に出す(その間だけ2行を隠す)
+   カメラ   … 📷 のアプリ内カメラ(1920×1080・ピンチで拡大)は js/jacket-camera.js
+              (v262 = ①-3 で切り出した。「3-3.」)
 
    原寸を DB に保存しないのは竹弘の判断(2026-08-08。1曲500KB〜1MBで、
    数百曲だと DB が数百MBに膨れる)。だから鮮明な絵は「開いている間だけ」
@@ -302,26 +304,9 @@ v207では「旗を持たない(データだけで決める)」方針を書き�
 let jacketUiState = "normal";
 
 /*
-⚠️ **動いているカメラ(v212)。**
-
-getUserMedia() が返す「映像の流れ」です。**使い終わったら必ず
-止めます**(stopLiveCamera)。止め忘れると、画面を閉じても
-カメラのランプが点いたままになり、電池を食い続けます。
-
-⚠️ ノリRunは走りながら使うアプリなので、**電池の食い逃げは
-   特に困ります。** 止める場所は4つあります:
-   撮った時 / ✕ / 画面を閉じた時 / 画面を開き直した時(念のため)。
+⚠️ カメラの状態(動いているカメラ jacketCameraStream・使いたいかの旗 jacketCameraWanted・
+   ズーム jacketCameraZoom)は、v262(①-3)から js/jacket-camera.js にあります。
 */
-let jacketCameraStream = null;
-
-/*
-⚠️ **今カメラを使いたいかどうか(v212)。**
-
-カメラの許可を聞いている間に竹弘が ✕ を押すことがあります。
-その後で許可が下りると、**誰も見ていないのにカメラが動き出します。**
-この旗を見て、いらなくなっていたらすぐ止めます。
-*/
-let jacketCameraWanted = false;
 
 /*
 上半分のエリアです。大きさの上限を決めるために、実際の高さを
@@ -416,6 +401,7 @@ function openJacketView(){
     ⚠️ カメラが動いたままだったら止めます(v212の念のため)。
        ふつうは閉じる時に止まっていますが、止める場所が1つでも
        抜けるとカメラが点いたままになるので、開く時にも確認します。
+       (stopLiveCamera は v262 から js/jacket-camera.js)
     */
     stopLiveCamera();
 
@@ -892,7 +878,7 @@ function refreshJacketButtons(track){
     // ---- カメラで撮っている最中 ----
     if(jacketUiState === "camera"){
 
-        // 出すものは openLiveCamera() 側が用意するので、ここでは何もしません
+        // 出すものは openLiveCamera()(js/jacket-camera.js)側が用意するので、ここでは何もしません
         return;
 
     }
@@ -954,7 +940,7 @@ function setRowVisible(rowEl,visible){
  *    出すので、**出す / 隠すで、ジャケもボタンも1pxも動きません**
  *    (竹弘の指定「表示位置を固定としたい」2026-09-21 は今も守る)。
  *
- *    ⚠️ カメラが使えなかった理由(abortLiveCamera)も、同じ場所に出ます。
+ *    ⚠️ カメラが使えなかった理由(js/jacket-camera.js の abortLiveCamera)も、同じ場所に出ます。
  *       ボタンを押してふつうの状態に戻ると(refreshJacketButtons)、消えて
  *       曲名が戻ります。
  */
@@ -1101,6 +1087,7 @@ function closeJacketView(){
     ⚠️⚠️ **カメラを必ず止めます(v212)。** ここを忘れると、画面を
        閉じてもカメラのランプが点いたままになり、電池を食い続けます。
        走りながら使うアプリなので、電池の食い逃げは特に困ります。
+       (stopLiveCamera は v262 から js/jacket-camera.js)
     */
     stopLiveCamera();
 
@@ -1770,7 +1757,8 @@ function startJacketFromMyFile(event){
  *
  * ⚠️ v208〜v211はスマホ標準のカメラアプリを呼んでいました。
  *    取り込んだ後の流れ(確認 → ✓ で保存)は同じものを使うので、
- *    **差し替えたのはこの関数と、下のカメラ一式だけ**です。
+ *    **差し替えたのはこの関数と、カメラ一式だけ**です
+ *    (カメラ一式は v262 から js/jacket-camera.js)。
  */
 function startJacketFromCamera(event){
 
@@ -1784,378 +1772,23 @@ function startJacketFromCamera(event){
 
 
 // ==========================================================
-// 3-3. アプリ内カメラ(v212)
+// 3-3. アプリ内カメラ → js/jacket-camera.js(v262 で切り出した)
 // ==========================================================
-/**
- * ジャケット枠に、外カメラの映像を流し始めます。
- *
- * ⚠️⚠️ **必ず逃げ道を用意してあります。** カメラが使えない場合
- *    (許可されなかった / カメラが無い / 安全な接続でない)は、
- *    **スマホ標準のカメラアプリに切り替えます。**
- *    走っている最中に「押しても何も起きない」が一番困るためです
- *    (v203で学んだ「待つ処理には必ず時間切れを用意する」と同じ考え方)。
- */
-async function openLiveCamera(){
+/*
+📷 のアプリ内カメラ(映像を流す・ピンチで拡大・📸 で撮る・止める。v212〜)は、
+v262(① 特大表示のジャケの ①-3)で js/jacket-camera.js へ移しました。
+このファイルから呼ぶのは2つだけです:
 
-    const track = getJacketViewTrack();
+    openLiveCamera() … 📷(上の startJacketFromCamera)・撮り直す(下の retryJacketSource)
+    stopLiveCamera() … 開く時(openJacketView)・閉じる時(closeJacketView)
 
-    if(!track){ return; }
+⚠️ カメラで撮った後(確認 → ✓ で保存)は、📁 と同じ流れで、このファイルの下の関数が受け持ちます。
+*/
 
-    jacketCameraWanted = true;
-    jacketUiState      = "camera";
 
-    // 先に画面を切り替えて、「押したのに無反応」を無くします
-    showLiveMessage("カメラを準備しています…");
-    refreshJacketButtons(track);
-
-    /*
-    navigator.mediaDevices は、**安全な接続(https)でないと存在しません。**
-    GitHub Pages は https なので本番では使えますが、手元のファイルを
-    直接開いた時などに落ちないよう確かめておきます。
-    */
-    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
-
-        console.log("この環境ではアプリ内カメラを使えません");
-
-        abortLiveCamera("この端末ではカメラを使えません");
-
-        return;
-
-    }
-
-    try{
-
-        /*
-        ---- カメラを借ります ----
-
-        facingMode:"environment" は**外カメラ**(画面と反対側)です。
-        ジャケットは目の前のものを撮るので外カメラが自然です。
-
-        ⚠️ **ideal にしています。** exact にすると、外カメラが無い端末で
-           エラーになって何も映りません。ideal なら「できれば外、
-           無ければ内」と譲ってくれます。
-
-        ⚠️⚠️ **audio:false を必ず書きます。** 書かないつもりでも、
-           マイクを一緒に借りてしまうと**音楽の再生が止まる恐れ**が
-           あります。ノリRunは走行中に鳴り続けることが最優先なので、
-           映像だけを借ります。
-        */
-        const stream = await navigator.mediaDevices.getUserMedia({
-            video:{ facingMode:{ ideal:"environment" } },
-            audio:false
-        });
-
-        /*
-        ⚠️ 許可を待っている間に ✕ が押されているかもしれません。
-           その場合は**すぐ返します**(誰も見ていないのにカメラが
-           動き続けるのを防ぐため)。
-        */
-        if(!jacketCameraWanted){
-
-            stopStreamTracks(stream);
-            return;
-
-        }
-
-        jacketCameraStream = stream;
-
-        showLiveVideo(stream);
-
-    }
-    catch(error){
-
-        console.log("アプリ内カメラを開けませんでした :",error.name);
-
-        /*
-        ⚠️ **断られた理由で言葉を変えます。**
-
-            NotAllowedError … 竹弘が「許可しない」を選んだ
-                              (または以前に拒否したまま覚えられている)
-            それ以外        … カメラが無い / 他のアプリが使っている等
-
-        「許可されていません」と出しておけば、Chromeの設定で
-        許可を出し直せばよい、と気づけます。
-        */
-        const denied = (error && error.name === "NotAllowedError");
-
-        abortLiveCamera(
-            denied
-                ? "カメラの使用が許可されていません"
-                : "カメラを使えませんでした"
-        );
-
-    }
-
-}
-
-/**
- * アプリ内カメラが使えない時に、元の画面へ戻します(v213で変更)。
- *
- * ⚠️ **v212はスマホ標準のカメラアプリに切り替えていました。**
- *    竹弘の指定(2026-09-21):
- *
- *        「カメラの許可を拒否したら標準のカメラアプリに切り替わるの
- *          ではなく、次の画面に進まない。元の画面に戻るにしたい」
- *
- *    勝手に別のアプリが立ち上がると「何が起きたのか分からない」と
- *    なるためです。拒否したなら、何も起きずに戻るのが素直です。
- *
- * ⚠️ **ただし「押しても無反応」にはしません。** 注意書きの行
- *    (いつも場所を空けてある)に理由を出します。無言で戻ると、
- *    壊れたのか拒否されたのか分かりません。
- *
- * ⚠️ カメラが使えなくても**📁 マイファイルは使えます。** 標準の
- *    カメラアプリで撮った写真を、そこから選べば同じことができます。
- *
- * @param {String} reasonText … 注意書きに出す理由(空なら出さない)
- */
-function abortLiveCamera(reasonText){
-
-    stopLiveCamera();
-
-    jacketUiState = "normal";
-
-    const track = getJacketViewTrack();
-
-    renderJacketBig(track);
-    refreshJacketButtons(track);
-
-    /*
-    ⚠️ **refreshJacketButtons の後に出します。** あの関数は
-       ふつうの状態に戻る時に注意書きを消すので、先に出すと
-       すぐ消されてしまいます。
-    */
-    if(reasonText){ showJacketWarning(reasonText); }
-
-}
-
-/**
- * ジャケット枠に文字だけを出します(準備中の案内など)。
- */
-function showLiveMessage(text){
-
-    if(!jacketBigEl){ return; }
-
-    jacketBigEl.innerHTML = "";
-
-    jacketBigEl.classList.remove("jacket-big-empty");
-    jacketBigEl.classList.add("jacket-big-live");
-
-    const message = document.createElement("div");
-    message.className   = "jacket-live-message";
-    message.textContent = text;
-
-    jacketBigEl.appendChild(message);
-
-}
-
-/**
- * ジャケット枠に、カメラの映像を流します。
- */
-function showLiveVideo(stream){
-
-    if(!jacketBigEl){ return; }
-
-    jacketBigEl.innerHTML = "";
-
-    jacketBigEl.classList.remove("jacket-big-empty");
-    jacketBigEl.classList.add("jacket-big-live");
-
-    const video = document.createElement("video");
-    video.className = "jacket-live-video";
-
-    /*
-    ⚠️ **playsInline は必須です。** これが無いと、Androidや
-       iPhoneで映像が**画面いっぱいに乗っ取られ**、ジャケット枠の
-       中に収まりません。
-
-    ⚠️ muted も付けます。音は借りていない(audio:false)ので
-       鳴るものはありませんが、付けておかないと自動再生が
-       ブラウザに止められることがあります。
-    */
-    video.playsInline = true;
-    video.muted       = true;
-    video.autoplay    = true;
-
-    video.srcObject = stream;
-
-    jacketBigEl.appendChild(video);
-
-    /*
-    play() は約束(Promise)を返し、失敗することがあります。
-    ここで落としてもカメラが止まらず残るだけなので、握りつぶさずに
-    記録だけしておきます。
-    */
-    const playPromise = video.play();
-
-    if(playPromise && typeof playPromise.catch === "function"){
-
-        playPromise.catch(function(error){
-            console.log("カメラ映像の再生に失敗 :",error.name);
-        });
-
-    }
-
-}
-
-/**
- * 映像の流れを止めます(カメラのランプを消すための後始末)。
- */
-function stopStreamTracks(stream){
-
-    if(!stream || typeof stream.getTracks !== "function"){ return; }
-
-    for(const track of stream.getTracks()){
-        track.stop();
-    }
-
-}
-
-/**
- * アプリ内カメラを完全に止めます。
- *
- * ⚠️ **呼ぶ場所は5つ**:撮った時 / ✕ / 画面を閉じた時 /
- *    画面を開き直した時(念のため)/ 標準カメラへ逃がす時。
- *    どれか1つでも抜けると、カメラが点いたままになります。
- */
-function stopLiveCamera(){
-
-    jacketCameraWanted = false;
-
-    if(jacketCameraStream){
-
-        stopStreamTracks(jacketCameraStream);
-        jacketCameraStream = null;
-
-    }
-
-}
-
-/**
- * 『✕』(カメラ中)が押された時の処理です。
- */
-function cancelLiveCamera(event){
-
-    event.stopPropagation();
-
-    stopLiveCamera();
-
-    jacketUiState = "normal";
-
-    const track = getJacketViewTrack();
-
-    renderJacketBig(track);
-    refreshJacketButtons(track);
-
-}
-
-/**
- * 『📸』が押された時の処理です。今映っている瞬間を切り取ります。
- *
- * ⚠️⚠️ **切り取る大きさと画質は、📁 の取り込みとまったく同じ定数**
- *    (COVER_ART_BIG_SIZE / COVER_ART_QUALITY)を使います。竹弘の指定
- *    「1曲あたりのファイルサイズが大きくならないように、取込時に
- *      解像度を今のジャケ写サイズに解像度変更は絶対して欲しい」。
- *    v260(①-2)から、撮った絵は「大きい箱」の大きさ(1080点まで)で預かり、
- *    小さい箱(160点)は保存の時に作ります(applyJacketPending)。
- *    ⚠️ 映像より大きくはしません(引き伸ばさない)。今の映像は Chrome の標準の
- *       640×480 なので、真ん中の正方形は 480点です(映像を大きく借りるのは ①-3)。
- *
- * ⚠️ shrinkImageBlob()(js/metadata.js)を通していないのは、あちらが
- *    **ファイル(Blob)を受け取る**作りで、映像のひとコマは渡せない
- *    ためです。**やっていること(中央を正方形に切り取って縮小)は
- *    同じ**で、数字も同じ定数を見ています。いったんJPEGにしてから
- *    もう一度縮めると、二重に画質が落ちるので直接描いています。
- */
-function shootFromLiveCamera(event){
-
-    event.stopPropagation();
-
-    const track = getJacketViewTrack();
-    const video = jacketBigEl ? jacketBigEl.querySelector("video") : null;
-
-    if(!track || !video){ return; }
-
-    /*
-    videoWidth は「映像の本当の大きさ」です。カメラが動き出す前は
-    0 なので、その時は何もしません(0で切り取ると真っ黒になります)。
-    */
-    if(!video.videoWidth || !video.videoHeight){
-
-        console.log("まだカメラの映像が来ていません");
-        return;
-
-    }
-
-    try{
-
-        /*
-        ---- 中央を正方形に切り取ります ----
-
-        画面では object-fit:cover で「中央の正方形」だけが見えて
-        いるので、**同じ場所を切り出せば見たまま**が保存されます。
-        */
-        const side = Math.min(video.videoWidth,video.videoHeight);
-        const sourceX = (video.videoWidth  - side) / 2;
-        const sourceY = (video.videoHeight - side) / 2;
-
-        /*
-        描く大きさ = 大きい箱の一辺。ただし映像の正方形より大きくはしない(v260。上の解説)。
-        */
-        const outSize = Math.min(side,COVER_ART_BIG_SIZE);
-
-        const canvas = document.createElement("canvas");
-        canvas.width  = outSize;
-        canvas.height = outSize;
-
-        const context = canvas.getContext("2d");
-
-        context.drawImage(
-            video,
-            sourceX,sourceY,side,side,
-            0,0,outSize,outSize
-        );
-
-        // 撮ったのでカメラは止めます(ランプを消す)
-        stopLiveCamera();
-
-        canvas.toBlob(function(blob){
-
-            if(!blob){
-                console.error("撮影に失敗しました");
-                cancelLiveCamera({stopPropagation:function(){}});
-                return;
-            }
-
-            // ---- ここから先は 📁 と同じ流れです ----
-            jacketPendingBlob   = blob;
-            jacketPendingSource = "camera";
-            jacketUiState       = "confirm";
-
-            renderJacketBig(track);
-            refreshJacketButtons(track);
-
-            console.log(
-                "カメラで撮りました :",
-                track.file_name,
-                outSize + "点",
-                Math.round(blob.size / 1024) + "KB",
-                "(まだ保存していません)"
-            );
-
-        },"image/jpeg",COVER_ART_QUALITY);
-
-    }
-    catch(error){
-
-        console.error("撮影に失敗 :",error.name,error.message);
-
-        cancelLiveCamera({stopPropagation:function(){}});
-
-    }
-
-}
-
+// ==========================================================
+// 3-4. 確認・上書き・保存・アートワークの選び直し(v208〜v210)
+// ==========================================================
 /**
  * 『もう一度』(確認中の真ん中のボタン)が押された時の処理です。
  *
@@ -2626,14 +2259,7 @@ if(jacketBtnCancelEl){
     jacketBtnCancelEl.addEventListener("click",cancelJacketPending);
 }
 
-// ---- アプリ内カメラ(v212) ----
-if(jacketBtnShootEl){
-    jacketBtnShootEl.addEventListener("click",shootFromLiveCamera);
-}
-
-if(jacketBtnCameraCancelEl){
-    jacketBtnCameraCancelEl.addEventListener("click",cancelLiveCamera);
-}
+// ---- アプリ内カメラの 📸 と ✕・ピンチ(v212・v262)は js/jacket-camera.js の受け口 ----
 
 // ---- 上書きの確認(v210) ----
 if(jacketBtnOverwriteEl){
