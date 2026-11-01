@@ -18,106 +18,83 @@
    **アーティスト名の下**に、その時ボタンを2つ置く予定です。
 
    ------------------------------------------------------------
-   【⚠️ 画質について ―― この版の本当の目的】
+   【今の形(v257。①-1 特大表示のジャケ)】
 
-   DBに入っているジャケットは **96px角** です(js/metadata.js の
-   COVER_MAX_SIZE)。曲一覧の44px角と上半分の表示には十分ですが、
-   大きく映すと引き伸ばすことになります。
+   置き場所 … 置き方 A(竹弘の指定 2026-10-25)。ジャケは上半分の角丸
+              カードの中いっぱい。曲名・アーティスト・ボタンは、その下の
+              曲一覧の操作パネルと1段目の欄まで(「1. 大きさと置き場所」)
+   画質     … 開いた瞬間は DB の絵を出し、静かな時に曲のファイルから
+              元のジャケを読み直して、ふわっと鮮明な絵に入れ替える
+              (「3-1. 元のファイルから読み直す」)
+   注意書き … 上書きの確認などの赤い文字は、曲名・アーティストの2行の
+              場所に出す(その間だけ2行を隠す)
 
-   原寸を保存していないのは「1曲500KB〜1MBで、数百曲だとDBが
-   数百MBに膨れる」という竹弘の判断(2026-08-08)によるものです。
+   原寸を DB に保存しないのは竹弘の判断(2026-08-08。1曲500KB〜1MBで、
+   数百曲だと DB が数百MBに膨れる)。だから鮮明な絵は「開いている間だけ」
+   持ち、閉じたらすぐ手放します。
 
-   **この版は、その96pxをそのまま拡大して「実際どのくらい粗いか」を
-   竹弘の目で確かめるためのものです。** 粗くて気になるようなら、
-   次のどちらかを足します:
-
-       (b) 開く時だけ元ファイルから読み直す … 最高画質。開くのに
-           一瞬待つ。⚠️ 走行中だと音がヨレる恐れ
-       (c) 保存サイズを上げる(96→320px等) … 369曲の取り直しと
-           DBの増加が要る
-
-   ⚠️ **先に(c)をやってから「やっぱり今のままで十分だった」となると、
-      369曲ぶんの時間とDB容量が無駄になります。** だから先に見ます。
+   経緯 → devlog/ジャケ写.md
    ========================================================== */
 
 
 // ==========================================================
-// 1. 大きさの決め方
+// 1. 大きさと置き場所の決め方(v257 で作り直した。置き方 A)
 // ==========================================================
 /*
-今のジャケットの何倍に拡大するか。
+竹弘の指定(2026-10-25。置き方 A):
 
-⚠️ **一辺を何倍にするか**の話です(面積ではありません)。上半分の
-   ジャケットはエリア3〜4の2マスぶんの正方形で、端末によって実際の
-   大きさが変わります。だから**決め打ちのピクセル数ではなく、
-   その場で測って何倍**にします(getBoundingClientRect)。
+    ジャケ                       … 上半分の角丸カード(#upper-area)の中いっぱい
+    曲名・アーティスト・ボタン   … その下の、曲一覧の操作パネル(🔁⇅⏮■⏭🐇↩)と
+                                   曲一覧の1段目の欄まで。2段目から下には被せない
+    グレーの幕・縁取り・影       … 今のまま(竹弘「グレー画面上で浮いた感じの表現も
+                                   気に入っているのでそのままに」)
 
-------------------------------------------------------------
-【4倍 → 3倍にした理由(v206、竹弘の実機テストの結果)】
+    竹弘:「決して、今のメニューレイアウトを変えたいという内容ではありません」
+    → 動かすのは特大表示だけ。上半分と曲一覧の作りには触りません。
 
-v204では竹弘の指定どおり4倍にしていましたが、実機で見た竹弘の
-判断はこうでした:
+【2段目から下に被せない理由(竹弘)】
 
-    「サイズは3倍でいい。**ブラッシュアップ機能の追加スペースが
-      ない**」
+ 1段目に今の曲が居れば、その名前は特大表示に出ている。2曲目以降は 🎵 を押すと
+ 2段目に来る(js/list-follow.js の「上から2段目」)。だから1段目までは隠してよい。
 
-つまり4倍だと画面がジャケットで埋まってしまい、この下に置く予定の
-『オリジナルジャケット』『📷 差し替え』ボタンの置き場所が無い、
-ということです。**実際に見たから分かった**ことで、先に作り込まずに
-まず見てもらったのが正解でした。
+【決め方 ―― layoutJacketBig() が、開くたびに本物の画面を測ります】
 
-⚠️ **この「3倍」は画面に映す大きさの話で、DBに保存する解像度
-   (js/metadata.js の COVER_ART_SIZE)とは別物です。** 3倍表示
-   (約228px)を高DPIでぼやけさせないために、保存側は480pxにして
-   あります(v206)。混同しないこと。
-------------------------------------------------------------
+    ① ジャケの一辺 = 上半分のカードの短い辺 − 内側の余白(JACKET_BIG_INSET_PX)× 2
+       カードの真ん中に置く
+    ② 曲名からボタンまでの高さを測り、ボタンの下端が「曲一覧の1段目の下端」を
+       越えるなら、越えないところまでジャケを小さくする(真ん中に置いたまま)
+
+ ⚠️ 足し算で決め打ちしません。文字の行の高さは、書体や端末で数pxずつ変わるためです
+    (足し算の見積もりが実測と6pxずれたことがある。devlog/ジャケ写.md)。
+ ⚠️ ジャケの大きさを変えると、DB の絵を「何点で出すか」も変わります。鮮明さは
+    「3-1. 元のファイルから読み直す」が受け持つので、ここでは気にしなくてよい。
+ ⚠️ 置き場所を変えたら sandbox/measure-jacket-layout.html で測り直すこと。
+    あのページは、この下の layoutJacketBig() をこのファイルから取り出して、
+    本物の c014.html の画面の上でそのまま動かします。
 */
-const JACKET_BIG_SCALE = 3;
 
 /*
-⚠️⚠️ **ジャケットの下に必ず空けておく高さ(px)です(v213)。**
+ジャケの外側と、上半分のカードの外側の間(px)です。
 
-竹弘の指定(2026-09-21):
-
-    「上半分のエリア内で、ボタンの下に1行、警告メッセージを表示
-      できるスペースを確保したいので、ジャケットの表示、曲名、
-      アーティスト名、ボタンの間隔(=幅)をうまく固定で全て表示
-      できるように調整お願いできますか」
-
-【v212までのやり方と、何が違うのか】
-
-v212までは「上半分の62%まで」という**割合**で頭を押さえていました。
-割合だと、**下に何行あるかと関係なく**決まってしまうので、行が
-増えるたびに勘で数字を下げることになります(実際v207で0.72→0.62に
-下げました)。
-
-v213からは**下に置くものの高さを足し算して、その残りをジャケットに
-配ります。** 何を置いているかが数字の根拠になるので、行を足した時に
-どれだけ増やせばよいかが迷いません。
-
-    曲名        余白10 + 文字20 = 30
-    アーティスト 余白 2 + 文字17 = 19
-    ボタンの行  余白12 + 高さ52 = 64
-    注意書き    余白 8 + 文字16 = 24
-                                ----
-                                 137
-
-⚠️⚠️ **最初この見積もりで 145 にしたが、実測は 151px だった。**
-   文字の行の高さは、書体や端末で数pxずつ変わるため、足し算だけ
-   では合わない。`sandbox/measure-jacket-layout.html` で本物のCSSを
-   使って測り、**155** に改めた(実測151 + 余裕4)。
-
-   145 のままだと、画面の低い端末で**余白が0px**になり、1pxの
-   ズレでボタンが動いていた(実測で確認)。
-
-⚠️ **行を増やしたら、必ずあのページで測り直すこと。** 足し算で
-   決めない(このプロジェクトの「実測が決め手」と同じ考え方)。
-
-⚠️ **注意書きの行は、出ていない時も場所を空けたままにします。**
-   竹弘の指定「表示位置を固定としたい」。出た時だけ場所を作ると、
-   **ジャケットも曲名もボタンも全部が押し上げられて動きます。**
+カードの角丸(18px)はジャケの角丸(10px)より大きいので、ぴったり重ねると
+ジャケの角が、カードの丸い角から少しはみ出して見えます。4px 内側に入れると、
+角までカードの中に収まります(計算では 2.4px 以上で収まる。少し余裕を持たせた)。
 */
-const JACKET_BIG_RESERVED_PX = 155;
+const JACKET_BIG_INSET_PX = 4;
+
+/*
+ジャケの縁取りの太さ(px)。c014.html の #jacket-big の border と同じ数字です。
+
+鮮明な絵を「何点でほどくか」を決める時に、縁取りの内側の大きさを出すために使います
+(「3-1.」の startJacketReload)。⚠️ CSS の border を変えたら、ここも一緒に変えること。
+*/
+const JACKET_BIG_BORDER_PX = 3;
+
+/*
+曲一覧の1行の高さが測れなかった時(一覧が空・検索で隠れている時など)に使う値です。
+c014.html の .music-row の height と同じ数字です。
+*/
+const JACKET_BIG_ROW_FALLBACK_PX = 56;
 
 /*
 それでも小さくしすぎない下限です。画面の低い端末で、ジャケットが
@@ -162,26 +139,27 @@ const JACKET_BUTTON_GAP_PX = 8;
 ⚠️ **48px は、指で押せる大きさの目安としてもちょうど下限**です
    (これより小さくすると押し間違いが増えます)。走りながら操作する
    アプリなので、ここは削りすぎないこと。
+
+⚠️ (v257)置き方 A では、ボタンの高さが増えるとそのぶん「1段目まで」に
+   収めるためにジャケが小さくなります。上限を上げる時は測り直すこと。
 */
 const JACKET_BUTTON_MAX_PX = 48;
-
-/*
-画面の幅に対する上限です。
-
-縦に長い端末では「上半分の72%」がそのまま横幅を超えることが
-あります。正方形なので、**縦と横の両方で頭を押さえないと**
-左右がはみ出します。
-*/
-const JACKET_BIG_MAX_WIDTH_RATIO = 0.86;
 
 
 // ==========================================================
 // 2. 画面の部品
 // ==========================================================
 const jacketPanelEl      = document.getElementById("jacket-panel");
+const jacketPanelInnerEl = document.getElementById("jacket-panel-inner");
 const jacketBigEl        = document.getElementById("jacket-big");
 const jacketBigTitleEl   = document.getElementById("jacket-big-title");
 const jacketBigArtistEl  = document.getElementById("jacket-big-artist");
+
+/*
+曲名とアーティストの2行を包む箱です(v257)。赤い注意書きは、この箱の
+真ん中に重ねて出します(showJacketWarning)。
+*/
+const jacketBigNamesEl   = document.getElementById("jacket-big-names");
 
 // ---- 差し替え機能の部品(v207で追加、v208で3ボタン化) ----
 const jacketBtnOriginalEl = document.getElementById("jacket-btn-original");
@@ -316,6 +294,33 @@ let jacketCameraWanted = false;
 */
 const jacketUpperAreaEl = document.getElementById("upper-area");
 
+/*
+曲一覧の窓枠です(v257)。特大表示の文字とボタンを「1段目の欄まで」に
+収めるために、1段目がどこにあるかを測るのに使います(layoutJacketBig)。
+
+⚠️ 名前は jacket で始めています。js/config.js などに同じ名前の const が
+   あると、読み込んだ瞬間にエラーになり、このファイルが丸ごと動かなくなるためです。
+*/
+const jacketListViewportEl = document.getElementById("list-viewport");
+
+/*
+⚠️ **元のファイルからの読み直し(v257)の控えです。**
+
+    jacketReload     … 今進んでいる読み直し(1つだけ)。無ければ null。
+                        閉じる・開き直すと null か別物になり、進んでいた方は
+                        次の一息で「もう要らない」と気づいて自分で止まります
+    jacketHdCanvas   … 読み直して作った鮮明な絵(<canvas>)。開いている間だけ持つ
+    jacketHdRenderer … その絵の描き手(bitmaprenderer)。手放す時に絵を空にするため
+    jacketHdTrackId  … その絵がどの曲のものか
+
+⚠️ 鮮明な絵は数MBあります(1000点 × 1000点 × 4バイト)。閉じたら必ず
+   releaseJacketReload() で手放すこと(原寸を持たない竹弘の方針。冒頭の説明)。
+*/
+let jacketReload     = null;
+let jacketHdCanvas   = null;
+let jacketHdRenderer = null;
+let jacketHdTrackId  = null;
+
 
 // ==========================================================
 // 3. 開く / 閉じる
@@ -345,39 +350,161 @@ function openJacketView(){
     jacketViewTrackId = currentTrackId;
 
     /*
-    ---- 大きさを決めます ----
-
-    今の枠を測って4倍にし、上半分の高さと画面の幅で頭を押さえます。
-
-    ⚠️ **測るのは height です(width ではありません)。**
-       この枠は align-self:stretch で「親の高さいっぱいの正方形」に
-       なる作りなので(c014.html の .ua-jacket)、**高さが本物の
-       大きさ**です。幅は中身によって変わることがあります。
+    ⚠️ 前に開いた時の鮮明な絵・読み直しが残っていたら、先に手放します(v257)。
+       ふつうは閉じる時に手放していますが、手放す場所が1つでも抜けると
+       数MBの絵を抱えたままになるので、開く時にも確かめます(カメラと同じ考え方)。
     */
-    const nowRect = npJacketEl.getBoundingClientRect();
+    releaseJacketReload();
 
-    let size = nowRect.height * JACKET_BIG_SCALE;
+    /*
+    ⚠️ 前回の「確認中」を必ず持ち越さないようにします(v208)。
+       撮ったまま閉じて別の曲で開くと、前の写真が映ったままに
+       なってしまいます。
+    */
+    clearJacketPending();
 
-    if(jacketUpperAreaEl){
+    /*
+    ⚠️ カメラが動いたままだったら止めます(v212の念のため)。
+       ふつうは閉じる時に止まっていますが、止める場所が1つでも
+       抜けるとカメラが点いたままになるので、開く時にも確認します。
+    */
+    stopLiveCamera();
 
-        const upperRect = jacketUpperAreaEl.getBoundingClientRect();
+    // ---- 中身(画像 / カメラアイコン)を入れます ----
+    renderJacketBig(track);
 
-        /*
-        ⚠️ **下に置くもの(曲名・アーティスト・ボタン・注意書き)の
-           ぶんを先に取り分け、残りをジャケットに配ります(v213)。**
-           詳しくは JACKET_BIG_RESERVED_PX の解説。
-        */
-        size = Math.min(size,upperRect.height - JACKET_BIG_RESERVED_PX);
+    // ---- 曲名とアーティスト ----
+    // buildTitleText() も js/list-view.js から借ります
+    // (タイトルが空の曲ではファイル名を出してくれます)
+    jacketBigTitleEl.textContent  = buildTitleText(track);
+    jacketBigArtistEl.textContent = track.artist || "";
 
-    }
+    // ---- ボタンの押せる / 押せないを決めます ----
+    refreshJacketButtons(track);
 
-    size = Math.min(size,window.innerWidth * JACKET_BIG_MAX_WIDTH_RATIO);
+    /*
+    ---- 大きさと置き場所(置き方 A。v257)----
+
+    ⚠️ **画面に出してから測ります。** display:none のままだと、曲名やボタンの
+       高さが0として返り、測れないためです。出してから大きさを決めるまでは
+       同じ処理の中で続けて行うので、途中の姿が竹弘の目に映ることはありません
+       (ブラウザは、処理が一区切りつくまで画面を描き直さない)。
+    */
+    jacketPanelEl.style.display = "flex";
+
+    const layout = layoutJacketBig();
+
+    // ---- 元のファイルから、鮮明な絵を読み直します(v257。時間をかけてよい)----
+    startJacketReload(track,layout.size);
+
+}
+
+
+/**
+ * 特大表示の大きさと置き場所を決めます(置き方 A。v257)。
+ *
+ * 考え方は「1. 大きさと置き場所の決め方」。開いた直後(画面に出した後)に呼びます。
+ *
+ * ⚠️ この関数は sandbox/measure-jacket-layout.html が、このファイルから
+ *    文字として取り出して、そのまま動かします(本物の計算を測るため)。
+ *    中で使ってよいのは、このファイルの const(JACKET_ で始まる定数と
+ *    jacket で始まる部品)と applyJacketBigSize / findJacketBigLimitBottom だけです。
+ *    ほかのファイルの名前を足す時は、あのページにも用意すること。
+ *
+ * @return {Object} { size:ジャケの一辺, buttonSize:ボタンの一辺,
+ *                    spare:ボタンの下端から1段目の下端までの余り(px)}
+ */
+function layoutJacketBig(){
+
+    const upperRect = jacketUpperAreaEl.getBoundingClientRect();
+
+    // ① 上半分のカードの短い辺いっぱい(内側に余白をとる)
+    let size = Math.floor(
+        Math.min(upperRect.width,upperRect.height) - JACKET_BIG_INSET_PX * 2
+    );
 
     // 小さくなりすぎない下限(何が写っているか分からなくなるため)
     size = Math.max(size,JACKET_BIG_MIN_SIZE_PX);
 
+    let buttonSize = applyJacketBigSize(size,upperRect);
+
+    /*
+    ② 曲名からボタンまでの高さを、本物で測ります。
+
+    ジャケの下端から「ふつうのボタンの行」の下端までです。開いた直後は
+    いつもふつうの状態(🖼️ 📁 📷)なので、この行が出ています。
+    ⚠️ ほかの行(確認中・上書きの確認など)もボタンの大きさは同じなので、
+       行が入れ替わっても高さは変わりません(c014.html の aspect-ratio)。
+    */
+    const infoHeight =
+        jacketBigButtonsEl.getBoundingClientRect().bottom -
+        jacketBigEl.getBoundingClientRect().bottom;
+
+    const limitBottom = findJacketBigLimitBottom();
+
+    const centerY = upperRect.top + upperRect.height / 2;
+
+    /*
+    ジャケをカードの真ん中に置いたまま、ボタンの下端がちょうど1段目の下端に
+    来る一辺です。
+
+        ボタンの下端 = 真ん中 + 一辺 ÷ 2 + 下の高さ ≦ 1段目の下端
+        → 一辺 ≦ (1段目の下端 − 下の高さ − 真ん中)× 2
+    */
+    const fitSize = Math.floor((limitBottom - infoHeight - centerY) * 2);
+
+    if(fitSize < size){
+
+        size = Math.max(fitSize,JACKET_BIG_MIN_SIZE_PX);
+
+        /*
+        ⚠️ ジャケが160pxより小さくなると、ボタンも小さくなります
+           ((一辺 − 間隔×2)÷ 3)。その時は下の高さも減るので、
+           はみ出すことはありません(余る方へずれる)。
+        */
+        buttonSize = applyJacketBigSize(size,upperRect);
+
+    }
+
+    const spare = limitBottom - jacketBigButtonsEl.getBoundingClientRect().bottom;
+
+    return { size:size, buttonSize:buttonSize, spare:spare };
+
+}
+
+
+/**
+ * ジャケの一辺を当てはめます(ジャケの枠・ボタンの行・ボタンの大きさ・置き場所)。
+ *
+ * layoutJacketBig() が、決めた一辺で呼びます。
+ *
+ * @param  {number}  size      … ジャケの一辺(px。縁取りを含む外側の大きさ)
+ * @param  {DOMRect} upperRect … 上半分のカードの位置と大きさ
+ * @return {number}  ボタンの一辺(px)
+ */
+function applyJacketBigSize(size,upperRect){
+
+    /*
+    ⚠️ c014.html の #jacket-big は box-sizing:border-box です(v257)。
+       ここで入れる一辺は「縁取りを含む外側の大きさ」になり、カードの中に
+       収まるかの計算とそのまま合います。
+    */
     jacketBigEl.style.width  = size + "px";
     jacketBigEl.style.height = size + "px";
+
+    /*
+    ---- 置き場所 ----
+
+    ジャケをカードの真ん中に置きます。#jacket-panel-inner の上の余白で、
+    ジャケの上端の高さを決めます(下の曲名・ボタンは、その続きに並ぶ)。
+
+    ⚠️ 左右は、パネルの「真ん中寄せ」(c014.html の #jacket-panel の
+       align-items:center)にまかせています。上半分のカードも画面の真ん中に
+       あるので(#app の margin:0 auto)、そのまま揃います。
+    */
+    const top = upperRect.top + (upperRect.height - size) / 2;
+
+    jacketPanelInnerEl.style.marginTop = Math.round(top) + "px";
 
     /*
     ⚠️⚠️ **ボタン行にも同じ幅を入れます(v209で追加)。**
@@ -442,54 +569,55 @@ function openJacketView(){
     /*
     ⚠️ 上限(JACKET_BUTTON_MAX_PX)で頭を押さえます(v214)。
        ボタンは**正方形**なので、幅をそのまま使うと高さも同じだけ
-       増えてしまい、警告メッセージが下へ押し出されるためです。
+       増えてしまい、1段目に収めるためにジャケが小さくなるためです。
     */
     const buttonSize = Math.min(
         Math.floor((size - JACKET_BUTTON_GAP_PX * 2) / 3),
         JACKET_BUTTON_MAX_PX
     );
 
-    if(jacketPanelEl){
+    jacketPanelEl.style.setProperty(
+        "--jacket-btn-size",
+        buttonSize + "px"
+    );
 
-        jacketPanelEl.style.setProperty(
-            "--jacket-btn-size",
-            buttonSize + "px"
-        );
+    jacketPanelEl.style.setProperty(
+        "--jacket-btn-gap",
+        JACKET_BUTTON_GAP_PX + "px"
+    );
 
-        jacketPanelEl.style.setProperty(
-            "--jacket-btn-gap",
-            JACKET_BUTTON_GAP_PX + "px"
-        );
+    return buttonSize;
 
-    }
+}
+
+
+/**
+ * 特大表示の文字とボタンを、どこまで下に置いてよいかを返します(v257)。
+ *
+ * 竹弘の指定「曲一覧の1段目の欄まで」= 曲一覧の窓枠の上端 + 1行の高さ です。
+ *
+ * ⚠️ 1段目に今どの曲の行が来ているか(スクロールの位置)とは関係なく、
+ *    「1段目の欄」の場所で決めます。行がスクロールの途中で半分見えていても、
+ *    欄の場所は変わらないためです。
+ *
+ * @return {number} 画面の上からの位置(px)
+ */
+function findJacketBigLimitBottom(){
+
+    if(!jacketListViewportEl){ return window.innerHeight; }
+
+    const viewportRect = jacketListViewportEl.getBoundingClientRect();
 
     /*
-    ⚠️ 前回の「確認中」を必ず持ち越さないようにします(v208)。
-       撮ったまま閉じて別の曲で開くと、前の写真が映ったままに
-       なってしまいます。
+    1行の高さは、本物の行で測ります(c014.html の .music-row)。
+    行が無い時・検索で隠れている時(高さ0)は、同じ数字の控えを使います。
     */
-    clearJacketPending();
+    const firstRow  = jacketListViewportEl.querySelector(".music-row");
+    const rowHeight = (firstRow && firstRow.offsetHeight > 0)
+        ? firstRow.offsetHeight
+        : JACKET_BIG_ROW_FALLBACK_PX;
 
-    /*
-    ⚠️ カメラが動いたままだったら止めます(v212の念のため)。
-       ふつうは閉じる時に止まっていますが、止める場所が1つでも
-       抜けるとカメラが点いたままになるので、開く時にも確認します。
-    */
-    stopLiveCamera();
-
-    // ---- 中身(画像 / カメラアイコン)を入れます ----
-    renderJacketBig(track);
-
-    // ---- 曲名とアーティスト ----
-    // buildTitleText() も js/list-view.js から借ります
-    // (タイトルが空の曲ではファイル名を出してくれます)
-    jacketBigTitleEl.textContent  = buildTitleText(track);
-    jacketBigArtistEl.textContent = track.artist || "";
-
-    // ---- ボタンの押せる / 押せないを決めます ----
-    refreshJacketButtons(track);
-
-    jacketPanelEl.style.display = "flex";
+    return viewportRect.top + rowHeight;
 
 }
 
@@ -538,6 +666,14 @@ function renderJacketBig(track){
         jacketBigEl.appendChild(img);
 
         jacketBigEl.classList.remove("jacket-big-empty");
+
+        /*
+        ⚠️ 読み直した鮮明な絵がすでにあれば、すぐ上に重ねます(v257)。
+           確認中・アートワークの選び直しから戻った時などに、ここを通るたびに
+           またぼやけた絵へ戻ってしまわないためです。ここではふわっとさせません
+           (一度鮮明になった絵なので、パッと戻る方が自然)。
+        */
+        if(shouldShowJacketHd(track)){ attachJacketHd(false); }
 
         return;
 
@@ -652,8 +788,10 @@ function refreshJacketButtons(track){
 
         /*
         ⚠️ **1行に収まる長さにしてあります(v213、竹弘が短くした文)。**
-           2行になると行の高さが変わり、上の全部が動きます。
-           文を足す時は、ここが1行のままか必ず確かめること。
+           v257 から曲名・アーティストの場所に重ねて出すので、場所は動きませんが、
+           折り返さない(nowrap)ので、長すぎると画面の左右からはみ出します。
+           文を足す時は、小さい画面でも1行に収まるか必ず確かめること
+           (sandbox/measure-jacket-layout.html が幅を測ります)。
         */
         showJacketWarning("自作ジャケットを削除し、上書き差替えしますか?");
 
@@ -715,17 +853,21 @@ function setRowVisible(rowEl,visible){
 /**
  * 赤い注意書きを出します。
  *
- * ⚠️⚠️ **出す / 隠すで場所は動きません(v213)。**
- *    文字を入れるか空にするかだけを切り替え、**行そのものは
- *    いつも1行ぶん確保したまま**にしてあります(高さはCSSで固定)。
+ * ⚠️⚠️ **出す場所は、曲名・アーティストの2行の場所です(v257)。**
  *
- *    竹弘の指摘(2026-09-21):
- *        「メッセージが2行に渡り表示される為、ジャケ写の位置と曲名、
- *          アーティスト名、ボタンの位置、全てがズレ動くのが見栄えが
- *          よくありません。表示位置を固定としたいです」
+ *    竹弘の答え(2026-10-25):上書きの最終確認の赤い文字が2段目に被るなら避けたい
+ *    → 確かめている間だけ、曲名・アーティストの2行の場所に出す(のりの案に竹弘が OK)。
+ *    置き方 A で文字とボタンを「1段目まで」に収めるため、ボタンの下に
+ *    注意書きのための1行(v213〜v256)を空けておく余裕が無くなったためです。
  *
- *    display を切り替えると、出た瞬間にその行のぶんだけ上の全部が
- *    押し上げられます。**場所は最初から空けておくのが正解**でした。
+ *    出している間は、2行に .jacket-names-warning を付けて**隠します**
+ *    (visibility:hidden。場所はそのまま残る)。注意書きはその真ん中に重ねて
+ *    出すので、**出す / 隠すで、ジャケもボタンも1pxも動きません**
+ *    (竹弘の指定「表示位置を固定としたい」2026-09-21 は今も守る)。
+ *
+ *    ⚠️ カメラが使えなかった理由(abortLiveCamera)も、同じ場所に出ます。
+ *       ボタンを押してふつうの状態に戻ると(refreshJacketButtons)、消えて
+ *       曲名が戻ります。
  */
 function showJacketWarning(text){
 
@@ -733,14 +875,22 @@ function showJacketWarning(text){
 
     jacketWarningEl.textContent = text;
 
+    if(jacketBigNamesEl){
+        jacketBigNamesEl.classList.toggle("jacket-names-warning",text !== "");
+    }
+
 }
 
-/** 赤い注意書きの文字だけを消します(場所はそのまま残ります)。 */
+/** 赤い注意書きを消して、曲名・アーティストの2行を戻します。 */
 function hideJacketWarning(){
 
     if(!jacketWarningEl){ return; }
 
     jacketWarningEl.textContent = "";
+
+    if(jacketBigNamesEl){
+        jacketBigNamesEl.classList.remove("jacket-names-warning");
+    }
 
 }
 
@@ -866,6 +1016,13 @@ function closeJacketView(){
     stopLiveCamera();
 
     /*
+    ⚠️⚠️ **読み直しを止め、鮮明な絵をすぐ手放します(v257)。**
+       数MBある絵なので、閉じた後まで抱えないこと(竹弘の「閉じたらすぐ手放す」)。
+       途中まで進んでいた読み直しも、次の一息で自分で止まります。
+    */
+    releaseJacketReload();
+
+    /*
     画像を捨てておきます。
 
     閉じている間ずっと持っている必要がないのと、次に開いた時は
@@ -873,6 +1030,9 @@ function closeJacketView(){
     */
     jacketBigEl.innerHTML = "";
     jacketBigEl.classList.remove("jacket-big-empty");
+
+    // 注意書きが出たまま閉じても、次に開いた時に曲名が隠れていないように
+    hideJacketWarning();
 
     /*
     ⚠️ 「どの曲を開いていたか」も忘れます(v207)。
@@ -883,6 +1043,549 @@ function closeJacketView(){
        何もしないようにしてあります。
     */
     jacketViewTrackId = null;
+
+}
+
+
+// ==========================================================
+// 3-1. 元のファイルから読み直す(v257)
+// ==========================================================
+/*
+竹弘の答え(2026-10-25):
+
+    開いた時だけ、曲のファイルから元のジャケを読み直す(「大賛成」)。
+    曲の再生を最優先。最初はぼやけた絵でよく、時間をかけて鮮明になってよい
+    (「負担を全く掛けないくらい」)。
+
+【流れ】
+
+    ① 開いた瞬間は DB の絵(getTrackCover)をそのまま出す ← 待たせない
+    ② 静かな時だけ、少しずつ進める(findJacketReloadWait が「静かか」を見る)
+
+         読む     … ファイルを開いてタグを読み、絵を取り出す
+         調べる   … 絵の大きさ(点の数)だけを調べる
+         ほどく   … 画面に出す大きさまで縮めながらほどく(createImageBitmap)
+
+       1つ終わるごとに一息つき(JACKET_RELOAD_STEP_GAP_MS)、その時に
+       静かでなくなっていたら、静かになるまで待つ
+    ③ ふわっと入れ替える(c014.html の .jacket-big-hd)
+    ④ 閉じたらすぐ手放す(releaseJacketReload)
+
+【読み直すのは、元のジャケを出している時だけ】
+
+ どの絵を出すかを決めるのは getTrackCover()(js/list-view.js)の1か所だけです
+ (CLAUDE.md「決めるのは1か所」)。ここでは判断を書き直さず、
+ 「getTrackCover が返したのが cover_art(元のジャケ)か」だけを見ます
+ (shouldShowJacketHd)。自作ジャケを出している時は読み直しません
+ (自作の大きい絵は ①-2 で DB に持たせる予定)。
+ ⚠️ 開いた後に 🖼️ で元のジャケへ切り替えた時は、読み直しません(開いた時だけ。
+    閉じて開き直せば読み直します)。
+
+【引き伸ばさない】
+
+ ほどく大きさ = 画面に出す点の数(縁取りの内側 × devicePixelRatio)。ただし
+ 元の絵の点の数より大きくはしません(元の絵が持っていない細かさは出てこない)。
+ 元の絵が、今出している DB の絵より大きくない時は、入れ替えても変わらないので
+ 何もしません。
+
+【なぜ createImageBitmap なのか】
+
+ Chrome は、ファイル(Blob)から絵をほどく(デコードする)仕事を、画面と
+ JavaScript を動かす係(メインスレッド)とは別の係で行います。1400×1400 の
+ 大きい絵でも、接続のタイマーやノリノリアシストの見張りを止めません。
+ resize を付けると、ほどいたその場で画面の大きさまで縮めるので、大きい絵を
+ 抱え続けることもありません(js/metadata.js の shrinkImageBlob は、いったん
+ 原寸でほどいてから縮める作り。DB に入れる時は1曲ずつなのでそれでよい)。
+
+ ⚠️ タグを読む jsmediatags と、絵を取り出す extractPictureBlob だけは
+    メインスレッドで動きます(大きい絵だと数十ms)。だから「静かな時だけ」に
+    しています。jsmediatags は、ファイルの中からタグのある所を探して読みます
+    (曲の音のデータは読み飛ばす)。
+*/
+
+/*
+一息つく長さ(ms)。読む・調べる・ほどく の間に、この時間だけほかの仕事
+(接続のタイマー・アシストの見張り・画面の描き直し)に順番を譲ります。
+*/
+const JACKET_RELOAD_STEP_GAP_MS = 60;
+
+/*
+静かでない時に、もう一度確かめるまでの間(ms)。
+接続の準備や同期スタートは数秒〜数十秒続くので、細かく見ても意味がありません。
+*/
+const JACKET_RELOAD_RETRY_MS = 1000;
+
+
+/**
+ * 読み直しを始めます(openJacketView が、画面に出した後に呼びます)。
+ *
+ * ⚠️ ここでは待ちません。読み直しは裏で進み、終わったら絵が入れ替わります。
+ *    開く処理を待たせると「押したのに開かない」になるためです。
+ *
+ * @param {Object} track … 開いた曲
+ * @param {number} size  … ジャケの一辺(px。layoutJacketBig が決めた値)
+ */
+function startJacketReload(track,size){
+
+    if(!track || !track.cover_art || !track.file_handle){ return; }
+
+    if(getTrackCover(track) !== track.cover_art){
+
+        // 【開発用調査ログ】(v257)読み直さなかった理由を、実機で確かめるため
+        console.log("特大表示のジャケは読み直しません : 自作ジャケを出しています");
+
+        return;
+
+    }
+
+    const job = {
+        trackId   : track.track_id,
+        fileName  : track.file_name,
+        size      : size,
+        startedMs : performance.now(),
+        waitMs    : 0,
+        waitWhy   : ""
+    };
+
+    jacketReload = job;
+
+    runJacketReload(job,track).catch(function(error){
+
+        /*
+        失敗しても、DB の絵がそのまま出ているだけです(竹弘が困ることは無い)。
+        理由だけ🐛に残します。
+        */
+        console.error(
+            "特大表示のジャケの読み直しに失敗 :",
+            job.fileName,
+            error && error.name,
+            error && error.message
+        );
+
+        if(jacketReload === job){ jacketReload = null; }
+
+    });
+
+}
+
+/**
+ * 読み直しの本体です。読む → 調べる → ほどく → 入れ替える を、一息ずつ進めます。
+ *
+ * どの一息でも、閉じた・開き直した(job が jacketReload でなくなった)と
+ * 分かったら、そこで黙って止まります。
+ *
+ * @param {Object} job   … この読み直しの控え(startJacketReload が作る)
+ * @param {Object} track … 開いた曲
+ */
+async function runJacketReload(job,track){
+
+    // ---- 読む ----
+    if(!await waitJacketReloadTurn(job)){ return; }
+
+    /*
+    ⚠️ 許可は「確かめる」だけで、聞き直しません(requestPermission は使わない)。
+       聞き直すと確認の画面が出ることがあり、走っている最中に出ると困るためです。
+       今鳴っている曲のファイルなので、ふつうは許可されています。
+    */
+    const permission = await track.file_handle.queryPermission({mode:"read"});
+
+    if(permission !== "granted"){
+
+        finishJacketReload(job,"ファイルを読む許可がありません");
+
+        return;
+
+    }
+
+    let stepMs = performance.now();
+
+    const file = await track.file_handle.getFile();
+
+    const tags = await readTagsFromFile(file);
+
+    const blob = extractPictureBlob(tags);
+
+    job.readMs = performance.now() - stepMs;
+
+    if(!blob){
+
+        finishJacketReload(job,"ファイルにジャケが入っていません");
+
+        return;
+
+    }
+
+    // ---- 調べる ----
+    if(!await waitJacketReloadTurn(job)){ return; }
+
+    const natural = await probeJacketImageSize(blob);
+
+    if(!natural || !natural.width || !natural.height){
+
+        finishJacketReload(job,"ジャケの大きさを調べられませんでした");
+
+        return;
+
+    }
+
+    /*
+    ほどく大きさを決めます(冒頭の【引き伸ばさない】)。
+
+    ⚠️ 元の絵が正方形でない時は、真ん中の正方形を切り出します
+       (DB に入れる時の shrinkImageBlob と同じ。見え方が揃う)。
+    */
+    const side   = Math.min(natural.width,natural.height);
+    const inner  = job.size - JACKET_BIG_BORDER_PX * 2;
+    const target = Math.min(side,Math.round(inner * (window.devicePixelRatio || 1)));
+
+    job.natural = natural;
+    job.target  = target;
+
+    const shownSide = getJacketBigShownSide();
+
+    if(target <= shownSide){
+
+        finishJacketReload(job,
+            "元の絵(" + natural.width + "×" + natural.height + ")は、今の絵(" +
+            shownSide + "点)より細かくないので入れ替えません");
+
+        return;
+
+    }
+
+    // ---- ほどく ----
+    if(!await waitJacketReloadTurn(job)){ return; }
+
+    stepMs = performance.now();
+
+    const bitmap = await createImageBitmap(
+        blob,
+        Math.floor((natural.width  - side) / 2),
+        Math.floor((natural.height - side) / 2),
+        side,
+        side,
+        { resizeWidth:target, resizeHeight:target, resizeQuality:"high" }
+    );
+
+    job.decodeMs = performance.now() - stepMs;
+
+    // ---- 入れ替える ----
+    if(!await waitJacketReloadTurn(job)){
+
+        // 閉じた後にほどき終わった絵は、すぐ手放します
+        bitmap.close();
+
+        return;
+
+    }
+
+    makeJacketHd(job,bitmap,target);
+
+    /*
+    今の枠に出してよい時だけ、ふわっと重ねます。撮った直後の確認中などで
+    出せない時は、控えたまま待ち、ふつうの状態に戻って枠を描き直した時
+    (renderJacketBig)に重なります。
+    */
+    if(shouldShowJacketHd(getJacketViewTrack())){ attachJacketHd(true); }
+
+    finishJacketReload(job,"");
+
+}
+
+/**
+ * 一息ついてから、静かになるまで待ちます。
+ *
+ * @param  {Object} job … この読み直しの控え
+ * @return {Promise<boolean>} 続けてよければ true。閉じた・開き直した時は false
+ */
+async function waitJacketReloadTurn(job){
+
+    await waitJacketMs(JACKET_RELOAD_STEP_GAP_MS);
+
+    for(;;){
+
+        // 閉じた・開き直した → この読み直しはもう要らない
+        if(job !== jacketReload){ return false; }
+
+        const why = findJacketReloadWait();
+
+        if(why === ""){ return true; }
+
+        if(job.waitWhy !== why){
+
+            job.waitWhy = why;
+
+            // 【開発用調査ログ】(v257)読み直しが曲の再生を避けて待ったかを、実機で確かめるため
+            console.log("特大表示のジャケの読み直しを待ちます : " + why);
+
+        }
+
+        const waitStartMs = performance.now();
+
+        await waitJacketMs(JACKET_RELOAD_RETRY_MS);
+
+        job.waitMs += performance.now() - waitStartMs;
+
+    }
+
+}
+
+/**
+ * 今、読み直しを進めてよいか(曲の再生を邪魔しない時か)を確かめます。
+ *
+ * 進めない時:
+ *
+ *     ・次の曲へ繋ぐ準備の途中(助走・🎬の待ち。js/connect.js の
+ *       connectState / isPreRolling)
+ *     ・2枚のデッキが両方鳴っている(助走・曲の重なり。繋いだ後の先行曲も)
+ *     ・同期スタートの前後(js/sync.js の syncCountdown = 時刻ボタンから
+ *       スタートまで / isSyncWarmingUp() = 先に鳴らしている最中・
+ *       スタート直後・再開の合わせ直し)
+ *
+ * ⚠️ ほかのファイルの名前は typeof で確かめてから使います(js/sync.js の
+ *    raiseSyncResume と同じ書き方)。そのファイルが無い所でも止まらないためです。
+ *
+ * @return {string} 待つ理由(🐛に出すため文字で返す)。進めてよい時は ""
+ */
+function findJacketReloadWait(){
+
+    if((typeof connectState !== "undefined" && connectState !== null) ||
+       (typeof isPreRolling !== "undefined" && isPreRolling === true)){
+
+        return "次の曲へ繋ぐ準備の途中";
+
+    }
+
+    if(!deckAudioA.paused && !deckAudioB.paused){
+
+        return "2つの曲が重なっている";
+
+    }
+
+    if(typeof syncCountdown !== "undefined" && syncCountdown !== null){
+
+        return "同期スタートの前";
+
+    }
+
+    if(typeof isSyncWarmingUp === "function" && isSyncWarmingUp()){
+
+        return "同期スタート・再開の合わせ直しの最中";
+
+    }
+
+    return "";
+
+}
+
+/**
+ * 決まった時間だけ待ちます(await で待てる setTimeout)。
+ */
+function waitJacketMs(ms){
+
+    return new Promise(function(resolve){ setTimeout(resolve,ms); });
+
+}
+
+/**
+ * 絵の大きさ(点の数)だけを調べます。
+ *
+ * <img> に読ませて naturalWidth / naturalHeight を見ます。Chrome は、画面に
+ * 出していない <img> の絵を、描く時まで本当にはほどかない(大きさだけ先に
+ * 分かる)ので、軽く済みます。
+ *
+ * @param  {Blob} blob … 絵
+ * @return {Promise<{width:number,height:number}|null>} 読めなければ null
+ */
+function probeJacketImageSize(blob){
+
+    return new Promise(function(resolve){
+
+        const url = URL.createObjectURL(blob);
+        const img = new Image();
+
+        img.onload = function(){
+            URL.revokeObjectURL(url);
+            resolve({ width:img.naturalWidth, height:img.naturalHeight });
+        };
+
+        img.onerror = function(){
+            URL.revokeObjectURL(url);
+            resolve(null);
+        };
+
+        img.src = url;
+
+    });
+
+}
+
+/**
+ * 今、特大表示に出している DB の絵の点の数(一辺)を返します。
+ * まだ読み込めていない時は 0(その時は、元の絵の方が細かいとみなす)。
+ */
+function getJacketBigShownSide(){
+
+    const img = jacketBigEl.querySelector("img.jacket-big-img");
+
+    if(!img || !img.complete){ return 0; }
+
+    return Math.min(img.naturalWidth,img.naturalHeight);
+
+}
+
+/**
+ * ほどいた絵から、鮮明な絵(<canvas>)を作って控えます。
+ *
+ * ⚠️ bitmaprenderer は、絵を写さずに canvas へ「渡す」だけの描き手です
+ *    (写すぶんの時間もメモリもかからない)。使えない古いブラウザでは、
+ *    ふつうの描き手(2d)で写してから、ほどいた絵を手放します。
+ *
+ * @param {Object}      job    … この読み直しの控え
+ * @param {ImageBitmap} bitmap … ほどいた絵(target × target)
+ * @param {number}      target … 絵の一辺(点)
+ */
+function makeJacketHd(job,bitmap,target){
+
+    const canvas = document.createElement("canvas");
+    canvas.width  = target;
+    canvas.height = target;
+    canvas.className = "jacket-big-hd";
+
+    const renderer = canvas.getContext("bitmaprenderer");
+
+    if(renderer){
+
+        renderer.transferFromImageBitmap(bitmap);
+
+    }
+    else{
+
+        canvas.getContext("2d").drawImage(bitmap,0,0);
+
+        bitmap.close();
+
+    }
+
+    jacketHdCanvas   = canvas;
+    jacketHdRenderer = renderer;
+    jacketHdTrackId  = job.trackId;
+
+}
+
+/**
+ * 鮮明な絵を、今の枠の中に出してよいかを返します。
+ *
+ * ⚠️ 判断は getTrackCover() にまかせます(冒頭の【読み直すのは…】)。
+ *    撮った直後の確認中(預かり中の写真を出している)・カメラの最中は出しません。
+ *
+ * @param {Object} track … 枠に出している曲
+ */
+function shouldShowJacketHd(track){
+
+    return !!(
+        jacketHdCanvas &&
+        track &&
+        jacketHdTrackId === track.track_id &&
+        !jacketPendingBlob &&
+        jacketUiState !== "camera" &&
+        getTrackCover(track) === track.cover_art
+    );
+
+}
+
+/**
+ * 鮮明な絵を、枠の中(DB の絵の上)に重ねます。
+ *
+ * @param {boolean} fade … true ならふわっと(読み直しが終わった時)、
+ *                         false ならすぐ(描き直しで戻す時)
+ */
+function attachJacketHd(fade){
+
+    if(!jacketHdCanvas){ return; }
+
+    jacketHdCanvas.classList.remove("jacket-big-hd-on");
+
+    jacketBigEl.appendChild(jacketHdCanvas);
+
+    if(fade){
+
+        /*
+        いったん「透明」のまま描かせてから、見える印を付けます。
+        offsetWidth を読むと、ブラウザはその場で見た目を計算するので、
+        その後に印を付けると「透明 → 見える」の移り変わり(transition)が起きます。
+        読まずに印を付けると、最初から見えている扱いになり、ふわっとしません。
+        */
+        void jacketHdCanvas.offsetWidth;
+
+    }
+
+    jacketHdCanvas.classList.add("jacket-big-hd-on");
+
+}
+
+/**
+ * 読み直しを終えます(入れ替えた時も、やめた時も)。🐛に1行残します。
+ *
+ * @param {Object} job … この読み直しの控え
+ * @param {string} why … やめた理由。入れ替えた時は ""
+ */
+function finishJacketReload(job,why){
+
+    if(jacketReload === job){ jacketReload = null; }
+
+    const sec = function(ms){ return ((ms || 0) / 1000).toFixed(2); };
+
+    // 【開発用調査ログ】(v257)読み直しにかかった時間と、走行中にヨレないかを実機で確かめるため
+    if(why !== ""){
+
+        console.log("特大表示のジャケは読み直しません : " + why + "(" + job.fileName + ")");
+
+        return;
+
+    }
+
+    console.log(
+        "特大表示のジャケを読み直しました : " + job.fileName +
+        " / 元の絵 " + job.natural.width + "×" + job.natural.height +
+        " → " + job.target + "点で表示" +
+        " / " + sec(performance.now() - job.startedMs) + "秒" +
+        "(待った " + sec(job.waitMs) +
+        "・読む " + sec(job.readMs) +
+        "・ほどく " + sec(job.decodeMs) + ")"
+    );
+
+}
+
+/**
+ * 読み直しを止め、鮮明な絵を手放します(閉じる時・開き直す時)。
+ *
+ * ⚠️ 進んでいる読み直しは、ここでは止めに行きません。jacketReload を空にすると、
+ *    次の一息(waitJacketReloadTurn)で自分で気づいて止まります。
+ */
+function releaseJacketReload(){
+
+    jacketReload = null;
+
+    if(jacketHdCanvas){
+
+        /*
+        絵のメモリをすぐ返します。
+            bitmaprenderer … 空の絵を渡す(transferFromImageBitmap(null))
+            2d             … 大きさを0にする(中の絵が捨てられる)
+        */
+        if(jacketHdRenderer){ jacketHdRenderer.transferFromImageBitmap(null); }
+
+        jacketHdCanvas.width  = 0;
+        jacketHdCanvas.height = 0;
+
+        jacketHdCanvas.remove();
+
+    }
+
+    jacketHdCanvas   = null;
+    jacketHdRenderer = null;
+    jacketHdTrackId  = null;
 
 }
 
