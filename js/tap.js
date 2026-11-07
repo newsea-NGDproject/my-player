@@ -307,6 +307,19 @@ const TAP_FADE_SEC = 0.015;
 */
 const TAP_DEFAULT_BPM = 120;
 
+/*
+A地点〜B地点の間の拍の数を数えた時、端数がこれより小さければ
+「数え違いの心配はない(安心)」とみなします(v263。段0-1)。
+
+    429.13拍 … 端数 0.13 → 429拍で安心
+    429.48拍 … 端数 0.48 → 429拍か430拍か決められない(怪しい)
+
+1/4拍にしているのは、ちょうど真ん中(0.5)との間に余裕を残すためです。
+⚠️ v263 では🐛のログの「安心 / 怪しい」の表示にだけ使います。
+   保存に使う段(0-4)の前に、0-1 のログの数字を見て見直します。
+*/
+const TAP_WHOLE_SONG_SAFE_FRAC = 0.25;
+
 
 // ==========================================================
 // 2. 今の状態
@@ -338,6 +351,28 @@ const tapState = {
     posSec: 0,          // 測り始める位置(曲の何秒目か)
 
     taps: [],           // 押された時刻(曲の何秒目か)
+
+    /*
+    【開発用調査ログ】(v263)指が画面に触れた瞬間の時刻(秒)。taps と同じ順番で並びます。
+
+    taps は「指の知らせを受け取った処理が動いた瞬間」の音の時計で取っています。
+    画面が忙しいと数ms 遅れて揺れうるので、指が触れた瞬間の時刻
+    (event.timeStamp。同期モードの③が使っているもの)と、どちらがばらつきが
+    小さいかを🐛で比べます(logTapTimingCompare)。⚠️ 計算には使っていません。
+    */
+    tapFingerSec: [],
+
+    /*
+    【開発用調査ログ】(v263)A+B の数字を🐛に出すための控え(logTapWholeSong)。
+    ⚠️ 計算・保存には使っていません。
+
+        bpmA       … A地点を確定した時のBPM
+        latencyA   … A地点を確定した時の遅延(B地点で動かしたかを見るため)
+        bpmBTapped … B地点を叩き直した時の、その12回から引いた線のBPM
+                     (叩き直していなければ null)
+    */
+    wholeSongLog: { bpmA: null, latencyA: null, bpmBTapped: null },
+
     locked: false,      // 12回に達して受付を止めたか
 
     phase: TAP_PHASE_A, // 今どちらの地点を測っているか(v150)
@@ -644,6 +679,9 @@ async function openTapCorrection(trackId){
     );
 
     if(hasSaved){
+
+        // 【開発用調査ログ】(v263)保存してある値で A〜B の拍を数えて🐛に出します(動きは変えない)
+        logTapWholeSongSaved(track);
 
         resumeTapFromSaved();
 
@@ -1566,6 +1604,17 @@ tapZone.addEventListener("pointerdown",function(event){
 
     tapState.taps.push(songTime);
 
+    /*
+    【開発用調査ログ】(v263)指が触れた瞬間の時刻も控えます(tapFingerSec のコメント参照)。
+
+    1回目のタップで空にしてから足すのは、taps と必ず同じ順番・同じ数に
+    揃えるためです(taps を空に戻す所が2か所あり、そちらに手を入れずに済む)。
+    event.timeStamp はミリ秒なので、秒に直します。
+    */
+    if(tapState.taps.length === 1){ tapState.tapFingerSec = []; }
+
+    tapState.tapFingerSec.push(event.timeStamp / 1000);
+
     tapCountLabel.textContent = tapState.taps.length + " / " + TAP_TOTAL_COUNT;
 
     if(tapState.taps.length >= TAP_TOTAL_COUNT){
@@ -1761,6 +1810,76 @@ function fitTapBeatGrid(taps){
 }
 
 /**
+ * A地点の1拍目(startTS)から B地点の13拍目(endTS)までに何拍あるかを数え、
+ * 曲全体の長さから BPM を出します(v263。段0-1)。
+ *
+ * ------------------------------------------------------------------
+ * 【考え方】
+ *
+ * startTS と endTS は、どちらも耳で合わせた「本物の拍の位置」です。
+ * その間にある拍の数は**必ず整数**なので、目安のBPMで数えて、
+ * いちばん近い整数に丸めれば拍の数が決まります。あとは
+ *
+ *     曲全体のBPM = 60 × 拍の数 ÷ A〜Bの秒数
+ *
+ * の割り算1回です。8回ぶん(数秒)ではなく A〜B(数分)の長さで決まるので、
+ * 1本の線(startTS から拍の数だけ進むと、ちょうど endTS)にそろいます。
+ * (見積もりと課題は private/tap-correction.html の4章・5章。非公開)
+ *
+ * ------------------------------------------------------------------
+ * 【端数(frac)を必ず見る】
+ *
+ *     429.13拍 … 端数 +0.13 → 429拍で安心
+ *     429.48拍 … 端数 +0.48 → 429拍か430拍か決められない
+ *
+ * 0.5 に近い時は、目安のBPMが粗くて数え違えそうか、B地点だけ裏で
+ * 叩いた(半拍ずれた)かのどちらかです。安心の線は TAP_WHOLE_SONG_SAFE_FRAC。
+ *
+ * ⚠️ v263 の時点では🐛のログ(logTapWholeSong など)だけが使います。
+ *    保存する値には、まだ一切使っていません(使うのは段0-4 の予定)。
+ *
+ * @param  {number} startTS  - A地点の1拍目(秒)
+ * @param  {number} endTS    - B地点の13拍目(秒)
+ * @param  {number} guideBpm - 拍の数を数える時の目安のBPM
+ * @return {{lengthSec:number, beatsRaw:number, beats:number, frac:number,
+ *           bpm:number, safe:boolean}|null}
+ *         lengthSec … A〜Bの秒数
+ *         beatsRaw  … 目安のBPMで数えた拍の数(小数のまま)
+ *         beats     … いちばん近い整数 = 拍の数
+ *         frac      … 端数(beatsRaw − beats。−0.5〜+0.5)
+ *         bpm       … 曲全体のBPM
+ *         safe      … 端数が安心の線より小さいか
+ *         数えられない時は null
+ */
+function findTapWholeSongGrid(startTS,endTS,guideBpm){
+
+    const lengthSec = endTS - startTS;
+
+    // B地点がA地点より前にある・値が無い、などの時は数えられません
+    if(!isFinite(lengthSec) || lengthSec <= 0){ return null; }
+    if(!isFinite(guideBpm) || guideBpm <= 0){ return null; }
+
+    const beatsRaw = lengthSec * guideBpm / 60;
+
+    // Math.round は四捨五入です(429.13 → 429、429.62 → 430)
+    const beats = Math.round(beatsRaw);
+
+    if(beats < 1){ return null; }
+
+    const frac = beatsRaw - beats;
+
+    return {
+        lengthSec: lengthSec,
+        beatsRaw: beatsRaw,
+        beats: beats,
+        frac: frac,
+        bpm: 60 * beats / lengthSec,
+        safe: Math.abs(frac) <= TAP_WHOLE_SONG_SAFE_FRAC
+    };
+
+}
+
+/**
  * 「微調整画面へ進む」が押された時の処理です。
  */
 function goToTapAdjust(){
@@ -1785,6 +1904,17 @@ function goToTapAdjust(){
 
     // 測れたので、ここから画面に数字を出します(v155)
     tapState.measured = true;
+
+    /*
+    【開発用調査ログ】(v263)叩いた時刻の2つの取り方を比べて🐛に出します。
+    B地点で叩き直した時は、その線のBPMも控えておきます(A+B のログで使う)。
+    どちらも記録するだけで、上で決めた bpm・beatOriginSec には触りません。
+    */
+    logTapTimingCompare(grid);
+
+    if(tapState.phase === TAP_PHASE_B){
+        tapState.wholeSongLog.bpmBTapped = 60 / grid.beatDur;
+    }
 
     /*
     測った直線の、どの拍を狙うかを決めます(v150-v151)。
@@ -2477,6 +2607,16 @@ async function confirmTapPhase(){
             "/ 遅延 " + tapState.latencyMs + "ms"
         );
 
+        /*
+        【開発用調査ログ】(v263)A地点の値を控えます(B地点の確定で A+B のログに出す)。
+        これから B地点なので、前に叩き直した B のBPMは消しておきます。
+        */
+        tapState.wholeSongLog = {
+            bpmA: tapState.bpm,
+            latencyA: tapState.latencyMs,
+            bpmBTapped: null
+        };
+
         startTapPhaseB();
 
         return;
@@ -2499,6 +2639,9 @@ async function confirmTapPhase(){
             "BPM " + tapState.bpm.toFixed(2),
             "/ 13拍目 " + tapState.endTS.toFixed(3) + "s"
         );
+
+        // 【開発用調査ログ】(v263)A〜B の拍の数と曲全体のBPMを🐛に出します(保存する値は変えない)
+        logTapWholeSong();
 
         startTapFinalCheck();
 
@@ -2654,6 +2797,324 @@ if(tapFinalHalfBtn){
     tapFinalHalfBtn.onclick = function(){
         toggleTapFinalHalfBeat();
     };
+
+}
+
+
+// ==========================================================
+// 15. 【開発用調査ログ】(v263)A+B の数字と、叩いた時刻の取り方を🐛に出す
+// ==========================================================
+/*
+段0(タップ補正の改善)の1歩目です。**動きは何も変えません。**
+ここにある関数は🐛に数字を出すだけで、保存する値・画面・音には触りません。
+
+    logTapWholeSong      … B地点を確定した時の A〜B の拍の数・曲全体のBPM
+    logTapWholeSongSaved … 🕺の曲を開いた時、保存してある値で同じ数字
+    logTapTimingCompare  … 叩いた時刻の2つの取り方の、ばらつきの比べっこ
+
+【なぜ全部 try/catch で包んでいるのか】
+ログを出す途中でエラーが起きると、呼んだ側(確定ボタン・微調整画面へ進む・
+🕺の曲を開く)の続きが動かなくなり、ノリ注入そのものが止まってしまいます。
+ログのせいで本番の流れが止まることがないよう、ここで受け止めます
+(js/media-session.js の logMediaSessionAction が、ログの係が無くても
+エラーにならない形にしてあるのと同じ心配。v237)。
+
+⚠️ 本番リリース前に、この節ごと消してよい(CLAUDE.md「本番リリース前に削除するもの」)。
+   ただし findTapWholeSongGrid と TAP_WHOLE_SONG_SAFE_FRAC は段0-4 で本番に使う予定なので、
+   この節には置いていません(9. の節と 1. の節)。
+*/
+
+/**
+ * B地点を確定した時に、A〜B の拍の数と曲全体のBPMを🐛に出します。
+ *
+ * 出すもの:
+ *   ・どの道を通ったか(Aの線を引き継いだ / B地点を叩き直した / 前の値の確かめ)
+ *   ・今のBPMで数えた拍の数と端数・曲全体のBPM・今との差
+ *   ・今の線のままだと、アシストの拍(1拍目 + BPM で引いた格子)が接続点でどれだけずれるか
+ *     (⑲ の録音で接続の瞬間にカチッが 58ms 跳んだのが、この量)
+ *   ・AのBPM・叩き直したBのBPMで数えた時の拍の数(目安のBPMによって数え違えるかを見る)
+ *   ・B地点で遅延を動かしたか(動かすと、A と B の間の長さが変わるため)
+ */
+function logTapWholeSong(){
+
+    try{
+
+        const log = tapState.wholeSongLog;
+
+        let way = "Aの線を引き継いだ";
+
+        if(tapState.resumedFromSaved){
+            way = "前の値の確かめ(叩いていない)";
+        }
+        else if(log.bpmBTapped !== null){
+            way = "B地点を叩き直した";
+        }
+
+        const head = "【開発用調査ログ】(v263)A+B(B地点を確定) : " + way;
+
+        const now = findTapWholeSongGrid(tapState.startTS,tapState.endTS,tapState.bpm);
+
+        if(!now){
+
+            console.log(
+                head,
+                "/ 数えられません(1拍目 " + tapState.startTS + "s / 13拍目 " + tapState.endTS + "s)"
+            );
+
+            return;
+
+        }
+
+        const parts = [
+            head,
+            "A〜B " + now.lengthSec.toFixed(2) + "秒",
+            describeTapWholeSong("今のBPM",tapState.bpm,now)
+        ];
+
+        if(log.bpmA !== null){
+
+            const a = findTapWholeSongGrid(tapState.startTS,tapState.endTS,log.bpmA);
+
+            if(a){ parts.push(describeTapCount("AのBPM",log.bpmA,a)); }
+
+        }
+
+        if(log.bpmBTapped !== null){
+
+            const b = findTapWholeSongGrid(tapState.startTS,tapState.endTS,log.bpmBTapped);
+
+            if(b){ parts.push(describeTapCount("叩き直したBのBPM",log.bpmBTapped,b)); }
+
+        }
+
+        if(log.latencyA !== null && log.latencyA !== tapState.latencyMs){
+
+            parts.push(
+                "B地点で遅延を " + formatTapSigned(tapState.latencyMs - log.latencyA,0) +
+                "ms 動かした(" + log.latencyA + " → " + tapState.latencyMs + "ms)"
+            );
+
+        }
+
+        console.log(parts.join(" / "));
+
+    }
+    catch(error){
+
+        console.warn("A+B のログを出せませんでした :",error.name,error.message);
+
+    }
+
+}
+
+/**
+ * 🕺の曲を開いた時に、保存してある値で A〜B の拍の数を🐛に出します。
+ *
+ * 叩き直さなくても、今まで注入した曲の様子(端数が 0.5 に近い曲 = B地点だけ
+ * 裏で叩いた疑いのある曲、アシストが接続点で跳ぶ量)が分かります。
+ *
+ * @param {object} track - 開いた曲のデータ(manualBPM / startTS / endTS が揃っている)
+ */
+function logTapWholeSongSaved(track){
+
+    try{
+
+        const head = "【開発用調査ログ】(v263)A+B(保存してある値) : " + track.file_name;
+
+        const saved = findTapWholeSongGrid(track.startTS,track.endTS,track.manualBPM);
+
+        if(!saved){
+
+            console.log(
+                head,
+                "/ 数えられません(1拍目 " + track.startTS + "s / 13拍目 " + track.endTS + "s)"
+            );
+
+            return;
+
+        }
+
+        console.log(
+            head +
+            " / A〜B " + saved.lengthSec.toFixed(2) + "秒" +
+            " / " + describeTapWholeSong("保存のBPM",track.manualBPM,saved)
+        );
+
+    }
+    catch(error){
+
+        console.warn("A+B(保存してある値)のログを出せませんでした :",error.name,error.message);
+
+    }
+
+}
+
+/**
+ * 「◯◯ 128.36 で数えると 429.13拍 → 429拍(端数 +0.13・安心)」の文を作ります。
+ */
+function describeTapCount(label,bpm,grid){
+
+    return label + " " + bpm.toFixed(2) + " で数えると " +
+        grid.beatsRaw.toFixed(2) + "拍 → " + grid.beats + "拍" +
+        "(端数 " + formatTapSigned(grid.frac,2) + "・" +
+        (grid.safe ? "安心" : "怪しい") + ")";
+
+}
+
+/**
+ * describeTapCount に、曲全体のBPM・今との差・アシストの跳びを足した文を作ります。
+ *
+ * アシストの跳びは「端数 × 1拍の長さ」です。今のBPMで1拍目から格子を引くと、
+ * 接続点(13拍目)のいちばん近い拍は、接続点から端数ぶんだけ離れています。
+ * + は「接続点の方が、格子の拍より後ろ」。
+ */
+function describeTapWholeSong(label,bpm,grid){
+
+    const diffPercent = (grid.bpm - bpm) / bpm * 100;
+
+    const jumpMs = grid.frac * (60 / bpm) * 1000;
+
+    return describeTapCount(label,bpm,grid) +
+        " / 曲全体のBPM " + grid.bpm.toFixed(4) +
+        "(" + label + "との差 " + formatTapSigned(diffPercent,3) + "%)" +
+        " / " + label + "の格子のままだと、アシストの拍が接続点で " +
+        formatTapSigned(jumpMs,0) + "ms ずれる";
+
+}
+
+/**
+ * 叩いた時刻の2つの取り方で、ばらつきを比べて🐛に出します。
+ *
+ *     音の時計 … 今の取り方(taps)。指の知らせの処理が動いた瞬間の audioCtx.currentTime
+ *     指の時刻 … 指が画面に触れた瞬間(tapFingerSec)。event.timeStamp
+ *
+ * どちらも、採用する8回に1本の線を引いて、線からどれだけ外れているか
+ * (二乗平均。小さいほど揃っている)を出します。拍番号は、本番で引いた線
+ * (grid)にいちばん近い拍を両方に同じく振ります。二度押しは1回目だけ使います
+ * (fitTapBeatGrid と同じ扱い)。
+ *
+ * ⚠️ 2つの時計は0の位置が違いますが、線を引けばその差は消えるので、
+ *    比べるのは「線からの外れ」とBPMだけにしています。
+ *
+ * @param {{beatDur:number, origin:number}} grid - fitTapBeatGrid が引いた線
+ */
+function logTapTimingCompare(grid){
+
+    try{
+
+        const songSec = tapState.taps.slice(TAP_DISCARD_COUNT);
+        const fingerSec = tapState.tapFingerSec.slice(TAP_DISCARD_COUNT);
+
+        if(songSec.length !== fingerSec.length || songSec.length < 3){
+
+            console.log(
+                "【開発用調査ログ】(v263)叩いた時刻の比べっこはできません :",
+                "音の時計 " + songSec.length + "回 / 指の時刻 " + fingerSec.length + "回"
+            );
+
+            return;
+
+        }
+
+        const beats = [];
+        const songUse = [];
+        const fingerUse = [];
+
+        for(let i = 0; i < songSec.length; i++){
+
+            const beat = Math.round((songSec[i] - grid.origin) / grid.beatDur);
+
+            // 二度押し(前と同じ拍)は捨てます
+            if(beats.length > 0 && beat === beats[beats.length - 1]){ continue; }
+
+            beats.push(beat);
+            songUse.push(songSec[i]);
+            fingerUse.push(fingerSec[i]);
+
+        }
+
+        const song = measureTapSpreadMs(beats,songUse);
+        const finger = measureTapSpreadMs(beats,fingerUse);
+
+        if(!song || !finger){ return; }
+
+        console.log(
+            "【開発用調査ログ】(v263)叩いた時刻のばらつき(" +
+            (tapState.phase === TAP_PHASE_A ? "A地点" : "B地点") + "・" + beats.length + "点。" +
+            "線からの外れの二乗平均) : 音の時計 " + song.spreadMs.toFixed(1) + "ms" +
+            "(BPM " + song.bpm.toFixed(2) + ") / 指の時刻 " + finger.spreadMs.toFixed(1) + "ms" +
+            "(BPM " + finger.bpm.toFixed(2) + ")"
+        );
+
+    }
+    catch(error){
+
+        console.warn("叩いた時刻の比べっこのログを出せませんでした :",error.name,error.message);
+
+    }
+
+}
+
+/**
+ * 拍番号と時刻の組に1本の線を引き、線からの外れ(二乗平均・ミリ秒)とBPMを返します。
+ * 線の引き方は fitTapBeatGrid の「4. 直線を当てはめる」と同じ最小二乗法です。
+ *
+ * @param  {number[]} beats - 拍番号
+ * @param  {number[]} times - 叩いた時刻(秒)
+ * @return {{spreadMs:number, bpm:number}|null}
+ */
+function measureTapSpreadMs(beats,times){
+
+    const n = beats.length;
+
+    if(n < 3){ return null; }
+
+    let sumN = 0;
+    let sumT = 0;
+    let sumNN = 0;
+    let sumNT = 0;
+
+    for(let i = 0; i < n; i++){
+
+        sumN = sumN + beats[i];
+        sumT = sumT + times[i];
+        sumNN = sumNN + beats[i] * beats[i];
+        sumNT = sumNT + beats[i] * times[i];
+
+    }
+
+    const denominator = n * sumNN - sumN * sumN;
+
+    if(denominator === 0){ return null; }
+
+    const beatDur = (n * sumNT - sumN * sumT) / denominator;
+    const origin = (sumT - beatDur * sumN) / n;
+
+    if(!isFinite(beatDur) || beatDur <= 0){ return null; }
+
+    let sumSquare = 0;
+
+    for(let i = 0; i < n; i++){
+
+        const miss = times[i] - (origin + beatDur * beats[i]);
+
+        sumSquare = sumSquare + miss * miss;
+
+    }
+
+    return {
+        spreadMs: Math.sqrt(sumSquare / n) * 1000,
+        bpm: 60 / beatDur
+    };
+
+}
+
+/**
+ * 数に + / - を付けて、決まった桁数の文字にします(0 は + を付けます)。
+ */
+function formatTapSigned(value,digits){
+
+    return (value >= 0 ? "+" : "") + value.toFixed(digits);
 
 }
 
