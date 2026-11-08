@@ -471,6 +471,16 @@ const tapState = {
     */
     resumedFromSaved: false,
 
+    /*
+    A地点を確定した時の控え(v264)。
+
+    最後の確認画面の「A地点の微調整へ戻る」で、A地点を確定した時と同じ状態に
+    戻すために使います(竹弘の要望 2026-11-09。叩き直すほどの直しは少ないので、
+    「タップからやり直す」ではなく A地点の微調整へ戻りたい)。
+    中身は confirmTapPhase() の A地点の確定で入れます。まだ確定していなければ null。
+    */
+    phaseASnapshot: null,
+
     wasPlaying: false   // 開く前に曲が鳴っていたか(閉じる時に戻すため)
 
 };
@@ -532,6 +542,12 @@ const tapConfirmBtn = document.getElementById("tap-confirm");
 行ってください。
 */
 const tapRetryAdjust = document.getElementById("tap-retry-adjust");
+
+/*
+「A地点の微調整へ戻る」ボタン(v264。画面いちばん下の行、最後の確認画面だけ)。
+出し入れは refreshTapRetryVisible() 経由だけで行ってください(理由はそちらのコメント)。
+*/
+const tapBackA = document.getElementById("tap-back-a");
 
 
 // ==========================================================
@@ -610,6 +626,9 @@ async function openTapCorrection(trackId){
     */
     tapState.halfShifted = false;
     tapState.finalCheck = false;
+
+    // 前の曲の A地点の控えも消します(v264。別の曲の A地点へ戻ってしまわないように)
+    tapState.phaseASnapshot = null;
 
     // 位置は毎回この初期値から始めます(前回位置は保存していません)
     tapState.posSec = TAP_POS_A_DEFAULT_SEC;
@@ -903,14 +922,35 @@ function setTapAdjustUI(shown){
  * ⚠️ 新しくパネルを増やして、そこにもこのボタンを出したくなったら、
  *    **この関数に条件を1つ足すだけ**にすること。パネル側から直接
  *    tapRetryAdjust を触らないでください。
+ *
+ * ---- v264:最後の確認画面では「A地点の微調整へ戻る」に入れ替えました ----
+ *
+ * 竹弘の要望(2026-11-09):最後の確認画面の「タップからやり直す」は、
+ * 押すと A地点を叩く画面まで戻っていた(しかも右上の表示は「B地点」のまま)。
+ * 「叩き直すほどひどく直すことは少ない。A地点の微調整画面なら、A地点を確定して
+ *   すぐ B地点の微調整へも行けて、B地点を叩き直すボタンもある」
+ * → 最後の確認画面の下の段は「やめる」+「A地点の微調整へ戻る」にしました。
+ *   「タップからやり直す」は微調整画面だけに出します。
+ *
+ * 2つのボタンの出し分けもここに集めます(v187 で同じボタンを2か所から
+ * 触って消えた事故があったため。「決めるのは1か所」)。
  */
 function refreshTapRetryVisible(){
 
-    const shown =
-        tapAdjustPanel.style.display !== "none" ||
-        tapFinalPanel.style.display  !== "none";
+    const adjustShown = tapAdjustPanel.style.display !== "none";
+    const finalShown  = tapFinalPanel.style.display  !== "none";
 
-    tapRetryAdjust.style.display = shown ? "block" : "none";
+    tapRetryAdjust.style.display = adjustShown ? "block" : "none";
+
+    /*
+    微調整パネルと確認パネルは同時には出さない約束ですが、切り替えの途中で一瞬
+    両方が出ている順番があります(showTapAdjustPanel の中など)。その時は
+    微調整の方を優先し、ボタンが3つ並ばないようにします。
+    控え(phaseASnapshot)が無い時は、戻る先が無いので出しません。
+    */
+    const backShown = finalShown && !adjustShown && tapState.phaseASnapshot !== null;
+
+    tapBackA.style.display = backShown ? "block" : "none";
 
 }
 
@@ -947,6 +987,10 @@ function resetTapPhase(){
 
     ⚠️ この関数はB地点の微調整画面からも呼ばれます。その時はフェーズを
        動かしません(B地点だけ叩き直したい場面なので)。
+
+    (v264)最後の確認画面の「タップからやり直す」は「A地点の微調整へ戻る」に
+    入れ替えた(backToTapAdjustA)ので、今はここへは来ません。万一来ても
+    壊れないよう、この分かれ道は残しておきます。
     */
     if(tapState.finalCheck){
 
@@ -955,6 +999,15 @@ function resetTapPhase(){
         tapState.posSec = TAP_POS_A_DEFAULT_SEC;
 
     }
+
+    /*
+    右上の「A地点 / B地点」の表示も、必ず今のフェーズに合わせます(v264)。
+
+    v263 まで、上の分かれ道でフェーズを A に戻しても表示を書き換えておらず、
+    A地点を叩く画面なのに右上が「B地点(曲の終わり側)」のままでした
+    (竹弘の実機報告 2026-11-09)。フェーズを変えうる関数では、必ずこの1行を通します。
+    */
+    updateTapPhaseLabel();
 
     setTapLockUI(false);
     setTapAdjustUI(false);
@@ -2188,6 +2241,70 @@ function setTapFinalUI(shown){
 }
 
 /**
+ * 最後の確認画面から、A地点の微調整画面へ戻ります(v264)。
+ *
+ * 【竹弘の要望(2026-11-09)】
+ *     「最後の画面の『タップからやり直す』は、A地点の微調整画面に戻るように
+ *       したい。タップ補正をやり直すほどひどく補正が必要になるケースは少ない。
+ *       A地点の微調整画面なら『A地点を確定→B地点へ』ですぐB地点の微調整にも
+ *       行けて、B地点のタップ補正のボタンもある」
+ *     「やみくもにボタンを増やすのもどうか。欲しいと思ったボタンを追加するのが
+ *       シンプルな操作性」(→「戻る」を全部の画面に付ける案はやめ、このボタンだけ)
+ *
+ * 【何に戻すか】
+ * A地点を確定した時の控え(phaseASnapshot)を、そのまま書き戻します。
+ * B地点で変えたこと(BPM・遅延・叩き直し)と、この画面の「表打ちにする」は
+ * 取り消しになります。A地点を確定し直せば、B地点はもう一度そこから始まります。
+ *
+ * ⚠️ startTS / endTS を直接書き戻しているのは、控えた時の値がそのまま正しい
+ *    (updateTapTargetTS で作られた結果を控えてある)ためです。拍の格子
+ *    (beatOriginSec・bpm・targetBeat)も一緒に戻すので、食い違いません。
+ */
+function backToTapAdjustA(){
+
+    const snap = tapState.phaseASnapshot;
+
+    // A地点を確定していない(戻る先が無い)時は何もしません。ボタンも出していません
+    if(!snap){ return; }
+
+    tapState.phase = TAP_PHASE_A;
+    tapState.finalCheck = false;
+    tapState.halfShifted = false;
+    tapState.measured = true;
+
+    tapState.bpm = snap.bpm;
+    tapState.beatOriginSec = snap.beatOriginSec;
+    tapState.targetBeat = 1;
+    tapState.startTS = snap.startTS;
+    tapState.endTS = snap.endTS;
+    tapState.latencyMs = snap.latencyMs;
+    tapState.posSec = snap.posSec;
+    tapState.resumedFromSaved = snap.resumedFromSaved;
+
+    updateTapPhaseLabel();
+
+    console.log(
+        "A地点の微調整へ戻りました :",
+        "BPM " + tapState.bpm.toFixed(2),
+        "/ 1拍目 " + tapState.startTS.toFixed(3) + "s",
+        "/ 遅延 " + tapState.latencyMs + "ms"
+    );
+
+    /*
+    画面の切り替えと、メトロノームを重ねて鳴らすのは showTapAdjustPanel に任せます
+    (確認パネルを閉じる・確定ボタンの文言を「A地点を確定 → B地点へ」にする・
+    下の段を「やめる」+「タップからやり直す」にする、まで中でやってくれます)。
+    鳴らす位置は、A地点の微調整で聴いていた位置です。
+    */
+    showTapAdjustPanel(
+        "A地点を確定した時の値に戻しました。直したら「A地点を確定 → B地点へ」で、" +
+        "もう一度B地点へ進めます。",
+        snap.fromSec
+    );
+
+}
+
+/**
  * Bluetoothの遅延を調整します。
  *
  * ------------------------------------------------------------------
@@ -2346,6 +2463,24 @@ Bluetoothの遅延は「イヤホンの性質」であって曲の性質では�
 
 キー名 latency は、初期設定(js/setup.js)が最初から書き込んでいた
 ものをそのまま使います。
+
+---- 保存するのは「12回叩いて合わせた A地点の確定」の時だけ(v264。竹弘が選んだ案「エ」)----
+
+この値は次に測る曲の始まりの値になります。v263 までは A地点・B地点の確定の
+たびに保存していましたが、v263 の実機ログで、値が曲ごとに大きく揺れていました
+(−30 → −80 → −151 → +50 → +110 → −40ms)。中身は3つあります。
+
+    ① イヤホンの遅れ       … どの曲でも同じ → 次の曲へ引き継ぐと便利
+    ② その曲を叩いた時の癖 … 叩き遅れなど。A地点で合わせる時に入る
+    ③ B地点で動かした分    … 正体は BPM のずれの直し(A地点から遠いほど大きい)。
+                              次の曲には関係ない
+
+そこで、③ が入る B地点の確定と、叩いていない 🕺の曲の確かめ(resumedFromSaved。
+保存してある1拍目をそのまま使うので、表示の数字は当てていない)では保存しません。
+くわしい比べっこは docs/nori-timing.html(案ア〜オ)。
+
+⚠️ どの値から始めても、最後に耳で合わせて確定するので、保存される拍の位置は正しい。
+   変わるのは「最初にどれだけずれて聞こえるか」と「押す回数」だけです。
 */
 
 async function loadTapLatency(){
@@ -2595,17 +2730,52 @@ async function saveTapResult(){
  */
 async function confirmTapPhase(){
 
-    // 遅延は次の曲を測る時の初期値になるので、どちらの地点でも保存します
-    await saveTapLatency();
-
     if(tapState.phase === TAP_PHASE_A){
+
+        /*
+        ---- 遅延の値は、12回叩いて合わせた A地点の確定の時だけ保存します(v264。案「エ」)----
+
+        次に測る曲の始まりの値になります。v263 までは A地点・B地点のどちらの確定でも
+        保存していましたが、B地点で動かした分(正体は BPM のずれの直し)まで次の曲へ
+        持ち越していました。くわしくは「12. 遅延の保存と読み込み」の頭のコメント。
+
+        resumedFromSaved が立っている = 🕺の曲を開いて、叩かずに確かめている時です。
+        その時の表示の数字は拍に当てていない(保存してある1拍目をそのまま使っている)
+        ので、引き継ぎには入れません(竹弘 OK 2026-11-09)。
+        */
+        if(!tapState.resumedFromSaved){
+            await saveTapLatency();
+        }
 
         console.log(
             "A地点を確定しました :",
             "BPM " + tapState.bpm.toFixed(2),
             "/ 1拍目 " + tapState.startTS.toFixed(3) + "s",
-            "/ 遅延 " + tapState.latencyMs + "ms"
+            "/ 遅延 " + tapState.latencyMs + "ms",
+            tapState.resumedFromSaved ? "(確かめなので、次の曲へは引き継ぎません)" : "(次の曲へ引き継ぎます)"
         );
+
+        /*
+        ---- 最後の確認から「A地点の微調整へ戻る」ための控え(v264)----
+
+        B地点へ進むと、拍の格子・遅延・測る位置などが B地点のものに書き換わります。
+        戻った時に「A地点を確定した時」とまったく同じ状態を出せるよう、ここで控えます。
+        戻す処理は backToTapAdjustA()。
+
+        ⚠️ endTS も控えます。🕺の曲の確かめ(resumedFromSaved)では、B地点で
+           「保存してある13拍目」を聴いてもらうため、endTS がその値を運んでいます。
+           控えずに戻ると、B地点で動かした後の値を「保存してある値」として出してしまいます。
+        */
+        tapState.phaseASnapshot = {
+            bpm: tapState.bpm,
+            beatOriginSec: tapState.beatOriginSec,
+            startTS: tapState.startTS,
+            endTS: tapState.endTS,
+            latencyMs: tapState.latencyMs,
+            posSec: tapState.posSec,
+            fromSec: tapState.playOffset,
+            resumedFromSaved: tapState.resumedFromSaved
+        };
 
         /*
         【開発用調査ログ】(v263)A地点の値を控えます(B地点の確定で A+B のログに出す)。
@@ -2755,6 +2925,10 @@ document.getElementById("tap-pos-fwd").onclick = function(){
 document.getElementById("tap-to-adjust").onclick = goToTapAdjust;
 tapRetryLock.onclick = resetTapPhase;
 tapRetryAdjust.onclick = resetTapPhase;
+
+// 最後の確認画面の「A地点の微調整へ戻る」(v264)
+tapBackA.onclick = backToTapAdjustA;
+
 tapConfirmBtn.onclick = confirmTapPhase;
 document.getElementById("tap-close").onclick = closeTapCorrection;
 
