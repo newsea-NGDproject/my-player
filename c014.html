@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v263)ノリRun
+        (v264)ノリRun
         メインメニュー
 
     </title>
@@ -7225,6 +7225,14 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             min-width:0;
         }
 
+        /*
+        「A地点の微調整へ戻る」(v264)。日本語は放っておくと文字の途中で折れるので、
+        keep-all で折れないようにし、HTML の <wbr> の所(「A地点の」の後)だけで折ります。
+        */
+        #tap-back-a{
+            word-break:keep-all;
+        }
+
         #tap-close{
             padding:12px;
 
@@ -8907,9 +8915,16 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
                 タップ待ち   … やめる だけ(幅いっぱいに広がる)
                 12回叩いた後 … やめる ＋ 今のタップをやり直す
                 微調整画面   … やめる ＋ タップからやり直す
+                最後の確認   … やめる ＋ A地点の微調整へ戻る(v264)
 
             出ていないボタンは display:none なので、残った「やめる」が
             自動的に幅いっぱいへ広がります(flex:1 1 0 のはたらき)。
+
+            【v264 最後の確認の相棒を入れ替えた(竹弘の要望 2026-11-09)】
+            v263 までは最後の確認でも「タップからやり直す」で、押すと A地点を
+            叩く画面まで戻っていました。叩き直すほどの直しは少ないので、
+            A地点の微調整画面へ戻る形にしました(js/tap.js の backToTapAdjustA)。
+            どのボタンを出すかは js/tap.js の refreshTapRetryVisible() の1か所で決めます。
 
             ⚠️ ここは最終デザイン(ターンテーブル)で作り直す前提の
                暫定レイアウトです。竹弘の要望は「メニュー画面と同じく
@@ -8919,6 +8934,12 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             <button type="button" id="tap-close">やめる</button>
             <button type="button" id="tap-retry-lock" class="tap-action tap-action-quiet" style="display:none;">今のタップをやり直す</button>
             <button type="button" id="tap-retry-adjust" class="tap-action tap-action-quiet" style="display:none;">タップからやり直す</button>
+            <!--
+                <wbr> は「ここなら改行してよい」という印です。小さい画面で収まらない時、
+                「A地点の / 微調整へ戻る」の切れ目で折れるようにしています
+                (CSS の word-break:keep-all で、それ以外の所では折れません)。
+            -->
+            <button type="button" id="tap-back-a" class="tap-action tap-action-quiet" style="display:none;">A地点の<wbr>微調整へ戻る</button>
         </div>
 
     </div>
