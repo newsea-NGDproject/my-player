@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v267)ノリRun
+        (v268)ノリRun
         メインメニュー
 
     </title>
@@ -7222,6 +7222,52 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         #tap-final-result.is-ok{ color:#00ff88; }
         #tap-final-result.is-ng{ color:#ffcc00; }
 
+        /*
+        「🎯 精度を高める(C地点)」(v268。段0-5a)。最後の確認の結果の1行のすぐ下。
+
+        ふだんは控えめな青。拍の数を決めきれなかった曲(結果の1行が黄色の時)だけ .is-lit を付けて
+        黄色に光らせ、押してほしいことを伝えます(竹弘 2026-11-09「⚠️ の曲だけでいい」)。
+        .is-lit を付け外しするのは js/tap.js の updateTapFinalResult。
+
+        ・大きさ:.tap-action(幅いっぱい・角丸)を土台に、文字と上下の余白を小さくしました
+          (確定保存より目立たせない。画面を1画面に収めるため。sandbox/measure-tap-layout.html で実測)
+        ・display:block は、ボタンを1行まるごと使わせて、上下の間(margin)を効かせるための指定
+        ・光り方:影(box-shadow)をふくらませたり縮めたりする。動きを減らす設定の端末では止めます
+        */
+        #tap-final-c{
+            display:block;
+            margin-top:6px;
+            padding:10px 6px;
+
+            background:#1c2733;
+            color:#9fd8ff;
+            border:1px solid #2e4458;
+
+            font-size:0.92rem;
+        }
+
+        #tap-final-c:active{ background:#26384a; }
+
+        #tap-final-c.is-lit{
+            background:#ffcc00;
+            color:#141221;
+            border-color:#ffe066;
+
+            animation:tapFinalCGlow 1.6s ease-in-out infinite;
+        }
+
+        #tap-final-c.is-lit:active{ background:#ffd633; }
+
+        /* @keyframes は「動きの台本」。0%(始め)・50%(途中)・100%(終わり)の見た目を書くと、その間を滑らかにつなぎます */
+        @keyframes tapFinalCGlow{
+            0%,100%{ box-shadow:0 0 0 0 rgba(255,204,0,0); }
+            50%    { box-shadow:0 0 14px 2px rgba(255,204,0,0.55); }
+        }
+
+        @media (prefers-reduced-motion: reduce){
+            #tap-final-c.is-lit{ animation:none; }
+        }
+
         .tap-adj-group button{
             flex:1;
             padding:10px 2px;    /* (v265)前は 13px 2px。指で押す高さは約38pxを残す */
@@ -8847,6 +8893,11 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             この画面では「聴く位置」だけが動き、接続点(13拍目)と B地点の叩き始めの
             位置は動きません(js/tap.js の nudgeTapListenPosition)。
             A地点の微調整・最後の確認では、今まで通り出しません。
+
+            【v268 C地点の微調整画面でも出す(C地点そのものを動かす)】
+            竹弘と決めた(2026-11-09):C地点の ◀▶ は、聴く位置ではなく C地点そのものを動かします
+            (テンポが揺れる曲で「代表のテンポの所」へ C を動かすため)。範囲は A〜B の 60%〜80%。
+            数字は聴き始める位置(C地点の3秒前)です(js/tap.js の nudgeTapCPosition)。
         -->
         <div id="tap-pos-row">
             <button type="button" id="tap-pos-back" class="tap-pos-btn">◀ 5秒</button>
@@ -8991,10 +9042,19 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
 
             <!--
                 (v267)曲全体のBPMにしたかどうかの1行(段0-4)。
-                ✅ 曲全体のBPM 83.48(A〜B 269拍) / ⚠️ 拍の数を決めきれません。今までどおりの値で保存します。
-                文字と色は js/tap.js の updateTapFinalResult が書きます。
+                ✅ 曲全体のBPM 83.48(A〜B 269拍) / ⚠️ 拍の数を決めきれません。…
+                (v268)C地点の結果も入れて4つの形になりました(どれも2行まで)。
+                文字と色は js/tap.js の updateTapFinalResult が書きます(4つの形はそちらのコメント)。
             -->
             <p id="tap-final-result"></p>
+
+            <!--
+                (v268)「🎯 精度を高める(C地点)」(段0-5a)。押すと C地点の微調整画面へ入ります
+                (js/tap.js の startTapPhaseC)。結果の1行が「🎯 C地点で精度をあげよう。」と案内するので、
+                そのすぐ下に置きました。拍の数を決めきれなかった曲だけ光ります(.is-lit。
+                竹弘 2026-11-09「⚠️ の曲だけでいい」)。光らせるかは js/tap.js の updateTapFinalResult が決めます。
+            -->
+            <button type="button" id="tap-final-c" class="tap-action">🎯 精度を高める(C地点)</button>
 
             <p class="tap-desc">
                 メトロノームが曲の拍と合っていますか
@@ -9030,6 +9090,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
                 12回叩いた後 … やめる ＋ 今のタップをやり直す
                 微調整画面   … やめる ＋ タップからやり直す
                 最後の確認   … やめる ＋ A地点の微調整へ戻る(v264)
+                C地点の微調整 … やめる だけ(v268。C地点で叩き直すのは段0-5b で足す)
 
             出ていないボタンは display:none なので、残った「やめる」が
             自動的に幅いっぱいへ広がります(flex:1 1 0 のはたらき)。
