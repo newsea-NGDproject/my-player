@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v264)ノリRun
+        (v265)ノリRun
         メインメニュー
 
     </title>
@@ -6902,14 +6902,21 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             user-select:none;
         }
 
+        /*
+        (v265)スクロールなしの1画面に収めるため、上下の余白と部品の間を詰めました
+        (竹弘の要望 2026-11-07。GALAXY のインストール版は見えている高さが 639px)。
+        前は padding:14px 14px 28px / gap:10px。
+        ⚠️ ノリ注入の画面の高さは sandbox/measure-tap-layout.html で全部の画面を測れます。
+           部品を足したら、必ず測り直すこと(0-3 の ◀▶・0-4 の結果・0-5 の 🎯 のぶんは空けてある)
+        */
         .tap-container{
             max-width:520px;
             margin:0 auto;
-            padding:14px 14px 28px;
+            padding:10px 14px 14px;
 
             display:flex;
             flex-direction:column;
-            gap:10px;
+            gap:8px;
         }
 
         .tap-head{
@@ -6944,7 +6951,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             background:#000000;
             border:2px solid #2f6bff;
             border-radius:14px;
-            padding:14px 12px;
+            padding:9px 12px;   /* (v265)前は 14px 12px */
 
             display:flex;
             flex-direction:column;
@@ -6952,9 +6959,21 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             gap:4px;
         }
 
+        /*
+        (v265)「1拍目 / 13拍目」と「タイミング」の札を1行に並べます(前は縦に2行)。
+        flex-wrap は、とても狭い画面で入りきらない時だけ2行に折るための保険です。
+        */
+        .tap-monitor-row{
+            display:flex;
+            flex-wrap:wrap;
+            align-items:center;
+            justify-content:center;
+            gap:4px 10px;
+        }
+
         #tap-bpm{
             font-family:monospace;
-            font-size:3.2rem;
+            font-size:2.6rem;   /* (v265)前は 3.2rem */
             font-weight:bold;
             line-height:1.05;
             color:#00ff88;
@@ -6965,7 +6984,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
 
         #tap-ts{
             font-family:monospace;
-            font-size:1rem;
+            font-size:0.95rem;   /* (v265)前は 1rem。「13拍目 172.545s」と札を1行に並べるため */
             color:#ffcc00;
             font-variant-numeric:tabular-nums;
         }
@@ -6979,13 +6998,24 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             padding:2px 10px;
         }
 
+        /*
+        今なにをすればよいかの案内(v265 で2行までにした)。
+
+        white-space:pre-line は「文の中の改行(\n)を、そのまま改行として出す」指定です。
+        js/tap.js の案内文は、意味の切れ目に \n を入れて2行に書いてあります。
+        日本語は放っておくと文字の途中で折れて読みにくいので、折る所をこちらで決めています
+        (竹弘の希望:文言は意味の塊で改行させる)。
+        ⚠️ 1行は全角22文字まで(幅 360px の画面で1行に収まる長さ)。それより長い文を書くと、
+           狭い画面で行の途中に折れが入ります。
+        */
         #tap-guide{
             font-size:0.85rem;
-            line-height:1.6;
+            line-height:1.5;     /* (v265)前は 1.6 */
             color:#00ff88;
             background:rgba(0,255,136,0.09);
             border-radius:10px;
-            padding:11px 13px;
+            padding:8px 12px;    /* (v265)前は 11px 13px */
+            white-space:pre-line;
         }
 
         /* --- 測り始める位置の調整(v147で新設) --- */
@@ -7093,7 +7123,9 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
 
         margin-top を少し足しているのは、叩いた勢いで指が下へ流れても
         ボタンに届かないよう、指1本ぶんの間を空けるため
-        (.tap-container の gap:10px と合わせて16px)。
+        (.tap-container の gap と合わせて16px)。
+        ⚠️ (v265)gap を 10px → 8px に詰めたので、こちらを 6px → 8px にして 16px を保っています。
+           叩く場所とボタンの間は、画面を収めるためでも詰めないこと(誤爆の防止)。
         */
         #tap-lock-actions{
             /* 表示の出し入れは js/tap.js が none / flex で切り替えます */
@@ -7101,14 +7133,14 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             flex-direction:column;
             gap:10px;
 
-            margin-top:6px;
+            margin-top:8px;
         }
 
         /* --- 微調整パネル --- */
         .tap-desc{
-            margin:6px 0 0;
+            margin:4px 0 0;      /* (v265)前は 6px 0 0 */
             font-size:0.78rem;
-            line-height:1.45;
+            line-height:1.35;    /* (v265)前は 1.45 */
             color:#bdb7cc;
         }
 
@@ -7118,12 +7150,29 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             font-size:0.92em;
         }
 
+        /*
+        (v265)見出しと小さな注意書きを1行に並べる形(速度の見出し)。
+        見出しは左、注意書き(「+で速く」)は右端へ寄せます。
+        flex-shrink:0 は、狭い画面でも注意書きの方は縮ませない(折らない)指定です。
+        */
+        .tap-desc.tap-desc-inline{
+            display:flex;
+            justify-content:space-between;
+            align-items:baseline;
+            gap:8px;
+        }
+
+        .tap-desc.tap-desc-inline span{
+            display:inline;
+            flex-shrink:0;
+        }
+
         .tap-adj-group{
             background:#221f2c;
             border-left:5px solid #00ff88;
             border-radius:12px;
-            padding:9px;
-            margin-top:5px;
+            padding:6px;         /* (v265)前は 9px */
+            margin-top:4px;      /* (v265)前は 5px */
 
             display:flex;
             gap:5px;
@@ -7159,7 +7208,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
 
         .tap-adj-group button{
             flex:1;
-            padding:13px 2px;
+            padding:10px 2px;    /* (v265)前は 13px 2px。指で押す高さは約38pxを残す */
 
             background:#413b52;
             color:#ffffff;
@@ -7179,7 +7228,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         /* --- 大きい操作ボタン --- */
         .tap-action{
             width:100%;
-            padding:16px;
+            padding:13px;        /* (v265)前は 16px */
             border:none;
             border-radius:14px;
             font-size:1.1rem;
@@ -7196,7 +7245,11 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             background:#3a1f24;
             color:#ff9aae;
             font-size:0.88rem;
-            padding:11px;
+            /*
+            (v265)左右を 11px → 6px に。幅 360px の画面で「今のタップをやり直す」が
+            2行に折れて、下の段が16px 高くなっていたため(sandbox/measure-tap-layout.html で実測)。
+            */
+            padding:11px 6px;
         }
 
         /*
@@ -8729,7 +8782,12 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
  【まだ仮なもの】
  見た目。竹弘のイメージは「暗いクラブで光るDJのターンテーブル」で、
  造形は最後のデザイン段階で仕上げます(先に操作感を実機で固めるため)。
- その時に **スクロールなしの1画面** へ収め直します。
+
+ 【v265 スクロールなしの1画面に収めた(段0-2b)】
+ DJ風の作り直し(第3期)を待たずに、今の見た目のまま詰めて、竹弘の GALAXY
+ (インストール版の見えている高さ 639px)でも全部の画面が1画面に収まるようにしました。
+ 数字の窓を2行に・案内文を2行まで・微調整の余白を詰める、の3つが主な直し。
+ ⚠️ 部品を足す時は sandbox/measure-tap-layout.html で全部の画面を測り直すこと。
 ================================================================ -->
 <div id="tap-screen" style="display:none;">
 
@@ -8740,11 +8798,17 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             <div id="tap-phase"></div>
         </div>
 
-        <!-- 測った数値を出すモニター -->
+        <!--
+            測った数値を出すモニター。
+            (v265)「1拍目 / 13拍目」と「タイミング」の札を1行に並べました(画面を収めるため)。
+            札の文字は js/tap.js の updateTapMonitor が書き換えます。
+        -->
         <div class="tap-monitor">
             <div id="tap-bpm">---.--</div>
-            <div id="tap-ts">1拍目 --.---s</div>
-            <div id="tap-lat">Bluetoothの遅延 0ms</div>
+            <div class="tap-monitor-row">
+                <div id="tap-ts">1拍目 --.---s</div>
+                <div id="tap-lat">タイミング 0ms</div>
+            </div>
         </div>
 
         <!-- 今なにをすればよいかの案内(js/tap.js が書き換えます) -->
@@ -8813,9 +8877,14 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         <!-- 微調整パネル(タップが終わってから出ます) -->
         <div id="tap-adjust" style="display:none;">
 
-            <p class="tap-desc">
+            <!--
+                (v265)見出しと注意書きを1行に並べました(前は「※数値を上げると早くなります」を2行目に)。
+                BPM のボタンは今のまま4つ(竹弘「これは本当に微調整。連打しながら状況を確認する方が
+                調整しやすい」2026-11-07。±1 は要らない)。
+            -->
+            <p class="tap-desc tap-desc-inline">
                 メトロノームの速度を曲に合わせて下さい
-                <span>※数値を上げると早くなります</span>
+                <span>+で速く</span>
             </p>
             <div class="tap-adj-group">
                 <button type="button" data-bpm="-0.1">-0.1</button>
@@ -8824,15 +8893,28 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
                 <button type="button" data-bpm="0.1">+0.1</button>
             </div>
 
+            <!--
+                (v265)見出しを「Bluetoothの遅延調整」から変え、±50ms を足しました(竹弘 2026-11-07)。
+
+                ・見出し:イヤホンの遅れだけでなく、リズムの取りにくい曲での「叩き遅れ」の直しにも
+                  使っているため(竹弘「Bluetoothの遅延が±250ms前後目途は正しいんだけど、叩き遅れによる
+                  微調整も難しい楽曲では発生する」)。すぐ上の「速度」の見出しと対にしました
+                ・±50ms:ずれの数値が大きいので、−200ms などを ±10ms の連打で合わせるのが大変だった
+                  (CLAUDE.md の宿題、2026-09-22)。6つを1行に並べるため、ボタンから「ms」を外した
+                  (単位は注意書きの「±250ms」と、数字の窓の「タイミング −80ms」で分かる)
+                ・押した時の処理は今までと同じ(js/tap.js の nudgeTapLatency。data-lat の数をそのまま渡す)
+            -->
             <p class="tap-desc">
-                Bluetoothの遅延調整
-                <span>※目安は ±250ms 前後です</span>
+                メトロノームのタイミングを曲に合わせて下さい
+                <span>※Bluetoothの遅れや叩き遅れを直します(目安 ±250ms)</span>
             </p>
             <div class="tap-adj-group tap-adj-latency">
-                <button type="button" data-lat="-10">-10ms</button>
-                <button type="button" data-lat="-1">-1ms</button>
-                <button type="button" data-lat="1">+1ms</button>
-                <button type="button" data-lat="10">+10ms</button>
+                <button type="button" data-lat="-50">-50</button>
+                <button type="button" data-lat="-10">-10</button>
+                <button type="button" data-lat="-1">-1</button>
+                <button type="button" data-lat="1">+1</button>
+                <button type="button" data-lat="10">+10</button>
+                <button type="button" data-lat="50">+50</button>
             </div>
 
             <!--
@@ -8853,7 +8935,8 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
                 v152で「タップからやり直す」を下の #tap-bottom-row へ
                 移したので、ここに残るのは確定ボタン1つだけです。
             -->
-            <div style="margin-top:12px;">
+            <!-- (v265)上の間を 12px → 8px に詰めた(画面を収めるため) -->
+            <div style="margin-top:8px;">
                 <button type="button" id="tap-confirm" class="tap-action tap-action-go">これで確定</button>
             </div>
 
@@ -8892,7 +8975,8 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
                 <button type="button" id="tap-final-half">⇄ 表打ちにする</button>
             </div>
 
-            <div style="margin-top:12px;">
+            <!-- (v265)上の間を 12px → 8px に詰めた(画面を収めるため) -->
+            <div style="margin-top:8px;">
                 <button type="button" id="tap-final-save" class="tap-action tap-action-go">確定保存</button>
             </div>
 
@@ -9165,7 +9249,8 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
 
         <button type="button" class="connect-choice" data-metronome-sound="beep">
             📻 ピッ
-            <span class="connect-note">ノリ注入(タップ補正)で鳴っている電子音と同じ。派手な曲でも埋もれません</span>
+            <!-- (v265)画面の呼び名を「ノリ注入」にそろえたので「(タップ補正)」を外した(竹弘 2026-11-07) -->
+            <span class="connect-note">ノリ注入で鳴っている電子音と同じ。派手な曲でも埋もれません</span>
         </button>
 
         <p class="connect-note">
