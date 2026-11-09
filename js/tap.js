@@ -364,6 +364,20 @@ const TAP_C_POS_RATIO = 2 / 3;
 const TAP_C_MIN_RATIO = 0.6;
 const TAP_C_MAX_RATIO = 0.8;
 
+/*
+A・B・C で耳で合わせたテンポを「同じ」とみなす差の上限です(v270)。割合で、0.01 = 1%。
+judgeTapTempoSide がこの線で「どこだけテンポが違うか」を見分けます。
+
+【なぜ 1% なのか】
+・B・C は聴ける時間が短く、耳で合わせたテンポには ±0.2〜0.3% くらいの誤差が出ます
+  (BPM 90 で 0.3% 違っても、20秒で約6ms しかずれないので、耳では分かりにくい)。
+  これより狭くすると、同じテンポの曲を「違う」と取り違えます
+・A+B が ✅ になる曲は、A と B のテンポの差が 0.15% くらいより小さい(拍の数を同じに数えられる幅)
+・MISIA アイノカタチ(イントロだけ 88、本編 90)の差は 2.3%。この形の曲は、はっきり見分けられる
+⚠️ 実際の曲で試して決め直す値です(竹弘と決めた 2026-11-09。「違う」とみなす差は試験の結果を見て決める)。
+*/
+const TAP_TEMPO_SAME_FRAC = 0.01;
+
 
 // ==========================================================
 // 2. 今の状態
@@ -2475,6 +2489,107 @@ function decideTapWholeSongBpmWithC(startTS,endTS,cTS,nC){
 }
 
 /**
+ * A・B・C で耳で合わせたテンポを比べて、「曲のどこだけテンポが違うか」を見分けます(v270)。
+ * 画面にも保存にも触らない「判断だけ」の関数です。
+ *
+ * ------------------------------------------------------------------
+ * 【竹弘の案(2026-11-09)】
+ *     「A地点≠B地点の時、C地点を測定 C=AなのかC=Bなのかで、本編を判定というのはどうだろうか」
+ *     → MISIA アイノカタチ(イントロだけ 88、本編 90)で、A地点をイントロに置いていたのが外れの原因だった。
+ *       C が B と同じなら「A の辺りだけ違う」= A地点を後ろ(本編)へずらせば測れる。
+ *
+ * 【見分け方】それぞれのテンポの差が TAP_TEMPO_SAME_FRAC(1%)より小さければ「同じ」。
+ *
+ *     "none"  … 3つとも同じ。テンポは1つ(C で拍の数を決める。v268 のまま)
+ *     "a"     … A だけ違う(B と C は同じ)。イントロだけテンポが違う曲など → A地点を後ろへ
+ *     "b"     … B だけ違う(A と C は同じ)。最後だけゆっくりになる曲など → B地点を前へ
+ *     "c"     … C だけ違う(A と B は同じ)。C が間奏・ラップなどに当たった → C地点を別の場所へ
+ *     "drift" … それ以外(少しずつ変わる・3つとも違う)。1つのテンポでは合わない曲
+ *
+ *     例(MISIA):A 88.0・B 90.0・C 90.0 → A と B・A と C が 2.3% 違い、B と C は同じ → "a"
+ *
+ * 【使っているテンポ】
+ *     A … A地点で耳合わせしたBPM(60秒聴いて合わせられる)
+ *     B … B地点で最後に合わせていたBPM。v269 から B の速度ボタンは「B の辺りの間隔」を変えるので、
+ *         だんだんずれる曲で速度を合わせると、B の辺りのテンポになる(触らなければ A と同じ)
+ *     C … C地点で最後に合わせていたBPM(B と同じ。触らなければ当てた線のまま)
+ * ⚠️ 速度を触らなかった所は「当てた線のテンポで合っていた」とみなします。だんだんずれていたら速度で
+ *    合わせてもらう前提です(案内「ずれは、まずタイミングで合わせてください。」の後、速度は間隔のずれに使う)。
+ * ⚠️ 拍の位置で比べる案(のりから足した1つ目。テンポが同じでも途中で拍がずれる「ため」のある曲向け)は、
+ *    まず🐛に数字を出すだけにしています(logTapCPositions)。実際の曲で使えるか確かめてから判断に入れる。
+ * ------------------------------------------------------------------
+ *
+ * @param  {number} tempoA - A地点で耳合わせしたBPM
+ * @param  {number} tempoB - B地点で最後に合わせていたBPM
+ * @param  {number} tempoC - C地点で最後に合わせていたBPM
+ * @return {{side:string, diffAC:number|null, diffBC:number|null, diffAB:number|null}}
+ *         side   … "none" / "a" / "b" / "c" / "drift"(上の表)。値がおかしい時は "none"(今まで通り)
+ *         diffAC / diffBC / diffAB … テンポの差の割合(0.023 = 2.3%。ログと試験のため)
+ */
+function judgeTapTempoSide(tempoA,tempoB,tempoC){
+
+    const result = { side: "none", diffAC: null, diffBC: null, diffAB: null };
+
+    // どれかが数でない・0 以下の時は見分けません(今まで通り)。!(x > 0) は NaN や undefined も弾く書き方です
+    if(!(tempoA > 0) || !(tempoB > 0) || !(tempoC > 0)){ return result; }
+
+    // Math.abs は「符号を取った大きさ」。速くても遅くても、差の大きさだけを見ます
+    result.diffAC = Math.abs(tempoC / tempoA - 1);
+    result.diffBC = Math.abs(tempoC / tempoB - 1);
+    result.diffAB = Math.abs(tempoB / tempoA - 1);
+
+    const sameAC = result.diffAC < TAP_TEMPO_SAME_FRAC;
+    const sameBC = result.diffBC < TAP_TEMPO_SAME_FRAC;
+    const sameAB = result.diffAB < TAP_TEMPO_SAME_FRAC;
+
+    if(sameAC && sameBC && sameAB){
+        result.side = "none";
+    }
+    else if(!sameAC && sameBC && !sameAB){
+        result.side = "a";
+    }
+    else if(sameAC && !sameBC && !sameAB){
+        result.side = "b";
+    }
+    else if(!sameAC && !sameBC && sameAB){
+        result.side = "c";
+    }
+    else{
+        /*
+        残りは「少しずつ変わる」形です。例:A 88.0・C 88.8・B 89.6 は、隣どうしは 1% より近いのに
+        A と B は 1.8% 違う。どこか1か所だけが違うのではないので、測り直す場所を案内できません。
+        */
+        result.side = "drift";
+    }
+
+    return result;
+
+}
+
+/**
+ * judgeTapTempoSide の答えを、ログ用の短い文にします(v270)。
+ *
+ * @param  {{side:string, diffAC:number|null, diffBC:number|null, diffAB:number|null}} judged
+ * @return {string}
+ */
+function describeTapTempoSide(judged){
+
+    const names = {
+        none: "そろっている",
+        a: "A地点の辺りだけ違う",
+        b: "B地点の辺りだけ違う",
+        c: "C地点の辺りだけ違う",
+        drift: "少しずつ変わる"
+    };
+
+    const pct = function(value){ return value === null ? "?" : (value * 100).toFixed(1) + "%"; };
+
+    return (names[judged.side] || judged.side) +
+           "(差 A-C " + pct(judged.diffAC) + "・B-C " + pct(judged.diffBC) + "・A-B " + pct(judged.diffAB) + ")";
+
+}
+
+/**
  * 「微調整画面へ進む」が押された時の処理です。
  */
 function goToTapAdjust(){
@@ -2997,6 +3112,23 @@ function updateTapFinalLabel(){
  *   ④ C を合わせても決められない 💪 手ごわい曲だね。場所を変えてみよう。
  *                                   このままなら、C は使わずに保存するね。 ← 🎯 が光る
  *
+ *   (v270)A・B・C のテンポが食い違った時(judgeTapTempoSide。C で拍の数が合っても C は使わない)
+ *   ⑤ A だけ違う                 💡 A地点の辺りだけ、テンポが違うみたい。
+ *                                   A地点を後ろへずらして、測り直そう。
+ *   ⑥ B だけ違う                 💡 B地点の辺りだけ、テンポが違うみたい。
+ *                                   B地点を前へずらして、測り直そう。
+ *   ⑦ A+B は ✅・C だけ違う      ✅ 曲全体のBPM 83.48(A〜B 269拍)
+ *                                   💡 C地点の辺りだけ、テンポが違うみたい。   ← 緑のまま(A+B で保存)
+ *   ⑦' A+B も ⚠️・C だけ違う     💡 C地点の辺りだけ、テンポが違うみたい。
+ *                                   🎯 C地点を、別の場所で合わせよう。          ← 🎯 が光る
+ *   ⑧ 少しずつ変わる              💪 テンポが少しずつ変わる曲みたい。
+ *                                   このままなら、C は使わずに保存するね。
+ *   ⑤ ⑥ ⑧ は C地点をやり直しても直らないので、🎯 は光らせません。
+ *   ⑤ ⑥ の測り直しは、今あるボタンで進みます(ボタンは足さない。竹弘「欲しいと思ったボタンを追加するのが
+ *   シンプルな操作性」2026-11-09):
+ *       A地点 … 「A地点の微調整へ戻る」→「タップからやり直す」→ ▶ で後ろへ → 12回
+ *       B地点 … 「A地点の微調整へ戻る」→ A地点を確定 → B地点で「タップからやり直す」→ ◀ で前へ → 12回
+ *
  * 【竹弘と決めたこと(2026-11-09)】
  *   ・🎯 を光らせるのは ⚠️ の曲だけ(長い曲というだけでは光らせない)
  *   ・② は「C地点を合わせてください」ではなく、やさしい「C地点で精度をあげよう。」に
@@ -3035,29 +3167,90 @@ function updateTapFinalResult(){
     let text;
     let good;
 
+    /*
+    (v270)🎯 を光らせるか。今までは「決めきれていない時(② ④)」でしたが、A地点・B地点を測り直してほしい時
+    (下の ⑤ ⑥)と、テンポが少しずつ変わる曲(⑧)は、C地点をやり直しても直らないので光らせません。
+    */
+    let lit = false;
+
+    // (v270)A・B・C のテンポを比べた答え(confirmTapCPhase が入れる。C を使う前・v269 までの答えには無い)
+    const side = (c && c.tempoSide) ? c.tempoSide.side : "none";
+
     if(c === null){
 
         // ① / ② まだ C地点を使っていない
         good = ab.ok;
+        lit = !ab.ok;
 
         text = ab.ok
             ? "✅ 曲全体のBPM " + ab.bpm.toFixed(2) + "(A〜B " + ab.beats + "拍)"
             : "⚠️ 拍の数を決めきれません。\n🎯 C地点で精度をあげよう。";
 
     }
-    else if(c.ok){
+    else if(c.ok && side === "none"){
 
-        // ③ C地点で決められた
+        // ③ C地点で決められた(テンポも3つそろっている)
         good = true;
 
         text = "✅ 曲全体のBPM " + c.bpm.toFixed(2) + "(A〜B " + c.beats + "拍)\n" +
                "🎯 C地点(" + formatTapTime(c.cSec) + ")で確かめました";
 
     }
+    else if(ab.ok && side !== "none"){
+
+        /*
+        ⑦(v270)A+B で決められている曲で、C だけテンポが違った。A と B がそろっているので、
+        C が間奏・ラップなどに当たったと見ます。保存は A+B の曲全体のBPM のままでよいので、緑のまま。
+        (A+B が ✅ なら A と B のテンポの差は 0.15% くらいより小さいので、"a" "b" にはまずならない)
+        */
+        good = true;
+
+        text = "✅ 曲全体のBPM " + ab.bpm.toFixed(2) + "(A〜B " + ab.beats + "拍)\n" +
+               "💡 C地点の辺りだけ、テンポが違うみたい。";
+
+    }
+    else if(side === "a"){
+
+        // ⑤(v270)A だけ違う(MISIA アイノカタチの形)。A地点がイントロなどにあった → 本編へずらす
+        good = false;
+
+        text = "💡 A地点の辺りだけ、テンポが違うみたい。\n" +
+               "A地点を後ろへずらして、測り直そう。";
+
+    }
+    else if(side === "b"){
+
+        // ⑥(v270)B だけ違う。最後だけゆっくりになる曲など → B地点を前へ
+        good = false;
+
+        text = "💡 B地点の辺りだけ、テンポが違うみたい。\n" +
+               "B地点を前へずらして、測り直そう。";
+
+    }
+    else if(side === "c"){
+
+        // ⑦'(v270)C だけ違う(A+B は決めきれていない)。C が間奏などに当たった → C地点を別の場所へ
+        good = false;
+        lit = true;
+
+        text = "💡 C地点の辺りだけ、テンポが違うみたい。\n" +
+               "🎯 C地点を、別の場所で合わせよう。";
+
+    }
+    else if(side === "drift"){
+
+        // ⑧(v270)少しずつ変わる・3つとも違う。1つのテンポでは合わないので、測り直す場所を案内できない
+        good = false;
+
+        text = "💪 テンポが少しずつ変わる曲みたい。\n" +
+               "このままなら、C は使わずに保存するね。";
+
+    }
     else{
 
-        // ④ C地点でも決められなかった(テンポが揺れる・手ごわい曲)
+        // ④ C地点でも決められなかった(テンポはそろっているのに、拍の数が決まらない手ごわい曲)
         good = false;
+        lit = true;
 
         text = "💪 手ごわい曲だね。場所を変えてみよう。\n" +
                "このままなら、C は使わずに保存するね。";
@@ -3069,8 +3262,8 @@ function updateTapFinalResult(){
     el.classList.toggle("is-ok",good);
     el.classList.toggle("is-ng",!good);
 
-    // 決めきれていない時(② ④)だけ 🎯 を光らせます
-    if(cButton){ cButton.classList.toggle("is-lit",!good); }
+    // 🎯 を光らせるのは ② ④ ⑦'(C地点をやり直すと良くなる時)だけ(上の lit のコメント)
+    if(cButton){ cButton.classList.toggle("is-lit",lit); }
 
 }
 
@@ -3291,10 +3484,23 @@ function startTapPhaseC(){
  *                             決められていなければ今までどおり。(v269)「今までどおり」は
  *                             Aのテンポで数えた1拍目と接続点を結ぶ線)
  * どちらの時も、1拍目(startTS)と接続点(endTS)は動かしません。
+ *
+ * 【(v270)A・B・C のテンポも比べる】
+ * C で拍の数が決められても、A・B・C で耳で合わせたテンポが食い違っていたら(judgeTapTempoSide が "none" 以外)、
+ * C は使いません(④ と同じ保存)。1つのテンポでは曲全体に合わない曲で、拍の数がたまたま合っただけの
+ * ことがあるためです(MISIA のように A地点がイントロにあると、C の拍の数そのものが当てにならない)。
+ * 見分けた答えは c.tempoSide に入れ、結果の1行(updateTapFinalResult)が「どこを測り直せばよいか」を案内します。
+ * C を使ったかどうかは c.useC(結果の1行と保存のログが見る)。
  */
 function confirmTapCPhase(){
 
     const ab = tapState.wholeSongAB;
+
+    /*
+    (v270)C地点で最後に合わせていたテンポを、書き換える前に控えます(下で tapState.bpm を保存するBPMに入れ替えるため)。
+    v269 から C の速度ボタンは C の辺りの間隔を変えるので、だんだんずれる曲で合わせると C の辺りのテンポになります。
+    */
+    const tempoC = tapState.bpm;
 
     // 拍番号1 が 1拍目なので、1拍目から C までの拍の数は targetBeat − 1(placeTapCAt のコメント)
     const c = decideTapWholeSongBpmWithC(
@@ -3310,10 +3516,20 @@ function confirmTapCPhase(){
     */
     c.placeSec = tapState.playOffset + TAP_REPLAY_LEAD_SEC;
 
+    /*
+    (v270)A・B・C のテンポを比べます(上のコメント「A・B・C のテンポも比べる」)。
+    A は A地点で耳合わせしたBPM、B は B地点で最後に合わせていたBPM(どちらも A+B の判断に控えてある)。
+    */
+    c.tempoC = tempoC;
+    c.tempoSide = judgeTapTempoSide(ab.bpmA,ab.bpmNow,tempoC);
+
+    // C を使うのは、拍の数が決められて(c.ok)、しかもテンポが3つそろっている時だけ
+    c.useC = c.ok && c.tempoSide.side === "none";
+
     tapState.cCheck = c;
 
     // 使う判断と、保存する BPM(上のコメント)
-    tapState.wholeSong = c.ok
+    tapState.wholeSong = c.useC
         ? { ok: true, bpm: c.bpm, beats: c.beats, byC: true }
         : ab;
 
@@ -3321,7 +3537,7 @@ function confirmTapCPhase(){
     ⚠️ ab.bpm は「A+B で決められたら曲全体のBPM・決められなければ(v269)Aのテンポで数えた
        1拍目と接続点を結ぶ線」(decideTapWholeSongBpm のコメント「④ の時に保存する BPM」)
     */
-    tapState.bpm = c.ok ? c.bpm : ab.bpm;
+    tapState.bpm = c.useC ? c.bpm : ab.bpm;
 
     /*
     C地点で動かしたタイミングは C の位置だけの直しなので、元の値に戻します。
@@ -3356,12 +3572,18 @@ function confirmTapCPhase(){
               (c.grid
                   ? c.grid.beatsRaw.toFixed(2) + "拍(端数 " + (c.grid.frac >= 0 ? "+" : "") + c.grid.frac.toFixed(2) + ")"
                   : "数えられない"),
-        c.ok
+        c.useC
             ? "→ ✅ " + c.beats + "拍・曲全体のBPM " + c.bpm.toFixed(4) + " で保存します"
-            : "→ ⚠️ 決めきれないので C は使いません(" +
+            : "→ " + (c.ok ? "拍の数は合ったが、テンポが食い違うので" : "⚠️ 決めきれないので") + " C は使いません(" +
               (ab.ok ? "A+B の曲全体のBPM " : "1拍目と接続点を結ぶ線 ") + ab.bpm.toFixed(2) + " で保存します)",
-        "/ A+B だけだと " + (ab.ok ? ab.beats + "拍" : "決めきれない")
+        "/ A+B だけだと " + (ab.ok ? ab.beats + "拍" : "決めきれない"),
+        // (v270)A・B・C のテンポ(judgeTapTempoSide)
+        "/ テンポ A " + Number(ab.bpmA).toFixed(2) + "・B " + Number(ab.bpmNow).toFixed(2) + "・C " + Number(tempoC).toFixed(2) +
+        " → " + describeTapTempoSide(c.tempoSide)
     );
+
+    // 【開発用調査ログ】(v270)C の拍が A の線・B の線のどちらに乗っているか(拍の位置で比べる案の下調べ)
+    logTapCPositions(c,ab);
 
     showTapFinalCheck();
 
@@ -4118,6 +4340,7 @@ if(tapFinalCBtn){
     logTapWholeSong      … B地点を確定した時の A〜B の拍の数・曲全体のBPM
     logTapWholeSongSaved … 🕺の曲を開いた時、保存してある値で同じ数字
     logTapTimingCompare  … 叩いた時刻の2つの取り方の、ばらつきの比べっこ
+    logTapCPositions     … (v270)C の拍が A の線・B の線のどちらに乗っているか(拍の位置で比べる案の下調べ)
 
 【なぜ全部 try/catch で包んでいるのか】
 ログを出す途中でエラーが起きると、呼んだ側(確定ボタン・微調整画面へ進む・
@@ -4422,6 +4645,53 @@ function measureTapSpreadMs(beats,times){
 function formatTapSigned(value,digits){
 
     return (value >= 0 ? "+" : "") + value.toFixed(digits);
+
+}
+
+/**
+ * 【開発用調査ログ】(v270)C地点を確定した時、C の拍が「A の線」「B の線」のどちらに乗っているかを🐛に出します。
+ * **判断には使っていません**(拍の位置で比べる案の下調べ。竹弘 OK 2026-11-09 の「のりから足した1つ目」)。
+ *
+ * 【何を見たいのか】
+ * テンポは3つとも同じなのに、曲の途中で一瞬止まる所(ため・ブレイク)があって、その前と後ろで拍の位置が
+ * ずれている曲は、テンポを比べても見分けられません(judgeTapTempoSide は "none" になる)。拍の位置なら見分けられるはず:
+ *
+ *     A の線 … 1拍目から A のテンポで C まで伸ばした格子。C の拍がこれに乗れば「A〜C の間にずれは無い」
+ *     B の線 … 接続点から B のテンポで C まで戻した格子。C の拍がこれに乗れば「C〜B の間にずれは無い」
+ *
+ * 乗っているか = 数えた拍の数の端数が小さいか(TAP_WHOLE_SONG_SAFE_FRAC と同じ 0.2拍で見る)。
+ * ⚠️ 線を数百拍伸ばすので、耳で合わせたテンポの誤差(0.1% で 100拍先 0.1拍)も端数に入ります。
+ *    実際の曲でどれくらいの端数になるかを見てから、判断に入れるかを決めます。
+ *
+ * @param {object} c  - decideTapWholeSongBpmWithC の答え(cSec を使う)
+ * @param {object} ab - decideTapWholeSongBpm の答え(bpmA・bpmNow を使う)
+ */
+function logTapCPositions(c,ab){
+
+    try{
+
+        const lineA = (c.cSec - tapState.startTS) * ab.bpmA / 60;
+        const lineB = (tapState.endTS - c.cSec) * ab.bpmNow / 60;
+
+        // Math.round は四捨五入。端数 = 数えた拍の数 − いちばん近い整数
+        const fracA = lineA - Math.round(lineA);
+        const fracB = lineB - Math.round(lineB);
+
+        const onA = Math.abs(fracA) <= TAP_WHOLE_SONG_SAFE_FRAC;
+        const onB = Math.abs(fracB) <= TAP_WHOLE_SONG_SAFE_FRAC;
+
+        console.log(
+            "【開発用調査ログ】(v270)C の拍の位置 :",
+            "A の線(" + Number(ab.bpmA).toFixed(2) + ")で 1拍目から " + lineA.toFixed(2) + "拍(端数 " + formatTapSigned(fracA,2) + ")",
+            "/ B の線(" + Number(ab.bpmNow).toFixed(2) + ")で接続点まで " + lineB.toFixed(2) + "拍(端数 " + formatTapSigned(fracB,2) + ")",
+            "→ " + (onA && onB ? "両方に乗る" : (onA ? "A の線に乗る(C〜B の間でずれる?)" :
+                    (onB ? "B の線に乗る(A〜C の間でずれる?)" : "どちらにも乗らない")))
+        );
+
+    }
+    catch(error){
+        console.error("【開発用調査ログ】(v270)C の拍の位置を出せませんでした :",error);
+    }
 
 }
 
