@@ -564,6 +564,17 @@ const tapState = {
     */
     beforeC: null,
 
+    /*
+    B地点の聴く画面で ◀▶ を使って、聴く位置を動かしたか(v269。速度ボタンの支点を決めるのに使う)。
+
+        false … 速度ボタンの支点 = 接続点(B地点で決めている拍そのもの)
+        true  … 速度ボタンの支点 = 聴いている所の拍(聴き始めの3秒後にいちばん近い拍)
+
+    立てるのは nudgeTapListenPosition だけ。B地点へ入る時(startTapPhaseB)・B地点で叩き直した時
+    (goToTapAdjust)・曲を開いた時に下ろします。使うのは findTapSpeedPivotBeat だけ(理由はそちらのコメント)。
+    */
+    bListenMoved: false,
+
     wasPlaying: false   // 開く前に曲が鳴っていたか(閉じる時に戻すため)
 
 };
@@ -718,6 +729,9 @@ async function openTapCorrection(trackId){
     tapState.wholeSongAB = null;
     tapState.cCheck = null;
     tapState.beforeC = null;
+
+    // 前の曲で B地点の聴く位置を動かした印も消します(v269。速度ボタンの支点が前の曲の続きにならないように)
+    tapState.bListenMoved = false;
 
     // 位置は毎回この初期値から始めます(前回位置は保存していません)
     tapState.posSec = TAP_POS_A_DEFAULT_SEC;
@@ -1263,6 +1277,12 @@ function startTapPhaseB(){
     tapState.phase = TAP_PHASE_B;
 
     /*
+    (v269)B地点は、いつも「聴く位置を動かしていない」ところから始まります(◀▶ を押したら立つ印)。
+    速度ボタンの支点は、まず接続点そのものになります(findTapSpeedPivotBeat)。
+    */
+    tapState.bListenMoved = false;
+
+    /*
     前に測った値を読み戻して来た時は、保存されている13拍目を
     そのまま確認してもらいます(v153)。
 
@@ -1327,10 +1347,16 @@ function startTapPhaseB(){
     */
     inheritGridToPhaseB();
 
-    // (v265)2行に短くしました(叩き直すボタンは画面の下に見えている)
+    /*
+    (v265)2行に短くしました(叩き直すボタンは画面の下に見えている)
+    (v269)2行目を「まずタイミングで」に変えました(竹弘と決めた 2026-11-09 の イ)。
+    B地点で A の線がずれる時は、ほとんど「全部が同じだけ早い・遅い」形で、タイミングで直ります。
+    速度は「だんだんずれる」時だけ(adjustTapBpm のコメント)。⚠️ 今までの文(22文字)より短くして、
+    画面の高さを変えないようにしています。
+    */
     showTapAdjustPanel(
         "A地点の値を、B地点に当てています。\n" +
-        "ずれていたら、下のボタンで合わせてください。",
+        "ずれは、まずタイミングで合わせてください。",
         tapState.posSec
     );
 
@@ -1631,6 +1657,12 @@ function nudgeTapListenPosition(deltaSec){
 
     // 鳴らし直すと playOffset が next になります(playTapSongFrom の中で書き換わる)
     playTapSongFrom(next,true);
+
+    /*
+    (v269)聴く位置を動かしたので、ここからの速度ボタンの支点は「聴いている所の拍」になります
+    (findTapSpeedPivotBeat)。移った先で速度を押しても、聴いているカチッが動かないようにするためです。
+    */
+    tapState.bListenMoved = true;
 
     updateTapPosLabel();
 
@@ -2298,7 +2330,19 @@ function findTapWholeSongGrid(startTS,endTS,guideBpm){
  *   ① A〜B の拍の数を「A地点で耳合わせしたBPM」(A地点を確定した時の控え phaseASnapshot)で数える
  *   ② 「B地点で最後に合わせていたBPM」(今の tapState.bpm)でも数える
  *   ③ 2つが同じ拍の数で、どちらも端数が TAP_WHOLE_SONG_SAFE_FRAC(0.2拍)以内 → 使ってよい(ok)
- *   ④ それ以外 → 使わない。今までどおりの値(②のBPM)で保存する(今より悪くはならない)
+ *   ④ それ以外 → 拍の数に自信が無い(ok = false。最後の確認で ⚠️ と 🎯 の案内を出す)
+ *
+ * 【④ の時に保存する BPM(v269 で変えた。竹弘と決めた 2026-11-09 の ウ')】
+ * v268 までは「②のBPM(B地点で最後に合わせていたBPM)」を保存していました。v268 までの B地点は
+ * 速度で線を回して合わせる作りだったので、この値は「1拍目と接続点を結ぶ線」とほぼ同じでした。
+ * v269 で B地点の速度ボタンが「間隔」を変える役になった(adjustTapBpm)ので、②は B地点の場所の
+ * テンポになり、1拍目から伸ばしても接続点を通らなくなります(ノリノリアシストが接続点で跳ぶ)。
+ * → ④ の時も、①(A のテンポ)で数えた拍の数で **1拍目と接続点を結ぶ線**(gridA.bpm)を保存します。
+ *    ③ の時とまったく同じ計算で、違いは「その拍の数に自信があるか」だけです。
+ *    今まで B をタイミングで合わせた時・B を叩き直した時に起きていた「接続点で跳ぶ」も無くなります。
+ *    ①で数えられない時(値が壊れていた時。ふつうは起きない)だけ、②のBPM のままにします。
+ * ⚠️ 拍の数が1つ違っていても、1拍目と接続点ではアシストが拍に乗ります。曲の真ん中で最大半拍ずれうるので、
+ *    ④ の曲は 🎯 C地点で拍の数を決めてもらいます(v268 の案内のまま)。
  *
  * 【なぜ「叩いた12回のBPM」で数えないのか】
  * 竹弘が12回叩いたBPMは、耳で合わせた後より速めに出ることが多い(v263〜v266 の実機で
@@ -2315,8 +2359,9 @@ function findTapWholeSongGrid(startTS,endTS,guideBpm){
  *
  * @return {{ok:boolean, bpm:number, beats:number|null, bpmA:number, bpmNow:number,
  *           gridA:object|null, gridNow:object|null}}
- *         ok     … 曲全体のBPMを使ってよいか
- *         bpm    … 使うBPM(ok なら曲全体のBPM、そうでなければ今のBPMのまま)
+ *         ok     … 曲全体のBPMを使ってよいか(拍の数に自信があるか)
+ *         bpm    … 保存するBPM。(v269)ok でもそうでなくても、Aのテンポで数えた「1拍目と接続点を結ぶ線」。
+ *                   数えられない時だけ今のBPMのまま
  *         beats  … A〜B の拍の数(ok の時だけ)
  *         bpmA / bpmNow / gridA / gridNow … 判断に使った値(🐛のログと試験のため)
  */
@@ -2338,7 +2383,10 @@ function decideTapWholeSongBpm(){
 
     return {
         ok: ok,
-        bpm: ok ? gridA.bpm : bpmNow,
+
+        // (v269)④ でも結ぶ線を保存します(上のコメント「④ の時に保存する BPM」)
+        bpm: gridA ? gridA.bpm : bpmNow,
+
         beats: ok ? gridA.beats : null,
         bpmA: bpmA,
         bpmNow: bpmNow,
@@ -2477,6 +2525,12 @@ function goToTapAdjust(){
         : TAP_END_BEAT_NUMBER;
 
     /*
+    (v269)叩き直した後は、叩き始めた所から聴き直すので、「聴く位置を動かした」印は下ろします
+    (速度ボタンの支点は、決めている拍そのもの。findTapSpeedPivotBeat)。
+    */
+    tapState.bListenMoved = false;
+
+    /*
     叩き直したら、半拍ずらしは解除します(v186)。
 
     いま引いた線は**新しく叩いた12回から作った格子**なので、前の格子に
@@ -2563,32 +2617,162 @@ function showTapAdjustPanel(guideText,fromSec){
 // ==========================================================
 /**
  * メトロノームの速さを変えます。
+ *
+ * ------------------------------------------------------------------
+ * 【速度ボタンは「支点」を留めたまま、拍の間隔を伸び縮みさせる(v269)】
+ *
+ * カチッの位置は「拍番号0 の位置 + 1拍の長さ × 拍番号」です(updateTapTargetTS)。
+ * 1拍の長さだけを変えると、動かないのは拍番号0 の所だけで、そこから遠い拍ほど大きく動きます。
+ * この「動かない所」を**支点**と呼びます。
+ *
+ * v268 までは、支点が拍番号0 のままでした。B地点(A を引き継いだ時)と C地点では、拍番号0 が
+ * 数百拍前の A地点にあるので、速度を押すと、聴いている所のカチッが間隔はほぼそのまま
+ * **位置ごと**動いていました(BPM 90 で +0.1 押すと、接続点が約0.2秒。
+ * 竹弘「メトロノームのタイミングを合わせた後、速度を変えるとタイミングがずれる感じがする」2026-11-09)。
+ *
+ * v269 からは、1拍の長さを変える時に拍番号0 の位置も一緒にずらして、支点の拍の秒を変えません。
+ *
+ *     支点の拍の秒    = 拍番号0 + 古い1拍の長さ × 支点の拍番号      … これを変えない
+ *     新しい拍番号0   = 支点の拍の秒 − 新しい1拍の長さ × 支点の拍番号
+ *                     = 拍番号0 + 支点の拍番号 × (古い1拍の長さ − 新しい1拍の長さ)
+ *
+ * 支点は findTapSpeedPivotBeat が決めます(ふだんは、その画面で決めている拍そのもの)。
+ * こうすると、どの画面でも
+ *
+ *     タイミング … 位置(全部のカチッが同じだけ動く。applyTapLatencyShift)
+ *     速度       … 間隔(支点を中心に伸び縮み。決めている拍は動かない)
+ *
+ * にそろいます(竹弘と決めた 2026-11-09。図解は private/tap-pivot-meeting.html。非公開)。
+ *
+ * 【なぜ v269 で変えてよかったのか】
+ * v151 で「A の線を B まで伸ばし、ずれていたら速度で線を回して B に当てる」作りにしたのは、
+ * 回した線の傾きが、そのまま曲全体の BPM になるからでした。v267 からは、曲全体の BPM を
+ * 「1拍目〜接続点の拍の数 ÷ 長さ」で計算しているので(decideTapWholeSongBpm)、B で線を回す必要が
+ * なくなりました。B地点で A の線が「全部同じだけ早い・遅い」のはタイミングで直し、
+ * 速度は「だんだんずれる」時(テンポそのものが違う曲。MISIA の B地点など)に使います。
+ * ------------------------------------------------------------------
+ *
+ * @param {number} delta - BPM をいくつ変えるか(画面のボタンの data-bpm。±0.01・±0.1)
  */
 function adjustTapBpm(delta){
+
+    const oldBeatDur = 60 / tapState.bpm;
+
+    // 支点は、変える前の格子で決めます(聴いている所の拍を探すのに、今の1拍の長さを使うため)
+    const pivotBeat = findTapSpeedPivotBeat(oldBeatDur);
+
+    // ログで「決めている拍が動いたか」を見せるため、変える前の秒を控えます
+    const targetBeforeSec = findTapTargetInfo().sec;
 
     tapState.bpm = tapState.bpm + delta;
 
     if(tapState.bpm < 20){ tapState.bpm = 20; }
     if(tapState.bpm > 400){ tapState.bpm = 400; }
 
+    const newBeatDur = 60 / tapState.bpm;
+
+    /*
+    (v269)支点の拍の秒を変えないように、拍番号0 の位置をずらします(上のコメントの式)。
+
+    「支点の拍番号 × (古い1拍の長さ − 新しい1拍の長さ)」は、何もしなければ支点の拍が
+    動いてしまう量です。その分だけ拍番号0 を動かして打ち消します。
+
+    ⚠️ 値が壊れている時(1拍の長さが数でない等)は、ずらさずに v268 までと同じ動きにします
+       (isFinite は「ふつうの数か」を確かめる関数。0 で割った無限大や NaN を弾きます)。
+    */
+    if(isFinite(oldBeatDur) && isFinite(newBeatDur) && isFinite(pivotBeat)){
+
+        tapState.beatOriginSec = tapState.beatOriginSec + pivotBeat * (oldBeatDur - newBeatDur);
+
+    }
+
     /*
     1拍の長さが変わったので、狙っている拍の位置も計算し直します(v151)。
-
     これが無いと、メトロノームだけが動いて保存される値が取り残されます。
 
-    ズレる量は「拍番号 × 1拍の長さの変化」なので、**曲の長さとテンポに
-    よって変わります**(竹弘の指摘、2026-08-30)。A地点は1拍先しか
-    見ていないので無視できますが、B地点の引き継ぎは数百拍先を指すため、
-    BPMを0.1動かすだけで接続点が0.1秒ほど動くこともあります。
-
-    向きは「BPMを上げる=曲が速くなる」ので、拍の間隔が詰まって
-    13拍目は手前へ動きます。
+    (v269)支点 = 狙っている拍の時は、計算し直しても同じ秒になります(動かない)。
+    B地点で ◀▶ を使って聴く位置を動かしていた時だけ、支点は聴いている所なので、接続点は
+    「支点からの拍の数 × 1拍の長さの変化」だけ動きます(20秒前を聴いていたら、BPM 90 の +0.1 で約0.02秒)。
+    向きは「BPMを上げる = 間隔が詰まる」ので、支点より後ろの拍は手前へ、支点より前の拍は後ろへ動きます。
     */
     updateTapTargetTS();
 
     updateTapMonitor();
 
     playTapSongFrom(tapState.playOffset,true);
+
+    const target = findTapTargetInfo();
+    const pivotSec = tapState.beatOriginSec + newBeatDur * pivotBeat;
+
+    console.log(
+        "速度を変えました :",
+        (delta > 0 ? "+" : "") + delta.toFixed(2) + " → BPM " + tapState.bpm.toFixed(2),
+        "/ 支点 " + (pivotBeat === tapState.targetBeat ? target.name : "聴いている所の拍") + " " + pivotSec.toFixed(3) + "s",
+        "/ " + target.name + " " + targetBeforeSec.toFixed(3) + "s → " + target.sec.toFixed(3) + "s"
+    );
+
+}
+
+/**
+ * 速度ボタンの支点にする拍の番号を返します(v269)。
+ *
+ * ------------------------------------------------------------------
+ * 【決まり(竹弘と決めた 2026-11-09。private/tap-pivot-meeting.html の ア')】
+ *
+ *     ふだん … その画面で決めている拍そのもの(targetBeat)
+ *              A地点 = 1拍目 / B地点 = 接続点 / C地点 = C の拍
+ *     B地点で ◀▶ を使って聴く位置を動かした時だけ
+ *            … 聴き始めの3秒後(TAP_REPLAY_LEAD_SEC)にいちばん近い拍
+ *
+ * 【なぜ「決めている拍そのもの」なのか】
+ * 支点にした拍は、速度を押しても1msも動きません。1拍目・接続点・C の拍は、耳で合わせて保存する
+ * (C は判断に使う)値そのものなので、速度を押すたびに動くと、合わせた位置が崩れます
+ * (v268 までは、B地点で 0.01 押すたびに接続点が約0.02秒動いていた)。
+ * ⚠️ 最初の案の「いつも聴き始めの3秒後」はやめました。A地点で叩いた後(叩き始めた所から聴く)・
+ *    B地点の引き継ぎ(曲の終わりの25秒前から聴く)・B地点の叩き直しは、聴き始めが決めている拍の
+ *    数秒前なので、決めている拍の数拍手前が支点になってしまうためです。
+ *
+ * 【なぜ ◀▶ の時だけ聴いている所なのか】
+ * B地点の ◀▶ は、接続点の辺りが聴き取りにくい曲で、聴き取りやすい所へ移って確かめるための
+ * ボタンです(竹弘 2026-11-07)。移った先で速度を押した時にカチッが動くと、v268 までと同じ
+ * 「速度を変えるとタイミングがずれる」になります。代わりに、離れた接続点は少しだけ動くので、
+ * 合わせたら接続点の近くへ戻って確かめてもらいます。
+ * C地点の ◀▶ は C地点そのものを動かし、聴き始めはいつも C の3秒前なので、ふだんの決まりのままで
+ * 「聴いている所 = 支点」になっています。
+ * ------------------------------------------------------------------
+ *
+ * @param  {number} beatDur - 今(押す前)の1拍の長さ(秒)
+ * @return {number} 支点にする拍の番号(拍番号0 から数えた番号。targetBeat と同じ数え方)
+ */
+function findTapSpeedPivotBeat(beatDur){
+
+    if(tapState.phase === TAP_PHASE_B && !tapState.finalCheck && tapState.bListenMoved &&
+       isFinite(beatDur) && beatDur > 0){
+
+        // Math.round は四捨五入。聴き始めの3秒後にいちばん近い拍の番号です
+        return Math.round(
+            (tapState.playOffset + TAP_REPLAY_LEAD_SEC - tapState.beatOriginSec) / beatDur
+        );
+
+    }
+
+    return tapState.targetBeat;
+
+}
+
+/**
+ * 今の画面で決めている拍の、呼び名と秒を返します(v269。速度ボタンのログに使います)。
+ *
+ * どの値を見るかは updateTapTargetTS と同じ分け方です(A地点 → startTS / C地点 → cTS / それ以外 → endTS)。
+ *
+ * @return {{name:string, sec:number}}
+ */
+function findTapTargetInfo(){
+
+    if(tapState.phase === TAP_PHASE_A){ return { name: "1拍目", sec: tapState.startTS }; }
+    if(tapState.phase === TAP_PHASE_C){ return { name: "C の拍", sec: tapState.cTS }; }
+
+    return { name: "接続点", sec: tapState.endTS };
 
 }
 
@@ -2635,15 +2819,21 @@ function startTapFinalCheck(){
     tapState.cCheck = null;
     tapState.wholeSong = whole;
 
-    if(whole.ok){
-        tapState.bpm = whole.bpm;
-    }
+    /*
+    (v269)⚠️ の時も入れ替えます。whole.bpm は ✅ でも ⚠️ でも「Aのテンポで数えた1拍目と接続点を結ぶ線」
+    (数えられない時だけ今のBPMのまま)。理由は decideTapWholeSongBpm のコメント「④ の時に保存する BPM」。
+    v268 までは ✅ の時だけ入れ替えていました。
+    */
+    tapState.bpm = whole.bpm;
 
     console.log(
         "曲全体のBPM :",
         whole.ok
             ? "✅ " + whole.bpm.toFixed(4) + "(A〜B " + whole.beats + "拍)で保存します"
-            : "⚠️ 拍の数を決めきれないので、今までどおり " + whole.bpmNow.toFixed(2) + " で保存します",
+            : (whole.gridA
+                ? "⚠️ 拍の数を決めきれません。1拍目と接続点を結ぶ線 " + whole.bpm.toFixed(4) +
+                  "(Aのテンポで数えた " + whole.gridA.beats + "拍)で保存します"
+                : "⚠️ 拍の数を数えられないので、今の " + whole.bpmNow.toFixed(2) + " で保存します"),
         "/ Aの " + whole.bpmA.toFixed(2) + " で " + (whole.gridA ? whole.gridA.beatsRaw.toFixed(2) + "拍" : "数えられない"),
         "/ Bの " + whole.bpmNow.toFixed(2) + " で " + (whole.gridNow ? whole.gridNow.beatsRaw.toFixed(2) + "拍" : "数えられない")
     );
@@ -2813,6 +3003,8 @@ function updateTapFinalLabel(){
  *   ・④ は難しい曲の時なので、やさしい励ましの文に
  *   ・保存する値:① ③ は曲全体のBPM / ② は今までどおり / ④ は C を入れる前の判断のまま
  *     (元が①なら曲全体のBPM、②なら今までどおり)。値を決めるのは confirmTapCPhase
+ *     (v269)② の「今までどおり」は「Aのテンポで数えた1拍目と接続点を結ぶ線」に変えた
+ *     (decideTapWholeSongBpm のコメント「④ の時に保存する BPM」。竹弘と決めた 2026-11-09 の ウ')
  *
  * 判断は startTapFinalCheck() が tapState.wholeSongAB に、confirmTapCPhase() が tapState.cCheck に
  * 入れておきます。色は CSS の .is-ok(緑)/ .is-ng(黄)、🎯 の光は .is-lit で付けます。
@@ -2994,6 +3186,10 @@ function backToTapAdjustA(){
  * 【動かすもの・動かさないもの】
  *     C地点で動かすのは、線(BPM・拍の格子)と C の拍(cTS)だけ。1拍目と接続点は動かしません。
  *     タイミングを動かした分は C の位置だけの直しで、最後の確認へ戻る時に元の値へ戻します(beforeC)。
+ *     (v269)速度ボタンの支点は C の拍そのもの(findTapSpeedPivotBeat)。速度は C の辺りの拍の間隔だけを変え、
+ *     C の拍の位置は動かしません。C の拍を動かすのはタイミングと ◀▶ です。
+ *     ⚠️ C の辺りで速度を変えた後に ◀▶ で C を動かすと、placeTapCAt は「変えた後の間隔」で拍を数え直します。
+ *        数えるのは前の C から数拍〜十数拍だけなので、その場所の間隔で数えるほうが確かです。
  */
 function startTapPhaseC(){
 
@@ -3071,10 +3267,13 @@ function startTapPhaseC(){
         "/ 1拍目から " + (tapState.targetBeat - 1) + "拍"
     );
 
-    // 画面の切り替えとメトロノームは showTapAdjustPanel に任せます(B地点の聴く画面と同じ部品)
+    /*
+    画面の切り替えとメトロノームは showTapAdjustPanel に任せます(B地点の聴く画面と同じ部品)。
+    (v269)案内の2行目は B地点と同じ「まずタイミングで」(startTapPhaseB のコメント)。
+    */
     showTapAdjustPanel(
         "A地点からの線を、C地点に当てています。\n" +
-        "ずれていたら、下のボタンで合わせてください。",
+        "ずれは、まずタイミングで合わせてください。",
         Math.max(0,placeSec - TAP_REPLAY_LEAD_SEC)
     );
 
@@ -3089,7 +3288,8 @@ function startTapPhaseC(){
  * 【保存する値(竹弘と決めた 2026-11-09)】
  *     C で決められた(③)   … C で決めた曲全体のBPM
  *     C で決められない(④) … C を入れる前の判断のまま(A+B で決められていれば曲全体のBPM、
- *                             決められていなければ今までどおり)
+ *                             決められていなければ今までどおり。(v269)「今までどおり」は
+ *                             Aのテンポで数えた1拍目と接続点を結ぶ線)
  * どちらの時も、1拍目(startTS)と接続点(endTS)は動かしません。
  */
 function confirmTapCPhase(){
@@ -3117,7 +3317,10 @@ function confirmTapCPhase(){
         ? { ok: true, bpm: c.bpm, beats: c.beats, byC: true }
         : ab;
 
-    // ⚠️ ab.bpm は「A+B で決められたら曲全体のBPM・決められなければ今までどおりの値」(decideTapWholeSongBpm)
+    /*
+    ⚠️ ab.bpm は「A+B で決められたら曲全体のBPM・決められなければ(v269)Aのテンポで数えた
+       1拍目と接続点を結ぶ線」(decideTapWholeSongBpm のコメント「④ の時に保存する BPM」)
+    */
     tapState.bpm = c.ok ? c.bpm : ab.bpm;
 
     /*
@@ -3156,7 +3359,7 @@ function confirmTapCPhase(){
         c.ok
             ? "→ ✅ " + c.beats + "拍・曲全体のBPM " + c.bpm.toFixed(4) + " で保存します"
             : "→ ⚠️ 決めきれないので C は使いません(" +
-              (ab.ok ? "A+B の曲全体のBPM " : "今までどおり ") + ab.bpm.toFixed(2) + " で保存します)",
+              (ab.ok ? "A+B の曲全体のBPM " : "1拍目と接続点を結ぶ線 ") + ab.bpm.toFixed(2) + " で保存します)",
         "/ A+B だけだと " + (ab.ok ? ab.beats + "拍" : "決めきれない")
     );
 
