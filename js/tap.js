@@ -81,6 +81,19 @@ const TAP_PHASE_A = "A";
 const TAP_PHASE_B = "B";
 
 /*
+C地点(v268。段0-5a「🎯 精度を高める」)。A地点・B地点を測り終えた後、最後の確認画面から
+入る3つ目の地点です。曲の後半(A〜B の 2/3 のあたり)で A地点からの線が合っているかを聴き、
+ずれていたら合わせて、A〜B の拍の数を決め直します(decideTapWholeSongBpmWithC)。
+
+⚠️ 最後の確認画面は「フェーズ B + finalCheck の旗」で表していますが、C地点は独立したフェーズに
+   しました。C地点の微調整は B地点の聴く画面と同じ部品を使う一方で、◀▶ の役目・確定の行き先・
+   数字の窓の札が違うため、旗を増やすより分かれ道が読みやすいからです。
+   phase === TAP_PHASE_A で分けている所は、C を「A ではない方」として B と同じに扱います。
+   C で B と違う動きが要る所は、必ず TAP_PHASE_C を名指しで分けています。
+*/
+const TAP_PHASE_C = "C";
+
+/*
 13タップ目の拍番号です。
 
 fitTapBeatGrid() は採用8タップの1回目を「拍番号1」として数えます。
@@ -322,6 +335,35 @@ Three Empty Words が端数 0.24 で、前の測定と比べると B地点が約
 */
 const TAP_WHOLE_SONG_SAFE_FRAC = 0.2;
 
+/*
+C地点(v268。段0-5a)をどこに置くかです。A地点の1拍目(startTS)から B地点の13拍目(endTS)
+までを 1 とした割合で決めます(竹弘と決めた 2026-11-09)。
+
+    TAP_C_POS_RATIO … 最初に置く所。2/3
+    TAP_C_MIN_RATIO … ◀▶ で動かせる前の端。0.6
+    TAP_C_MAX_RATIO … ◀▶ で動かせる後ろの端。0.8
+
+    4分30秒の曲なら:最初は 2:52 ごろ(2番サビのあたり)・動かせるのは 2:37〜3:24(5秒ずつで約9回)
+
+【なぜ真ん中(0.5)に置かないのか】
+C地点は「A の1拍目から何拍目か」を数えて使います。真ん中に置くと、C の拍を1つ数え違えても
+B までの拍の数がちょうど2つずれるだけで端数が出ないので、計算で気づけません(間違ったBPMが
+✅ のまま保存される)。2/3 なら、1つの数え違いが B で端数 0.5 になって必ず ⚠️ で気づけます。
+0.6〜0.8 は、この「気づける」が保てる範囲です(端に行くほど気づく力は弱くなります)。
+くわしい見積もりは private/tap-correction.html の10章(非公開)。
+
+【曲の流れから見ても】
+2/3 はたいてい2番サビのあたりで、拍がはっきりしていて耳で合わせやすい所です。0.8 より後ろは
+Cメロ・落ちサビ・ラップなど、テンポや乗りが変わりやすい所に入りやすいので、そこで止めます。
+竹弘:「テンポが大きく揺れる曲はユーザーが判断できるので、曲の代表テンポとなる所まで
+       前後±5秒変更ボタンで対処する」(2026-11-09)
+
+⚠️ ◀▶ が動かすのは「C地点そのもの」です(B地点の ◀▶ は聴く位置だけ。竹弘と決めた 2026-11-09)。
+*/
+const TAP_C_POS_RATIO = 2 / 3;
+const TAP_C_MIN_RATIO = 0.6;
+const TAP_C_MAX_RATIO = 0.8;
+
 
 // ==========================================================
 // 2. 今の状態
@@ -413,6 +455,14 @@ const tapState = {
 
     startTS: 0,         // A地点で測る1拍目の位置(秒)
     endTS: 0,           // B地点で測る13拍目の位置(秒)= 曲の接続点
+
+    /*
+    C地点で合わせた拍の位置(秒)(v268。段0-5a)。
+    startTS・endTS と同じく「結果」で、beatOriginSec + 1拍 × targetBeat から作ります
+    (updateTapTargetTS)。⚠️ 保存はしません。A〜B の拍の数を決め直すためだけに使います。
+    */
+    cTS: 0,
+
     latencyMs: 0,       // Bluetoothの遅延調整値
 
     /*
@@ -484,11 +534,35 @@ const tapState = {
     phaseASnapshot: null,
 
     /*
-    最後の確認画面で決めた「曲全体のBPM」の判断(v267。decideTapWholeSongBpm の答え)。
-    最後の確認の結果の1行(updateTapFinalResult)と、保存のログに使います。
-    最後の確認を開くたびに入れ直すので、それより前の画面では null か前の答えのまま(使わない)。
+    最後の確認画面で、いま使っている「曲全体のBPM」の判断(v267。保存のログに使います)。
+
+    (v268)C地点で決め直せるようになったので、中身は次のどちらかです。
+        C地点を使っていない / C地点で決めきれなかった … wholeSongAB と同じもの
+        C地点で決められた                               … { ok:true, bpm, beats, byC:true }
+    B地点の確定で最後の確認を開くたびに入れ直すので、それより前の画面では null か前の答えのまま(使わない)。
     */
     wholeSong: null,
+
+    /*
+    A地点 + B地点だけで決めた判断(v268。decideTapWholeSongBpm の答え)。
+    C地点で決めきれなかった時は、この判断のまま保存します(竹弘と決めた 2026-11-09)。
+    結果の1行(updateTapFinalResult)と、C地点に当てる線(startTapPhaseC)にも使います。
+    */
+    wholeSongAB: null,
+
+    /*
+    C地点の結果(v268。decideTapWholeSongBpmWithC の答え)。まだ C地点を使っていなければ null。
+    B地点を確定し直した時・A地点の微調整へ戻った時・別の曲を開いた時に null へ戻します
+    (C を合わせた線の元が変わるため)。
+    */
+    cCheck: null,
+
+    /*
+    C地点へ入る前の控え(v268)。C地点を確定して最後の確認へ戻る時に書き戻します。
+        latencyMs   … C地点で動かしたタイミングは C の位置だけの直しなので、戻ったら元の値に
+        halfShifted … 最後の確認で「表打ちにする」を押していたか(押した状態のまま戻すため)
+    */
+    beforeC: null,
 
     wasPlaying: false   // 開く前に曲が鳴っていたか(閉じる時に戻すため)
 
@@ -638,6 +712,12 @@ async function openTapCorrection(trackId){
 
     // 前の曲の A地点の控えも消します(v264。別の曲の A地点へ戻ってしまわないように)
     tapState.phaseASnapshot = null;
+
+    // 前の曲の C地点の結果・控えも消します(v268。前の曲の C地点の位置や線を引き継がないように)
+    tapState.cTS = 0;
+    tapState.wholeSongAB = null;
+    tapState.cCheck = null;
+    tapState.beforeC = null;
 
     // 位置は毎回この初期値から始めます(前回位置は保存していません)
     tapState.posSec = TAP_POS_A_DEFAULT_SEC;
@@ -953,7 +1033,14 @@ function refreshTapRetryVisible(){
     const adjustShown = tapAdjustPanel.style.display !== "none";
     const finalShown  = tapFinalPanel.style.display  !== "none";
 
-    tapRetryAdjust.style.display = adjustShown ? "block" : "none";
+    /*
+    (v268)C地点の微調整画面では「タップからやり直す」を出しません(段0-5a。C地点で叩き直すのは
+    0-5b で足す)。竹弘の見込み「タップをし直さなければならないほどの修正は多くはない」(2026-11-09)。
+    下の段は「やめる」だけになり、幅いっぱいに広がります。
+    */
+    const retryShown = adjustShown && tapState.phase !== TAP_PHASE_C;
+
+    tapRetryAdjust.style.display = retryShown ? "block" : "none";
 
     /*
     微調整パネルと確認パネルは同時には出さない約束ですが、切り替えの途中で一瞬
@@ -1313,6 +1400,15 @@ function updateTapTargetTS(){
         tapState.startTS = ts;
 
     }
+    else if(tapState.phase === TAP_PHASE_C){
+
+        /*
+        (v268)C地点では C の拍だけを書き換えます。1拍目(startTS)と接続点(endTS)は動かしません。
+        ⚠️ ここを B と同じ else に落とすと、C地点で合わせるたびに接続点が C の位置へ飛びます。
+        */
+        tapState.cTS = ts;
+
+    }
     else{
 
         tapState.endTS = ts;
@@ -1330,9 +1426,19 @@ function updateTapPhaseLabel(){
     (v265)頭に画面の呼び名「ノリ注入」を付けました(竹弘 2026-11-07:完成時の正式な表示名は
     「ノリ注入」)。見出しの行を増やすと画面が収まらなくなるので、この札に入れています。
     */
-    tapPhaseLabel.textContent = (tapState.phase === TAP_PHASE_A)
-        ? "ノリ注入・A地点(曲の頭側)"
-        : "ノリ注入・B地点(曲の終わり側)";
+    /*
+    (v268)C地点は「曲の後半」(A〜B の 2/3 のあたり。TAP_C_POS_RATIO のコメント)。
+    10章の案の「(真ん中)」は、真ん中に置かないと決めたのでやめました。
+    */
+    if(tapState.phase === TAP_PHASE_A){
+        tapPhaseLabel.textContent = "ノリ注入・A地点(曲の頭側)";
+    }
+    else if(tapState.phase === TAP_PHASE_C){
+        tapPhaseLabel.textContent = "ノリ注入・C地点(曲の後半)";
+    }
+    else{
+        tapPhaseLabel.textContent = "ノリ注入・B地点(曲の終わり側)";
+    }
 
 }
 
@@ -1357,6 +1463,19 @@ function nudgeTapPosition(deltaSec){
     if(isTapListeningAtB()){
 
         nudgeTapListenPosition(deltaSec);
+
+        return;
+
+    }
+
+    /*
+    (v268)C地点の微調整画面では、C地点そのものを動かします(nudgeTapCPosition)。
+    ⚠️ B地点と同じく、下の「タップを始めた後は動かせません」より先に分けること
+       (B地点で叩き直した後は taps が12回ぶん残っているため)。
+    */
+    if(isTapListeningAtC()){
+
+        nudgeTapCPosition(deltaSec);
 
         return;
 
@@ -1523,13 +1642,128 @@ function nudgeTapListenPosition(deltaSec){
 
 }
 
+/**
+ * 今、C地点の微調整画面にいるか(v268。段0-5a)。
+ *
+ * isTapListeningAtB と同じ考え方で、◀▶ のボタンと位置の表示の役目をここで決めます。
+ * C地点はフェーズそのものが C なので、微調整パネルが出ているかだけを見ます。
+ */
+function isTapListeningAtC(){
+
+    return tapState.phase === TAP_PHASE_C &&
+           tapAdjustPanel.style.display !== "none";
+
+}
+
+/**
+ * C地点を置いてよい範囲を返します(v268。段0-5a)。
+ *
+ * A地点の1拍目(startTS)〜 B地点の13拍目(endTS)の 60%〜80%(理由は TAP_C_POS_RATIO のコメント)。
+ * 返すのは「C地点の位置」の範囲です。聴き始める位置は、その TAP_REPLAY_LEAD_SEC(3秒)前になります。
+ *
+ * @return {{minSec:number, maxSec:number}}
+ */
+function findTapCRange(){
+
+    const lengthSec = tapState.endTS - tapState.startTS;
+
+    return {
+        minSec: tapState.startTS + lengthSec * TAP_C_MIN_RATIO,
+        maxSec: tapState.startTS + lengthSec * TAP_C_MAX_RATIO
+    };
+
+}
+
+/**
+ * C地点を、指定した位置にいちばん近い拍に置きます(v268。段0-5a)。
+ *
+ * 狙う拍の番号(targetBeat)を「その位置にいちばん近い拍」にして、C の拍の秒(cTS)を
+ * 計算し直します。拍番号で持つのは A地点・B地点と同じ理由です(速度を動かしても同じ拍を指し続ける。
+ * targetBeat のコメント)。
+ *
+ * 拍番号は A地点の格子のまま数えます(拍番号0 = 1拍目の1拍前、拍番号1 = 1拍目)。
+ * だから「1拍目から C まで何拍か」は targetBeat − 1 で、数えなくても決まっています
+ * (confirmTapCPhase がこの数を使う)。
+ *
+ * @param {number} placeSec - C地点を置きたい位置(秒)
+ */
+function placeTapCAt(placeSec){
+
+    const beatDur = 60 / tapState.bpm;
+
+    if(!isFinite(beatDur) || beatDur <= 0){ return; }
+
+    // Math.round は四捨五入。その位置にいちばん近い拍の番号になります
+    tapState.targetBeat = Math.round((placeSec - tapState.beatOriginSec) / beatDur);
+
+    updateTapTargetTS();
+
+}
+
+/**
+ * C地点の微調整画面で、C地点そのものを5秒ずつ動かします(v268。段0-5a)。
+ *
+ * 【竹弘と決めたこと(2026-11-09)】
+ *     ・◀▶ は C地点そのものを動かす(B地点の ◀▶ は聴く位置だけ。nudgeTapListenPosition)
+ *     ・範囲は A〜B の 60%〜80%(findTapCRange)
+ *     ・テンポが揺れる曲は、竹弘が ◀▶ で「曲の代表テンポとなる所」へ C を動かして対処する
+ *
+ * 【動かすもの・動かさないもの】
+ *     動かす   … C地点の位置(聴く位置 + 3秒)と、そこにいちばん近い拍(targetBeat → cTS)
+ *     動かさない … 当てている線(拍の格子・BPM)・1拍目(startTS)・接続点(endTS)
+ * 線はそのままなので、どこへ動かしても「A地点から引いた同じ線」のカチッが聴けます。
+ * 前の場所で速度を合わせていたら、その合わせた線のまま次の場所を聴けます。
+ *
+ * 聴く位置(playOffset)は、いつも「C地点の3秒前」(TAP_REPLAY_LEAD_SEC)です。
+ * だから今の C地点の位置は playOffset + 3秒 で分かり、別に覚えておく必要がありません。
+ *
+ * ⚠️ 範囲の端では止めます。ただし押した向きと逆へは動かしません(B地点の ◀▶ と同じ。
+ *    2回目に 🎯 を押した時、前の C地点が範囲の端ちょうどにあることがあるため)。
+ *
+ * @param {number} deltaSec - 動かす秒数(+で後ろ、-で前)
+ */
+function nudgeTapCPosition(deltaSec){
+
+    const range = findTapCRange();
+    const current = tapState.playOffset + TAP_REPLAY_LEAD_SEC;
+
+    let next = current + deltaSec;
+
+    if(deltaSec > 0 && next > range.maxSec){ next = Math.max(current,range.maxSec); }
+    if(deltaSec < 0 && next < range.minSec){ next = Math.min(current,range.minSec); }
+
+    /*
+    端に着いていて動かないなら、鳴らし直さずに済ませます。
+    「=== で比べない」のは、playOffset + 3秒 の足し算で 0.000000000001秒ほどの誤差が出て、
+    同じ位置なのに「違う」と判断されることがあるためです(小数の計算の決まり)。
+    */
+    if(Math.abs(next - current) < 0.001){ return; }
+
+    placeTapCAt(next);
+
+    updateTapMonitor();
+
+    playTapSongFrom(Math.max(0,next - TAP_REPLAY_LEAD_SEC),true);
+
+    updateTapPosLabel();
+
+    console.log(
+        "C地点を動かしました :",
+        formatTapTime(next) + "(C の拍 " + tapState.cTS.toFixed(3) + "s・" +
+        "A〜B の " + Math.round((tapState.cTS - tapState.startTS) / (tapState.endTS - tapState.startTS) * 100) + "%)",
+        "/ 1拍目 " + tapState.startTS.toFixed(3) + "s と接続点 " + tapState.endTS.toFixed(3) + "s は動かしません"
+    );
+
+}
+
 function updateTapPosLabel(){
 
     /*
     (v266)B地点の聴く画面では「聴く位置」(playOffset)を、それ以外(叩く前)では
     「測り始める位置」(posSec)を出します。どちらかは isTapListeningAtB() が決めます。
+    (v268)C地点の微調整画面でも「聴く位置」を出します(C地点の3秒前)。
     */
-    const sec = isTapListeningAtB() ? tapState.playOffset : tapState.posSec;
+    const sec = (isTapListeningAtB() || isTapListeningAtC()) ? tapState.playOffset : tapState.posSec;
 
     tapPosLabel.textContent = formatTapTime(sec) + " から";
 
@@ -2115,6 +2349,84 @@ function decideTapWholeSongBpm(){
 }
 
 /**
+ * C地点で合わせた拍を使って、A〜B の拍の数を決め直します(v268。段0-5a)。
+ * 画面にも保存にも触らない「判断だけ」の関数です(decideTapWholeSongBpm と同じ形)。
+ *
+ * ------------------------------------------------------------------
+ * 【考え方】
+ *
+ * C の拍(cTS)は、竹弘が耳で合わせた「本物の拍の位置」です。しかも 1拍目から何拍目か(nC)は、
+ * A地点の格子の拍番号のまま数えているので、数えなくても決まっています(placeTapCAt のコメント)。
+ *
+ *   ① 1拍目〜C の BPM  … nC 拍 ÷ 1拍目〜C の長さ。8回ぶん(数秒)ではなく数分の長さで決まる
+ *   ② ①の BPM で A〜B の拍の数を数える(findTapWholeSongGrid。端数の線は TAP_WHOLE_SONG_SAFE_FRAC)
+ *   ③ 端数が線の内側なら ok。曲全体のBPM = 拍の数 ÷ A〜B の長さ(v267 と同じ割り算)
+ *
+ * 【端数が出る時(ok にならない時)】
+ *   ・C の拍を1つ数え違えた(C を 2/3 に置いてあるので、必ず端数が出て気づける。TAP_C_POS_RATIO)
+ *   ・曲の途中でテンポが揺れていて、1拍目〜C と C〜B で速さが違う
+ * どちらの時も C は使わず、C を入れる前の判断(wholeSongAB)のまま保存します(竹弘と決めた 2026-11-09)。
+ *
+ * ⚠️ ok の時、C の拍は必ず「1拍目と接続点を結ぶ線」の端数の線の内側に乗っています
+ *    (ずれは C の位置の割合 × 端数なので、端数より小さい)。だから「C が線から外れていないか」を
+ *    別に確かめる必要はありません(10章の案の④は、この判断に含まれていた)。
+ *
+ * @param  {number} startTS - A地点の1拍目(秒)
+ * @param  {number} endTS   - B地点の13拍目(秒)
+ * @param  {number} cTS     - C地点で合わせた拍(秒)
+ * @param  {number} nC      - 1拍目から C まで何拍か(targetBeat − 1)
+ * @return {{ok:boolean, bpm:number|null, beats:number|null, bpmAC:number|null,
+ *           grid:object|null, cSec:number, nC:number, ratio:number|null}}
+ *         ok    … C で A〜B の拍の数を決められたか
+ *         bpm   … 曲全体のBPM(ok の時だけ)
+ *         beats … A〜B の拍の数(ok の時だけ)
+ *         bpmAC … 1拍目〜C の BPM(次に 🎯 を押した時、この線から始める)
+ *         grid / cSec / nC / ratio … 判断に使った値(ログと試験のため。ratio は C が A〜B の何割の所か)
+ */
+function decideTapWholeSongBpmWithC(startTS,endTS,cTS,nC){
+
+    const lengthAC = cTS - startTS;
+    const lengthAB = endTS - startTS;
+
+    const result = {
+        ok: false,
+        bpm: null,
+        beats: null,
+        bpmAC: null,
+        grid: null,
+        cSec: cTS,
+        nC: nC,
+        ratio: (isFinite(lengthAB) && lengthAB > 0) ? lengthAC / lengthAB : null
+    };
+
+    /*
+    C が 1拍目より後ろ・接続点より前にあり、1拍以上離れている時だけ数えます。
+    (◀▶ の範囲は 60%〜80% なので、ふつうは必ず満たします。値が壊れていた時の保険)
+    */
+    if(!isFinite(lengthAC) || !isFinite(lengthAB) || lengthAB <= 0){ return result; }
+    if(lengthAC <= 0 || lengthAC >= lengthAB){ return result; }
+    if(!isFinite(nC) || nC < 1){ return result; }
+
+    const bpmAC = 60 * nC / lengthAC;
+
+    const grid = findTapWholeSongGrid(startTS,endTS,bpmAC);
+
+    result.bpmAC = bpmAC;
+    result.grid = grid;
+
+    if(grid && grid.safe){
+
+        result.ok = true;
+        result.bpm = grid.bpm;
+        result.beats = grid.beats;
+
+    }
+
+    return result;
+
+}
+
+/**
  * 「微調整画面へ進む」が押された時の処理です。
  */
 function goToTapAdjust(){
@@ -2212,8 +2524,11 @@ function showTapAdjustPanel(guideText,fromSec){
     (v266)◀▶ の行は、B地点の微調整画面だけに出します(聴く位置を動かすため。
     nudgeTapListenPosition)。A地点の微調整では今まで通り隠します。
     位置の数字は、下で鳴らし始めた後に updateTapPosLabel() で書きます。
+    (v268)C地点の微調整画面にも出します(C地点そのものを動かす。nudgeTapCPosition)。
     */
-    tapPosRow.style.display = (tapState.phase === TAP_PHASE_B) ? "flex" : "none";
+    const posRowShown = tapState.phase === TAP_PHASE_B || tapState.phase === TAP_PHASE_C;
+
+    tapPosRow.style.display = posRowShown ? "flex" : "none";
 
     setTapLockUI(false);
     setTapAdjustUI(true);
@@ -2312,6 +2627,12 @@ function startTapFinalCheck(){
     */
     const whole = decideTapWholeSongBpm();
 
+    /*
+    (v268)A+B だけの判断を控え、C地点の結果は消します。B地点を確定し直した = C を合わせた
+    線の元(1拍目・接続点)が変わったので、前の C の結果はもう使えないためです。
+    */
+    tapState.wholeSongAB = whole;
+    tapState.cCheck = null;
     tapState.wholeSong = whole;
 
     if(whole.ok){
@@ -2327,6 +2648,24 @@ function startTapFinalCheck(){
         "/ Bの " + whole.bpmNow.toFixed(2) + " で " + (whole.gridNow ? whole.gridNow.beatsRaw.toFixed(2) + "拍" : "数えられない")
     );
 
+    showTapFinalCheck();
+
+}
+
+/**
+ * 最後の確認画面を出し、A地点のあたりを鳴らします(v268 で startTapFinalCheck から切り出し)。
+ *
+ * 最後の確認へ来る道が2つになったので、画面を出す所だけを1つにまとめました。
+ *
+ *     1. B地点を確定した時(startTapFinalCheck)… A+B で判断してから
+ *     2. C地点を確定した時(confirmTapCPhase)  … C を入れて判断し直してから
+ *
+ * どちらも、呼ぶ前に tapState.bpm を「保存するBPM」にしておくこと(下の格子をそのBPMで置き直すため)。
+ * ⚠️ 表打ちの旗(halfShifted)には触りません。B地点から来た時は startTapFinalCheck が下ろし、
+ *    C地点から来た時は confirmTapCPhase が C へ入る前の状態に戻します。
+ */
+function showTapFinalCheck(){
+
     const beatDur = 60 / tapState.bpm;
 
     /*
@@ -2337,8 +2676,9 @@ function startTapFinalCheck(){
     置き直します(restoreTapGridAt と同じ考え方)。
 
     ⚠️ ここで restoreTapGridAt() を呼ばないのは、あちらが halfShifted を
-       false に戻す作りだからです。この関数では上で明示的に false へ
-       しており、順番が入れ替わると分かりにくくなるため直に書いています。
+       false に戻す作りだからです。表打ちの旗は呼ぶ側が決めます(この関数の頭の ⚠️)。
+       (v268)C地点から戻った時に「表打ちにする」を押した状態を消さないためにも、直に書いています。
+       表打ちにしていた時は startTS も半拍ずらした後の値なので、この格子も表の拍に乗ります。
     */
     if(isFinite(beatDur) && beatDur > 0){
 
@@ -2393,6 +2733,10 @@ function startTapFinalCheck(){
  *
  * ⚠️ BPMは1ミリも変えません。裏打ちで叩いても**間隔は正しい**ので、
  *    直すのは位置だけです。
+ *
+ * ⚠️ (v268)「表打ちにする」を押した後に 🎯 C地点で BPM が変わると、「元に戻す」で戻す半拍は
+ *    押した時の半拍とわずかに違います(BPM が 0.5% 変われば 1ms ほど)。耳にも接続にも効かない
+ *    小ささなので、押した時の量は覚えていません。
  */
 function toggleTapFinalHalfBeat(){
 
@@ -2452,38 +2796,89 @@ function updateTapFinalLabel(){
 }
 
 /**
- * 最後の確認画面の結果の1行を書きます(v267。段0-4)。
+ * 最後の確認画面の結果の1行を書き、「🎯 精度を高める(C地点)」を光らせるかを決めます
+ * (v267。段0-4 / v268。段0-5a で4つの形に)。
  *
- *     ✅ 曲全体のBPM 83.48(A〜B 269拍)
- *     ⚠️ 拍の数を決めきれません。
- *        今までどおりの値で保存します。
+ *   ① C の前・決められた         ✅ 曲全体のBPM 83.48(A〜B 269拍)
+ *   ② C の前・決められない       ⚠️ 拍の数を決めきれません。
+ *                                   🎯 C地点で精度をあげよう。          ← 🎯 が光る
+ *   ③ C を合わせて、決められた   ✅ 曲全体のBPM 83.48(A〜B 269拍)
+ *                                   🎯 C地点(2:52)で確かめました
+ *   ④ C を合わせても決められない 💪 手ごわい曲だね。場所を変えてみよう。
+ *                                   このままなら、C は使わずに保存するね。 ← 🎯 が光る
  *
- * 判断は startTapFinalCheck() が tapState.wholeSong に入れておきます。
- * 色は CSS の .is-ok(緑)/ .is-ng(黄)で付けます。\n の所で改行します(white-space:pre-line)。
- * ⚠️ 決めきれなかった曲は、段0-5 で「🎯 精度を高める(C地点)」へ案内する予定です。
+ * 【竹弘と決めたこと(2026-11-09)】
+ *   ・🎯 を光らせるのは ⚠️ の曲だけ(長い曲というだけでは光らせない)
+ *   ・② は「C地点を合わせてください」ではなく、やさしい「C地点で精度をあげよう。」に
+ *   ・④ は難しい曲の時なので、やさしい励ましの文に
+ *   ・保存する値:① ③ は曲全体のBPM / ② は今までどおり / ④ は C を入れる前の判断のまま
+ *     (元が①なら曲全体のBPM、②なら今までどおり)。値を決めるのは confirmTapCPhase
+ *
+ * 判断は startTapFinalCheck() が tapState.wholeSongAB に、confirmTapCPhase() が tapState.cCheck に
+ * 入れておきます。色は CSS の .is-ok(緑)/ .is-ng(黄)、🎯 の光は .is-lit で付けます。
+ * \n の所で改行します(white-space:pre-line)。
+ * ⚠️ どの形も2行まで(画面を1画面に収めるため。sandbox/measure-tap-layout.html で幅 360px を確かめた)。
  */
 function updateTapFinalResult(){
 
     const el = document.getElementById("tap-final-result");
+    const cButton = document.getElementById("tap-final-c");
 
     if(!el){ return; }
 
-    const whole = tapState.wholeSong;
+    const ab = tapState.wholeSongAB;
+    const c = tapState.cCheck;
 
-    if(!whole){
+    if(!ab){
 
         el.textContent = "";
         el.classList.remove("is-ok","is-ng");
+
+        if(cButton){ cButton.classList.remove("is-lit"); }
+
         return;
 
     }
 
-    el.textContent = whole.ok
-        ? "✅ 曲全体のBPM " + whole.bpm.toFixed(2) + "(A〜B " + whole.beats + "拍)"
-        : "⚠️ 拍の数を決めきれません。\n今までどおりの値で保存します。";
+    let text;
+    let good;
 
-    el.classList.toggle("is-ok",whole.ok);
-    el.classList.toggle("is-ng",!whole.ok);
+    if(c === null){
+
+        // ① / ② まだ C地点を使っていない
+        good = ab.ok;
+
+        text = ab.ok
+            ? "✅ 曲全体のBPM " + ab.bpm.toFixed(2) + "(A〜B " + ab.beats + "拍)"
+            : "⚠️ 拍の数を決めきれません。\n🎯 C地点で精度をあげよう。";
+
+    }
+    else if(c.ok){
+
+        // ③ C地点で決められた
+        good = true;
+
+        text = "✅ 曲全体のBPM " + c.bpm.toFixed(2) + "(A〜B " + c.beats + "拍)\n" +
+               "🎯 C地点(" + formatTapTime(c.cSec) + ")で確かめました";
+
+    }
+    else{
+
+        // ④ C地点でも決められなかった(テンポが揺れる・手ごわい曲)
+        good = false;
+
+        text = "💪 手ごわい曲だね。場所を変えてみよう。\n" +
+               "このままなら、C は使わずに保存するね。";
+
+    }
+
+    el.textContent = text;
+
+    el.classList.toggle("is-ok",good);
+    el.classList.toggle("is-ng",!good);
+
+    // 決めきれていない時(② ④)だけ 🎯 を光らせます
+    if(cButton){ cButton.classList.toggle("is-lit",!good); }
 
 }
 
@@ -2547,6 +2942,13 @@ function backToTapAdjustA(){
     tapState.posSec = snap.posSec;
     tapState.resumedFromSaved = snap.resumedFromSaved;
 
+    /*
+    (v268)C地点の結果も取り消します。A地点を確定し直すと、C を合わせた線の元(1拍目)が
+    変わるためです。もう一度 B地点を確定すれば、最後の確認で C地点も使えます。
+    */
+    tapState.cCheck = null;
+    tapState.beforeC = null;
+
     updateTapPhaseLabel();
 
     console.log(
@@ -2568,6 +2970,197 @@ function backToTapAdjustA(){
         "直したら「A地点を確定 → B地点へ」。",
         snap.fromSec
     );
+
+}
+
+/**
+ * 最後の確認画面の「🎯 精度を高める(C地点)」から、C地点の微調整画面へ入ります(v268。段0-5a)。
+ *
+ * 【竹弘の要望(2026-11-07・11-09)】
+ *     「『精度を高める』ボタンも用意し、C地点のタップもできるようにしたい」
+ *     「C地点も、C地点の微調整画面にジャンプしたい。必要であれば、C地点でタップし直せばいい。
+ *       おそらく、タップをし直さなければならないほどの修正は多くはないと思う」
+ *     → 0-5a は「聴く・合わせる・確定」だけ。C地点で叩き直すのは 0-5b。
+ *
+ * 【当てる線】1拍目(startTS)から引いた線を、曲の後半(C地点)まで伸ばして聴いてもらいます。
+ *     A+B で決められた曲(✅) … 1拍目と接続点を結ぶ線(曲全体のBPM)
+ *     決められなかった曲(⚠️)  … A地点で耳合わせしたBPM の線(A地点を信じる。decideTapWholeSongBpm のコメント)
+ *     2回目からの 🎯           … 前に C地点で合わせた線(1拍目〜C の BPM)。合わせた続きから始められる
+ *
+ * 【C地点の位置】最初は A〜B の 2/3、2回目からは前に置いた所(竹弘が ◀▶ で代表のテンポの所へ
+ *     動かしていたら、その続きから)。どちらも 60%〜80% の内側に収めます(findTapCRange)。
+ *     聴き始めるのは、その3秒前(TAP_REPLAY_LEAD_SEC)。
+ *
+ * 【動かすもの・動かさないもの】
+ *     C地点で動かすのは、線(BPM・拍の格子)と C の拍(cTS)だけ。1拍目と接続点は動かしません。
+ *     タイミングを動かした分は C の位置だけの直しで、最後の確認へ戻る時に元の値へ戻します(beforeC)。
+ */
+function startTapPhaseC(){
+
+    // 最後の確認画面にいて、A+B の判断がある時だけ入れます(ボタンもそこにしか無い)
+    if(!tapState.finalCheck || !tapState.wholeSongAB){ return; }
+
+    const lengthSec = tapState.endTS - tapState.startTS;
+
+    if(!isFinite(lengthSec) || lengthSec <= 0){
+
+        showTapToast("1拍目と接続点の値がおかしいため、C地点を使えません");
+
+        return;
+
+    }
+
+    const ab = tapState.wholeSongAB;
+    const last = tapState.cCheck;
+
+    // ---- 当てる線の BPM(上のコメント「当てる線」)----
+    let lineBpm;
+
+    if(last && last.bpmAC > 0){
+        lineBpm = last.bpmAC;
+    }
+    else if(ab.ok){
+        lineBpm = ab.bpm;
+    }
+    else{
+        lineBpm = ab.bpmA;
+    }
+
+    // C地点を確定して戻る時に書き戻すものを控えます(beforeC のコメント)
+    tapState.beforeC = {
+        latencyMs: tapState.latencyMs,
+        halfShifted: tapState.halfShifted
+    };
+
+    tapState.phase = TAP_PHASE_C;
+
+    /*
+    最後の確認の旗は下ろします。立てたままだと、確定ボタン(confirmTapPhase)や
+    B地点の聴く画面の判断(isTapListeningAtB)が「最後の確認の中」と取り違えます。
+    戻る時は confirmTapCPhase が立て直します。
+    */
+    tapState.finalCheck = false;
+
+    /*
+    線を 1拍目に置き直します。拍番号1 = 1拍目(startTS)・拍番号0 = その1拍前(restoreTapGridAt と同じ形)。
+    ⚠️ 表打ちにしていた時は、startTS も半拍ずらした後の値なので、線も表の拍に乗ります。
+    */
+    tapState.bpm = lineBpm;
+    tapState.beatOriginSec = tapState.startTS - 60 / lineBpm;
+
+    // ---- C地点の位置(上のコメント「C地点の位置」)----
+    const range = findTapCRange();
+
+    let placeSec = (last && isFinite(last.placeSec))
+        ? last.placeSec
+        : tapState.startTS + lengthSec * TAP_C_POS_RATIO;
+
+    if(placeSec < range.minSec){ placeSec = range.minSec; }
+    if(placeSec > range.maxSec){ placeSec = range.maxSec; }
+
+    placeTapCAt(placeSec);
+
+    updateTapPhaseLabel();
+
+    console.log(
+        "C地点へ入ります :",
+        "線 BPM " + lineBpm.toFixed(4) +
+        (last ? "(前に C地点で合わせた線)" : (ab.ok ? "(1拍目と接続点を結ぶ線)" : "(A地点で耳合わせしたBPM)")),
+        "/ C の拍 " + tapState.cTS.toFixed(3) + "s(" + formatTapTime(placeSec) + "・A〜B の " +
+        Math.round((tapState.cTS - tapState.startTS) / lengthSec * 100) + "%)",
+        "/ 1拍目から " + (tapState.targetBeat - 1) + "拍"
+    );
+
+    // 画面の切り替えとメトロノームは showTapAdjustPanel に任せます(B地点の聴く画面と同じ部品)
+    showTapAdjustPanel(
+        "A地点からの線を、C地点に当てています。\n" +
+        "ずれていたら、下のボタンで合わせてください。",
+        Math.max(0,placeSec - TAP_REPLAY_LEAD_SEC)
+    );
+
+}
+
+/**
+ * 「C地点を確定 → 最後の確認へ」が押された時の処理です(v268。段0-5a)。
+ *
+ * C地点で合わせた拍を使って A〜B の拍の数を決め直し(decideTapWholeSongBpmWithC)、
+ * 最後の確認画面へ戻ります。⚠️ ここでは保存しません(保存は最後の確認の「確定保存」)。
+ *
+ * 【保存する値(竹弘と決めた 2026-11-09)】
+ *     C で決められた(③)   … C で決めた曲全体のBPM
+ *     C で決められない(④) … C を入れる前の判断のまま(A+B で決められていれば曲全体のBPM、
+ *                             決められていなければ今までどおり)
+ * どちらの時も、1拍目(startTS)と接続点(endTS)は動かしません。
+ */
+function confirmTapCPhase(){
+
+    const ab = tapState.wholeSongAB;
+
+    // 拍番号1 が 1拍目なので、1拍目から C までの拍の数は targetBeat − 1(placeTapCAt のコメント)
+    const c = decideTapWholeSongBpmWithC(
+        tapState.startTS,
+        tapState.endTS,
+        tapState.cTS,
+        tapState.targetBeat - 1
+    );
+
+    /*
+    竹弘が置いた C地点の位置も控えます(次に 🎯 を押した時、ここから始めるため)。
+    聴く位置はいつも C地点の3秒前なので、playOffset + 3秒 が置いた位置です(nudgeTapCPosition)。
+    */
+    c.placeSec = tapState.playOffset + TAP_REPLAY_LEAD_SEC;
+
+    tapState.cCheck = c;
+
+    // 使う判断と、保存する BPM(上のコメント)
+    tapState.wholeSong = c.ok
+        ? { ok: true, bpm: c.bpm, beats: c.beats, byC: true }
+        : ab;
+
+    // ⚠️ ab.bpm は「A+B で決められたら曲全体のBPM・決められなければ今までどおりの値」(decideTapWholeSongBpm)
+    tapState.bpm = c.ok ? c.bpm : ab.bpm;
+
+    /*
+    C地点で動かしたタイミングは C の位置だけの直しなので、元の値に戻します。
+    表打ちの旗も、C地点へ入る前の状態に戻します(押していたら「元に戻す」と出るように)。
+    */
+    if(tapState.beforeC){
+
+        tapState.latencyMs = tapState.beforeC.latencyMs;
+        tapState.halfShifted = tapState.beforeC.halfShifted;
+
+        tapState.beforeC = null;
+
+    }
+
+    // 最後の確認画面は「フェーズ B + finalCheck の旗」です(TAP_PHASE_C のコメント)
+    tapState.phase = TAP_PHASE_B;
+    tapState.finalCheck = true;
+
+    updateTapPhaseLabel();
+
+    console.log(
+        "C地点を確定しました :",
+        "C の拍 " + c.cSec.toFixed(3) + "s(A〜B の " + (c.ratio === null ? "?" : Math.round(c.ratio * 100)) + "%)",
+        "/ 1拍目から " + c.nC + "拍",
+        /*
+        ⚠️ 端数の + / − は、ここで直に付けます。formatTapSigned は「15. 開発用調査ログ」の節にあり、
+           本番前に節ごと消す決まりなので、本番の処理からは呼びません。
+        */
+        c.bpmAC === null
+            ? "/ 数えられません"
+            : "/ 1拍目〜C の BPM " + c.bpmAC.toFixed(4) + " で数えると A〜B " +
+              (c.grid
+                  ? c.grid.beatsRaw.toFixed(2) + "拍(端数 " + (c.grid.frac >= 0 ? "+" : "") + c.grid.frac.toFixed(2) + ")"
+                  : "数えられない"),
+        c.ok
+            ? "→ ✅ " + c.beats + "拍・曲全体のBPM " + c.bpm.toFixed(4) + " で保存します"
+            : "→ ⚠️ 決めきれないので C は使いません(" +
+              (ab.ok ? "A+B の曲全体のBPM " : "今までどおり ") + ab.bpm.toFixed(2) + " で保存します)",
+        "/ A+B だけだと " + (ab.ok ? ab.beats + "拍" : "決めきれない")
+    );
+
+    showTapFinalCheck();
 
 }
 
@@ -2640,9 +3233,19 @@ function applyTapLatencyShift(deltaMs){
  */
 function updateTapConfirmLabel(){
 
-    tapConfirmBtn.textContent = (tapState.phase === TAP_PHASE_A)
-        ? "A地点を確定 → B地点へ"
-        : "これで確定(ノリ注入)";
+    /*
+    (v268)C地点の確定は「最後の確認へ戻る」であって保存ではないので、行き先を書きます
+    (A地点の「→ B地点へ」と同じ考え方)。
+    */
+    if(tapState.phase === TAP_PHASE_A){
+        tapConfirmBtn.textContent = "A地点を確定 → B地点へ";
+    }
+    else if(tapState.phase === TAP_PHASE_C){
+        tapConfirmBtn.textContent = "C地点を確定 → 最後の確認へ";
+    }
+    else{
+        tapConfirmBtn.textContent = "これで確定(ノリ注入)";
+    }
 
 }
 
@@ -2664,7 +3267,22 @@ function updateTapMonitor(){
     登録時の120が入っているだけで実際のテンポではないため、
     かえって別の誤解を生むと判断しました(のりの提案、竹弘が採用)。
     */
-    const label = (tapState.phase === TAP_PHASE_A) ? "1拍目 " : "13拍目 ";
+    /*
+    出す数字は、今どちらを測っているかで変わります(v150)。
+    A地点は1拍目、B地点は13拍目(曲の接続点)です。
+    (v268)C地点では、C地点で合わせている拍の位置(cTS)を出します。
+    */
+    let label = "13拍目 ";
+    let ts = tapState.endTS;
+
+    if(tapState.phase === TAP_PHASE_A){
+        label = "1拍目 ";
+        ts = tapState.startTS;
+    }
+    else if(tapState.phase === TAP_PHASE_C){
+        label = "C地点 ";
+        ts = tapState.cTS;
+    }
 
     if(!tapState.measured){
 
@@ -2676,13 +3294,7 @@ function updateTapMonitor(){
 
         tapBpmDisplay.textContent = tapState.bpm.toFixed(2);
 
-        /*
-        出す数字は、今どちらを測っているかで変わります(v150)。
-        A地点は1拍目、B地点は13拍目(曲の接続点)です。
-        */
-        tapTsDisplay.textContent = (tapState.phase === TAP_PHASE_A)
-            ? label + tapState.startTS.toFixed(3) + "s"
-            : label + tapState.endTS.toFixed(3) + "s";
+        tapTsDisplay.textContent = label + ts.toFixed(3) + "s";
 
     }
 
@@ -2987,8 +3599,10 @@ async function saveTapResult(){
             "タップ補正の結果を保存しました :",
             track.file_name,
             "/ BPM " + tapState.bpm.toFixed(2) +
-            // (v267)曲全体のBPMで保存したか(最後の確認で決めた判断)
-            ((tapState.wholeSong && tapState.wholeSong.ok) ? "(曲全体 " + tapState.wholeSong.beats + "拍)" : "(今までどおり)"),
+            // (v267)曲全体のBPMで保存したか(最後の確認で決めた判断)。(v268)C地点で決めたかも出します
+            ((tapState.wholeSong && tapState.wholeSong.ok)
+                ? "(曲全体 " + tapState.wholeSong.beats + "拍" + (tapState.wholeSong.byC ? "・C地点で確かめ" : "") + ")"
+                : "(今までどおり)"),
             "/ 1拍目 " + tapState.startTS.toFixed(3) + "s",
             "/ 13拍目 " + tapState.endTS.toFixed(3) + "s",
             "/ 遅延 " + tapState.latencyMs + "ms",
@@ -3020,6 +3634,19 @@ async function saveTapResult(){
  * B地点まで終わっていれば、保存して🛌→🕺にし、画面を閉じます。
  */
 async function confirmTapPhase(){
+
+    /*
+    (v268)C地点の確定は、最後の確認へ戻るだけです(保存しない)。
+    ⚠️ 下の A・B の分かれ道より先に分けること。C は「A ではない方」なので、
+       ここで分けないと B地点の確定(→ 最後の確認を開き直す)の道へ落ちて、C の結果が消えます。
+    */
+    if(tapState.phase === TAP_PHASE_C){
+
+        confirmTapCPhase();
+
+        return;
+
+    }
 
     if(tapState.phase === TAP_PHASE_A){
 
@@ -3262,6 +3889,18 @@ if(tapFinalHalfBtn){
     tapFinalHalfBtn.onclick = function(){
         toggleTapFinalHalfBeat();
     };
+
+}
+
+/*
+最後の確認画面の「🎯 精度を高める(C地点)」(v268。段0-5a)。押すと C地点の微調整画面へ入ります。
+C地点の確定は、ふつうの確定ボタン(tap-confirm → confirmTapPhase)が受け持ちます。
+*/
+const tapFinalCBtn = document.getElementById("tap-final-c");
+
+if(tapFinalCBtn){
+
+    tapFinalCBtn.onclick = startTapPhaseC;
 
 }
 
