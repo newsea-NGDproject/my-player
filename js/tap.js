@@ -660,7 +660,7 @@ async function openTapCorrection(trackId){
 
     if(!loaded){
 
-        setTapGuide("曲を読み込めませんでした。閉じてもう一度お試しください。");
+        setTapGuide("曲を読み込めませんでした。\n閉じてもう一度お試しください。");
 
         return;
 
@@ -721,10 +721,14 @@ async function openTapCorrection(trackId){
     */
     if(track.is_analyzed){
 
+        /*
+        (v265)2行に短くし、画面に出ていた「タップ補正」の言葉も外しました
+        (完成時の呼び名は「ノリ注入」。竹弘 2026-11-07)。\n の所で改行します
+        (setTapGuide のコメント参照)。
+        */
         setTapGuide(
-            "この曲は🕺になっていますが、測定データが残っていません" +
-            "(タップ補正ができる前に印だけ付けた曲です)。" +
-            "いまから " + TAP_TOTAL_COUNT + " 回タップして測り直してください。"
+            "測定データが残っていない曲です。\n" +
+            TAP_TOTAL_COUNT + "回タップして測り直してください。"
         );
 
     }
@@ -1019,19 +1023,18 @@ function resetTapPhase(){
 
     if(tapState.phase === TAP_PHASE_A){
 
+        // (v265)画面を収めるため2行に短くしました。\n の所で改行します(setTapGuide のコメント参照)
         setTapGuide(
-            "曲のリズムに合わせて " + TAP_TOTAL_COUNT + " 回タップしてください。" +
-            "最初の " + TAP_DISCARD_COUNT + " 回は計算に使わないので、" +
-            "リズムに乗るまでの助走に使って大丈夫です。"
+            "曲のリズムに合わせて" + TAP_TOTAL_COUNT + "回タップ。\n" +
+            "最初の" + TAP_DISCARD_COUNT + "回は助走で、計算に使いません。"
         );
 
     }
     else{
 
         setTapGuide(
-            "こんどは曲の終わり側(B地点)です。同じように " +
-            TAP_TOTAL_COUNT + " 回タップしてください。" +
-            "ここで測る13拍目が、次の曲へ繋ぐ接続点になります。"
+            "曲の終わり側(B地点)で" + TAP_TOTAL_COUNT + "回タップ。\n" +
+            "ここの13拍目が、次の曲への接続点です。"
         );
 
     }
@@ -1142,10 +1145,10 @@ function resumeTapFromSaved(){
 
     updateTapPhaseLabel();
 
+    // (v265)2行に短くしました(直す時のボタンは画面の下に見えているので、文からは外した)
     showTapAdjustPanel(
-        "前にこの曲で測った値です。メトロノームと曲が合っているか聴いて" +
-        "確かめてください。直すなら「タップからやり直す」、このままで" +
-        "よければ「やめる」で戻れます(値は保存済みです)。",
+        "前にこの曲で測った値です(保存済み)。\n" +
+        "合っていれば「やめる」で戻れます。",
         tapState.posSec
     );
 
@@ -1178,10 +1181,10 @@ function startTapPhaseB(){
 
         updateTapPhaseLabel();
 
+        // (v265)2行に短くしました
         showTapAdjustPanel(
-            "前にこの曲で測った接続点(13拍目)です。メトロノームと曲が" +
-            "合っているか聴いて確かめてください。直すなら" +
-            "「タップからやり直す」で測り直せます。",
+            "前に測った接続点(13拍目)です。\n" +
+            "合っていれば「これで確定」へ。",
             tapState.posSec
         );
 
@@ -1228,10 +1231,10 @@ function startTapPhaseB(){
     */
     inheritGridToPhaseB();
 
+    // (v265)2行に短くしました(叩き直すボタンは画面の下に見えている)
     showTapAdjustPanel(
-        "A地点で測った値をそのまま当てています。メトロノームと曲の" +
-        "リズムが合っているか聴いて確かめてください。ズレていたら" +
-        "「タップからやり直す」でB地点を測り直せます。",
+        "A地点の値を、B地点に当てています。\n" +
+        "ずれていたら、下のボタンで合わせてください。",
         tapState.posSec
     );
 
@@ -1314,9 +1317,13 @@ function updateTapTargetTS(){
  */
 function updateTapPhaseLabel(){
 
+    /*
+    (v265)頭に画面の呼び名「ノリ注入」を付けました(竹弘 2026-11-07:完成時の正式な表示名は
+    「ノリ注入」)。見出しの行を増やすと画面が収まらなくなるので、この札に入れています。
+    */
     tapPhaseLabel.textContent = (tapState.phase === TAP_PHASE_A)
-        ? "A地点(曲の頭側)"
-        : "B地点(曲の終わり側)";
+        ? "ノリ注入・A地点(曲の頭側)"
+        : "ノリ注入・B地点(曲の終わり側)";
 
 }
 
@@ -2002,8 +2009,10 @@ function goToTapAdjust(){
     */
     applyTapLatencyShift(tapState.latencyMs);
 
+    // (v265)\n の所で改行します(setTapGuide のコメント参照)
     showTapAdjustPanel(
-        "メトロノームと曲のリズムがぴったり重なるまで、下のボタンで調整してください。",
+        "メトロノームと曲のリズムが\n" +
+        "ぴったり重なるまで調整してください。",
         tapState.playOffset
     );
 
@@ -2130,9 +2139,10 @@ function startTapFinalCheck(){
     setTapAdjustUI(false);
     setTapFinalUI(true);
 
+    // (v265)2行に短くしました
     setTapGuide(
-        "最後の確認です。メトロノームが曲の拍と重なって聞こえますか。" +
-        "拍と拍の間で鳴っていたら「表打ちにする」を押してください。"
+        "最後の確認です。拍と重なって聞こえますか。\n" +
+        "裏で鳴っていたら「表打ちにする」を。"
     );
 
     updateTapFinalLabel();
@@ -2296,9 +2306,10 @@ function backToTapAdjustA(){
     下の段を「やめる」+「タップからやり直す」にする、まで中でやってくれます)。
     鳴らす位置は、A地点の微調整で聴いていた位置です。
     */
+    // (v265)2行に短くしました
     showTapAdjustPanel(
-        "A地点を確定した時の値に戻しました。直したら「A地点を確定 → B地点へ」で、" +
-        "もう一度B地点へ進めます。",
+        "A地点を確定した時の値に戻しました。\n" +
+        "直したら「A地点を確定 → B地点へ」。",
         snap.fromSec
     );
 
@@ -2306,6 +2317,10 @@ function backToTapAdjustA(){
 
 /**
  * Bluetoothの遅延を調整します。
+ *
+ * (v265)画面では「メトロノームのタイミング」と呼んでいます(見出し・数字の窓の札)。
+ * ボタンは −50 −10 −1 +1 +10 +50 の6つ(±50ms を足した。竹弘「ずれの数値が大きいので便利」)。
+ * どのボタンも data-lat の数を deltaMs としてここへ渡すだけで、処理は今までと同じです。
  *
  * ------------------------------------------------------------------
  * 【何を直しているのか】
@@ -2419,11 +2434,25 @@ function updateTapMonitor(){
     遅延だけは、測る前から数字を出します。
     イヤホンの性質であって曲の性質ではなく、前に合わせた値がそのまま
     使えるためです(次に測る曲の初期値として引き継いでいます)。
+
+    (v265)札の文字を「Bluetoothの遅延」から「タイミング」に変えました。微調整画面の見出し
+    「メトロノームのタイミングを曲に合わせて下さい」と同じ言葉にそろえるためです
+    (イヤホンの遅れだけでなく、叩き遅れの直しにも使っている。竹弘 2026-11-07)。
     */
-    tapLatDisplay.textContent = "Bluetoothの遅延 " + tapState.latencyMs + "ms";
+    tapLatDisplay.textContent = "タイミング " + tapState.latencyMs + "ms";
 
 }
 
+/**
+ * 画面の案内文を書き換えます。
+ *
+ * (v265)案内文は2行までにし、意味の切れ目に \n(改行)を入れて書きます。
+ * c014.html の #tap-guide に white-space:pre-line を付けてあるので、\n の所で改行されます
+ * (textContent に入れた \n は、ふつうは空白1つとして扱われて改行になりません)。
+ *
+ * ⚠️ 1行は全角22文字まで。幅 360px の画面で1行に収まる長さです。長いと行の途中で折れ、
+ *    3行になって画面からはみ出します(sandbox/measure-tap-layout.html で測れる)。
+ */
 function setTapGuide(text){
 
     tapGuide.textContent = text;
