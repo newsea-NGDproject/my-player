@@ -1330,6 +1330,9 @@ function updateTapPhaseLabel(){
 /**
  * 測り始める位置を前後に動かします。
  *
+ * (v266)B地点の微調整画面(聴く画面)では、測り始める位置ではなく「聴く位置」を
+ * 動かします(nudgeTapListenPosition)。同じ ◀▶ のボタンが、画面によって役目を変えます。
+ *
  * @param {number} deltaSec - 動かす秒数(+で後ろ、-で前)
  */
 function nudgeTapPosition(deltaSec){
@@ -1337,8 +1340,52 @@ function nudgeTapPosition(deltaSec){
     // まだ曲を読み込めていない間は、動かす先が分からないので何もしません
     if(!tapState.songBuffer){ return; }
 
+    /*
+    B地点の聴く画面では、聴く位置だけを動かします(v266)。
+    ⚠️ 下の「タップを始めた後は動かせません」より先に分けること。B地点を叩き直した後の
+       微調整画面では taps が12回ぶん残っているので、順番が逆だと ◀▶ が効かなくなります。
+    */
+    if(isTapListeningAtB()){
+
+        nudgeTapListenPosition(deltaSec);
+
+        return;
+
+    }
+
     // タップを始めた後は動かせません(測り直しになるため)
     if(tapState.taps.length > 0){ return; }
+
+    const range = findTapPosRange();
+    const minSec = range.minSec;
+    const maxSec = range.maxSec;
+
+    let next = tapState.posSec + deltaSec;
+
+    if(next < minSec){ next = minSec; }
+    if(next > maxSec){ next = maxSec; }
+
+    // 端に着いていて動かないなら、鳴らし直さずに済ませます
+    if(next === tapState.posSec){ return; }
+
+    tapState.posSec = next;
+
+    updateTapPosLabel();
+
+    playTapSongFrom(tapState.posSec,false);
+
+}
+
+/**
+ * 今のフェーズで、位置を動かしてよい範囲を返します。
+ *
+ * (v266)nudgeTapPosition の中にあった計算を、中身を変えずに切り出しました。
+ * 測り始める位置(叩く前)と、B地点の聴く位置(nudgeTapListenPosition)の2か所で
+ * 同じ範囲を使うためです(範囲の決め方を1か所にまとめる)。
+ *
+ * @return {{minSec:number, maxSec:number}}
+ */
+function findTapPosRange(){
 
     const durationSec = tapState.songBuffer.duration;
 
@@ -1397,25 +1444,85 @@ function nudgeTapPosition(deltaSec){
 
     }
 
-    let next = tapState.posSec + deltaSec;
+    return { minSec: minSec, maxSec: maxSec };
 
-    if(next < minSec){ next = minSec; }
-    if(next > maxSec){ next = maxSec; }
+}
+
+/**
+ * 今、B地点の微調整画面(聴く画面)にいるか(v266)。
+ *
+ * ◀▶ のボタンと位置の表示が「測り始める位置」と「聴く位置」のどちらを扱うかを、
+ * この1か所で決めます。B地点の微調整パネルが出ていて、最後の確認ではない時です
+ * (A地点の微調整・最後の確認では ◀▶ の行を出していない)。
+ */
+function isTapListeningAtB(){
+
+    return tapState.phase === TAP_PHASE_B &&
+           !tapState.finalCheck &&
+           tapAdjustPanel.style.display !== "none";
+
+}
+
+/**
+ * B地点の聴く画面で、聴く位置だけを5秒ずつ動かします(v266。段0-3)。
+ *
+ * 【竹弘の要望(2026-11-07)】
+ *     「B地点で『まず聴く』。ただし、ここにもリズムがピッタリ重なっているか
+ *       わかりにくい曲もあるので、曲再生位置を5秒ずつ前後できるボタンを」
+ *     → 動かすのは「聴く位置だけ」(竹弘の判断)。理由:
+ *       「ノリノリアシストがあるので、あくまで精度の高いBPM取得と割り切りたい。
+ *         楽曲の聴ける範囲が少なくなってしまうのと、曲の途中ラップのようなものは
+ *         あるけど、最後の方で元の拍に戻ってくるような曲もある為」
+ *
+ * 【動かすもの・動かさないもの】
+ *     動かす   … tapState.playOffset(曲のどこから鳴らすか)だけ
+ *     動かさない … 接続点(endTS)・狙っている拍(targetBeat)・拍の格子・
+ *                  B地点の叩き始めの位置(posSec。「タップからやり直す」は元の B地点から)
+ * メトロノームは拍の格子から鳴らすので、どこから聴いても同じ線のカチッが聴けます。
+ * 速度・タイミングのボタンも playOffset から鳴らし直すので、動かした位置で続けて合わせられます。
+ *
+ * 【範囲】B地点の測り始める位置と同じ(findTapPosRange)。曲の真ん中〜終わりの20秒前。
+ *    ⚠️ 🕺の曲の確かめでは、最初の聴く位置(13拍目の3秒前)が範囲の外(終わりに近い側)に
+ *       あることがあります。その時に「▶」で前へ引き戻されないよう、押した向きにしか動かしません。
+ *
+ * @param {number} deltaSec - 動かす秒数(+で後ろ、-で前)
+ */
+function nudgeTapListenPosition(deltaSec){
+
+    const range = findTapPosRange();
+    const current = tapState.playOffset;
+
+    let next = current + deltaSec;
+
+    // 範囲の端で止めます。ただし、押した向きと逆へは動かしません(上の ⚠️)
+    if(deltaSec > 0 && next > range.maxSec){ next = Math.max(current,range.maxSec); }
+    if(deltaSec < 0 && next < range.minSec){ next = Math.min(current,range.minSec); }
 
     // 端に着いていて動かないなら、鳴らし直さずに済ませます
-    if(next === tapState.posSec){ return; }
+    if(next === current){ return; }
 
-    tapState.posSec = next;
+    // 鳴らし直すと playOffset が next になります(playTapSongFrom の中で書き換わる)
+    playTapSongFrom(next,true);
 
     updateTapPosLabel();
 
-    playTapSongFrom(tapState.posSec,false);
+    console.log(
+        "B地点の聴く位置を動かしました :",
+        formatTapTime(next) + " から",
+        "(接続点の13拍目 " + tapState.endTS.toFixed(3) + "s は動かしません)"
+    );
 
 }
 
 function updateTapPosLabel(){
 
-    tapPosLabel.textContent = formatTapTime(tapState.posSec) + " から";
+    /*
+    (v266)B地点の聴く画面では「聴く位置」(playOffset)を、それ以外(叩く前)では
+    「測り始める位置」(posSec)を出します。どちらかは isTapListeningAtB() が決めます。
+    */
+    const sec = isTapListeningAtB() ? tapState.playOffset : tapState.posSec;
+
+    tapPosLabel.textContent = formatTapTime(sec) + " から";
 
 }
 
@@ -2032,7 +2139,14 @@ function goToTapAdjust(){
 function showTapAdjustPanel(guideText,fromSec){
 
     tapZone.style.display = "none";
-    tapPosRow.style.display = "none";
+
+    /*
+    (v266)◀▶ の行は、B地点の微調整画面だけに出します(聴く位置を動かすため。
+    nudgeTapListenPosition)。A地点の微調整では今まで通り隠します。
+    位置の数字は、下で鳴らし始めた後に updateTapPosLabel() で書きます。
+    */
+    tapPosRow.style.display = (tapState.phase === TAP_PHASE_B) ? "flex" : "none";
+
     setTapLockUI(false);
     setTapAdjustUI(true);
 
@@ -2051,6 +2165,12 @@ function showTapAdjustPanel(guideText,fromSec){
 
     // ここからはメトロノームを重ねて鳴らします
     playTapSongFrom(fromSec,true);
+
+    /*
+    (v266)B地点では ◀▶ の行に「聴く位置」(今鳴らし始めた位置)を出します。
+    A地点では行が隠れているので、書いても見えません(害はない)。
+    */
+    updateTapPosLabel();
 
 }
 
