@@ -309,16 +309,18 @@ const TAP_DEFAULT_BPM = 120;
 
 /*
 A地点〜B地点の間の拍の数を数えた時、端数がこれより小さければ
-「数え違いの心配はない(安心)」とみなします(v263。段0-1)。
+「数え違いの心配はない(安心)」とみなします(v263 で作り、v267 から保存の判断に使う)。
 
     429.13拍 … 端数 0.13 → 429拍で安心
+    429.24拍 … 端数 0.24 → 怪しい(B地点が1/4拍ずれていそう)
     429.48拍 … 端数 0.48 → 429拍か430拍か決められない(怪しい)
 
-1/4拍にしているのは、ちょうど真ん中(0.5)との間に余裕を残すためです。
-⚠️ v263 では🐛のログの「安心 / 怪しい」の表示にだけ使います。
-   保存に使う段(0-4)の前に、0-1 のログの数字を見て見直します。
+(v267)0.25 → 0.2 に締めました。v263〜v266 の実機のログで、B地点を叩き直した
+Three Empty Words が端数 0.24 で、前の測定と比べると B地点が約1/4拍ずれていた
+ためです(B地点を引き継いだ曲は 0.00、B地点で遅延を動かした曲は 0.10〜0.17 だった)。
+数字の記録は private/tap-correction.html の9章(非公開)。
 */
-const TAP_WHOLE_SONG_SAFE_FRAC = 0.25;
+const TAP_WHOLE_SONG_SAFE_FRAC = 0.2;
 
 
 // ==========================================================
@@ -480,6 +482,13 @@ const tapState = {
     中身は confirmTapPhase() の A地点の確定で入れます。まだ確定していなければ null。
     */
     phaseASnapshot: null,
+
+    /*
+    最後の確認画面で決めた「曲全体のBPM」の判断(v267。decideTapWholeSongBpm の答え)。
+    最後の確認の結果の1行(updateTapFinalResult)と、保存のログに使います。
+    最後の確認を開くたびに入れ直すので、それより前の画面では null か前の答えのまま(使わない)。
+    */
+    wholeSong: null,
 
     wasPlaying: false   // 開く前に曲が鳴っていたか(閉じる時に戻すため)
 
@@ -2002,8 +2011,8 @@ function fitTapBeatGrid(taps){
  * 0.5 に近い時は、目安のBPMが粗くて数え違えそうか、B地点だけ裏で
  * 叩いた(半拍ずれた)かのどちらかです。安心の線は TAP_WHOLE_SONG_SAFE_FRAC。
  *
- * ⚠️ v263 の時点では🐛のログ(logTapWholeSong など)だけが使います。
- *    保存する値には、まだ一切使っていません(使うのは段0-4 の予定)。
+ * (v267)保存の判断に使い始めました(decideTapWholeSongBpm)。🐛のログ
+ * (logTapWholeSong など。本番前に消す)も、引き続きこの関数で数えています。
  *
  * @param  {number} startTS  - A地点の1拍目(秒)
  * @param  {number} endTS    - B地点の13拍目(秒)
@@ -2042,6 +2051,65 @@ function findTapWholeSongGrid(startTS,endTS,guideBpm){
         frac: frac,
         bpm: 60 * beats / lengthSec,
         safe: Math.abs(frac) <= TAP_WHOLE_SONG_SAFE_FRAC
+    };
+
+}
+
+/**
+ * 曲全体のBPMを使ってよいかを決めます(v267。段0-4)。画面にも保存にも触らない「判断だけ」の関数です。
+ *
+ * ------------------------------------------------------------------
+ * 【決まり(竹弘と決めた 2026-11-09)】
+ *
+ *   ① A〜B の拍の数を「A地点で耳合わせしたBPM」(A地点を確定した時の控え phaseASnapshot)で数える
+ *   ② 「B地点で最後に合わせていたBPM」(今の tapState.bpm)でも数える
+ *   ③ 2つが同じ拍の数で、どちらも端数が TAP_WHOLE_SONG_SAFE_FRAC(0.2拍)以内 → 使ってよい(ok)
+ *   ④ それ以外 → 使わない。今までどおりの値(②のBPM)で保存する(今より悪くはならない)
+ *
+ * 【なぜ「叩いた12回のBPM」で数えないのか】
+ * 竹弘が12回叩いたBPMは、耳で合わせた後より速めに出ることが多い(v263〜v266 の実機で
+ * 12回のうち9回が +0.25〜2.9%)。B地点を叩き直した4曲では、叩いた12回のBPMで数えると
+ * 4曲とも A と1〜3拍食い違った。耳で合わせた後の値なら、4曲のうち3曲で揃った。
+ *
+ * 【なぜ A を基準にするのか】
+ * A地点の微調整では、メトロノームを60秒聴きながら合わせられます。B地点は曲の終わり近くで
+ * 聴ける時間が短く、BPM を追い込みきれません(B地点を叩き直した曲で外れやすかった)。
+ *
+ * ⚠️ ok の時に使うのは「拍の数 ÷ A〜Bの長さ」の BPM です。1拍目(startTS)と
+ *    接続点(endTS)はどちらも動かさず、その間を1本の線でつなぎます。
+ *    だから、アシストの拍が接続点で跳ぶことがなくなります(⑲ の録音の 58ms の件)。
+ *
+ * @return {{ok:boolean, bpm:number, beats:number|null, bpmA:number, bpmNow:number,
+ *           gridA:object|null, gridNow:object|null}}
+ *         ok     … 曲全体のBPMを使ってよいか
+ *         bpm    … 使うBPM(ok なら曲全体のBPM、そうでなければ今のBPMのまま)
+ *         beats  … A〜B の拍の数(ok の時だけ)
+ *         bpmA / bpmNow / gridA / gridNow … 判断に使った値(🐛のログと試験のため)
+ */
+function decideTapWholeSongBpm(){
+
+    const bpmNow = tapState.bpm;
+
+    // A地点の控えが無い時(ふつうは起きない)は、今のBPMで両方を数えます
+    const bpmA = (tapState.phaseASnapshot && tapState.phaseASnapshot.bpm > 0)
+        ? tapState.phaseASnapshot.bpm
+        : bpmNow;
+
+    const gridA = findTapWholeSongGrid(tapState.startTS,tapState.endTS,bpmA);
+    const gridNow = findTapWholeSongGrid(tapState.startTS,tapState.endTS,bpmNow);
+
+    const ok = !!gridA && !!gridNow &&
+               gridA.beats === gridNow.beats &&
+               gridA.safe && gridNow.safe;
+
+    return {
+        ok: ok,
+        bpm: ok ? gridA.bpm : bpmNow,
+        beats: ok ? gridA.beats : null,
+        bpmA: bpmA,
+        bpmNow: bpmNow,
+        gridA: gridA,
+        gridNow: gridNow
     };
 
 }
@@ -2230,6 +2298,35 @@ function startTapFinalCheck(){
     tapState.finalCheck = true;
     tapState.halfShifted = false;
 
+    /*
+    ---- 曲全体のBPMにするかを決めます(v267。段0-4)----
+
+    A地点の1拍目と B地点の13拍目の間の拍の数を数え、決まりを満たせば
+    「拍の数 ÷ A〜Bの長さ」のBPMに入れ替えます(決まりは decideTapWholeSongBpm のコメント)。
+    この画面のメトロノームも、数字の窓も、確定保存で保存する値も、ここからはこのBPMです。
+
+    ⚠️ ここで tapState.bpm を書き換えるので、下の beatDur の計算より先にやること。
+    ⚠️ 1拍目(startTS)と接続点(endTS)は動かしません。BPM だけを、2つを結ぶ線の傾きにします。
+    ⚠️ 「A地点の微調整へ戻る」(backToTapAdjustA)は A地点の控えから BPM を戻すので、
+       ここで書き換えても、戻れば A地点の値に戻ります。
+    */
+    const whole = decideTapWholeSongBpm();
+
+    tapState.wholeSong = whole;
+
+    if(whole.ok){
+        tapState.bpm = whole.bpm;
+    }
+
+    console.log(
+        "曲全体のBPM :",
+        whole.ok
+            ? "✅ " + whole.bpm.toFixed(4) + "(A〜B " + whole.beats + "拍)で保存します"
+            : "⚠️ 拍の数を決めきれないので、今までどおり " + whole.bpmNow.toFixed(2) + " で保存します",
+        "/ Aの " + whole.bpmA.toFixed(2) + " で " + (whole.gridA ? whole.gridA.beatsRaw.toFixed(2) + "拍" : "数えられない"),
+        "/ Bの " + whole.bpmNow.toFixed(2) + " で " + (whole.gridNow ? whole.gridNow.beatsRaw.toFixed(2) + "拍" : "数えられない")
+    );
+
     const beatDur = 60 / tapState.bpm;
 
     /*
@@ -2266,6 +2363,9 @@ function startTapFinalCheck(){
     );
 
     updateTapFinalLabel();
+
+    // (v267)曲全体のBPMにしたかどうかを、この画面の1行に出します
+    updateTapFinalResult();
 
     updateTapMonitor();
 
@@ -2348,6 +2448,42 @@ function updateTapFinalLabel(){
 
     // 色でも分かるようにします(文字だけだと見落とすため)
     button.classList.toggle("tap-half-on",tapState.halfShifted);
+
+}
+
+/**
+ * 最後の確認画面の結果の1行を書きます(v267。段0-4)。
+ *
+ *     ✅ 曲全体のBPM 83.48(A〜B 269拍)
+ *     ⚠️ 拍の数を決めきれません。
+ *        今までどおりの値で保存します。
+ *
+ * 判断は startTapFinalCheck() が tapState.wholeSong に入れておきます。
+ * 色は CSS の .is-ok(緑)/ .is-ng(黄)で付けます。\n の所で改行します(white-space:pre-line)。
+ * ⚠️ 決めきれなかった曲は、段0-5 で「🎯 精度を高める(C地点)」へ案内する予定です。
+ */
+function updateTapFinalResult(){
+
+    const el = document.getElementById("tap-final-result");
+
+    if(!el){ return; }
+
+    const whole = tapState.wholeSong;
+
+    if(!whole){
+
+        el.textContent = "";
+        el.classList.remove("is-ok","is-ng");
+        return;
+
+    }
+
+    el.textContent = whole.ok
+        ? "✅ 曲全体のBPM " + whole.bpm.toFixed(2) + "(A〜B " + whole.beats + "拍)"
+        : "⚠️ 拍の数を決めきれません。\n今までどおりの値で保存します。";
+
+    el.classList.toggle("is-ok",whole.ok);
+    el.classList.toggle("is-ng",!whole.ok);
 
 }
 
@@ -2796,6 +2932,10 @@ function closeTapCorrection(){
  *     startTS   … A地点の1拍目
  *     endTS     … B地点の13拍目(曲の接続点)
  *
+ * (v267)manualBPM は、最後の確認で決めた「曲全体のBPM」(1拍目と13拍目を結ぶ線の傾き)に
+ * なることがあります(startTapFinalCheck → decideTapWholeSongBpm)。この関数は
+ * tapState.bpm をそのまま保存するだけで、どちらの値かは見ていません。
+ *
  * ⚠️ 遅延の補正は測定中にタイムスタンプへ焼き込み済みです。
  *    再生する時にもう一度ずらしてはいけません(二重補正になります)。
  *
@@ -2846,7 +2986,9 @@ async function saveTapResult(){
         console.log(
             "タップ補正の結果を保存しました :",
             track.file_name,
-            "/ BPM " + tapState.bpm.toFixed(2),
+            "/ BPM " + tapState.bpm.toFixed(2) +
+            // (v267)曲全体のBPMで保存したか(最後の確認で決めた判断)
+            ((tapState.wholeSong && tapState.wholeSong.ok) ? "(曲全体 " + tapState.wholeSong.beats + "拍)" : "(今までどおり)"),
             "/ 1拍目 " + tapState.startTS.toFixed(3) + "s",
             "/ 13拍目 " + tapState.endTS.toFixed(3) + "s",
             "/ 遅延 " + tapState.latencyMs + "ms",
