@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v266)ノリRun
+        (v267)ノリRun
         メインメニュー
 
     </title>
@@ -7206,6 +7206,22 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
 
         .tap-adj-group button.tap-half-on:active{ background:#33ddff; }
 
+        /*
+        最後の確認画面の結果の1行(v267。段0-4)。
+        ✅ 曲全体のBPMにした時は緑、⚠️ 決めきれなかった時は黄色(js/tap.js の updateTapFinalResult)。
+        white-space:pre-line は、文の中の \n を改行として出す指定(案内文と同じ)。
+        */
+        #tap-final-result{
+            margin:2px 0 0;
+            font-size:0.82rem;
+            font-weight:bold;
+            line-height:1.4;
+            white-space:pre-line;
+        }
+
+        #tap-final-result.is-ok{ color:#00ff88; }
+        #tap-final-result.is-ng{ color:#ffcc00; }
+
         .tap-adj-group button{
             flex:1;
             padding:10px 2px;    /* (v265)前は 13px 2px。指で押す高さは約38pxを残す */
@@ -8972,6 +8988,13 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
                リズムが崩れがちで、確認には向きません)。
         -->
         <div id="tap-final" style="display:none;">
+
+            <!--
+                (v267)曲全体のBPMにしたかどうかの1行(段0-4)。
+                ✅ 曲全体のBPM 83.48(A〜B 269拍) / ⚠️ 拍の数を決めきれません。今までどおりの値で保存します。
+                文字と色は js/tap.js の updateTapFinalResult が書きます。
+            -->
+            <p id="tap-final-result"></p>
 
             <p class="tap-desc">
                 メトロノームが曲の拍と合っていますか
