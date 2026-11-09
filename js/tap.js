@@ -378,6 +378,17 @@ judgeTapTempoSide がこの線で「どこだけテンポが違うか」を見�
 */
 const TAP_TEMPO_SAME_FRAC = 0.01;
 
+/*
+C地点で叩き直した時(v271)、叩いた線のどの拍を「C の拍」にするかです。拍番号で、5 = 9回目に叩いた拍。
+
+叩いた12回のうち使うのは5回目〜12回目の8回で、その拍番号は 1〜8 です(fitTapBeatGrid)。
+線は8回のまん中(拍番号 4.5)で一番正確なので、そこにいちばん近い 5 にしました。
+A地点(拍番号1)・B地点(拍番号9)は線の端なので、叩いた12回の BPM の誤差がそのまま位置に出ますが、
+まん中ならほとんど出ません。C地点で叩き直す時は速さ(BPM)を使わず、位置だけを使うので、まん中が向いています
+(placeTapCByTaps のコメント)。
+*/
+const TAP_C_TAPPED_BEAT = 5;
+
 
 // ==========================================================
 // 2. 今の状態
@@ -1062,11 +1073,11 @@ function refreshTapRetryVisible(){
     const finalShown  = tapFinalPanel.style.display  !== "none";
 
     /*
-    (v268)C地点の微調整画面では「タップからやり直す」を出しません(段0-5a。C地点で叩き直すのは
-    0-5b で足す)。竹弘の見込み「タップをし直さなければならないほどの修正は多くはない」(2026-11-09)。
-    下の段は「やめる」だけになり、幅いっぱいに広がります。
+    (v268)C地点の微調整画面では「タップからやり直す」を出しませんでした(段0-5a)。
+    (v271)C地点でも出します(竹弘の要望「C地点で『タップからやり直す』が欲しい」2026-11-09。MISIA で)。
+    押した時の動きは retryTapFromAdjust(C地点では叩く場所を C地点の3秒前にしてから叩き直す)。
     */
-    const retryShown = adjustShown && tapState.phase !== TAP_PHASE_C;
+    const retryShown = adjustShown;
 
     tapRetryAdjust.style.display = retryShown ? "block" : "none";
 
@@ -1151,6 +1162,18 @@ function resetTapPhase(){
         setTapGuide(
             "曲のリズムに合わせて" + TAP_TOTAL_COUNT + "回タップ。\n" +
             "最初の" + TAP_DISCARD_COUNT + "回は助走で、計算に使いません。"
+        );
+
+    }
+    else if(tapState.phase === TAP_PHASE_C){
+
+        /*
+        (v271)C地点で叩き直す時。速さは叩く前のまま、拍の位置だけを使うことを先に伝えます
+        (placeTapCByTaps のコメント)。⚠️ 2行目は22文字より短く(画面の高さを変えないため)。
+        */
+        setTapGuide(
+            "曲の後半(C地点)で" + TAP_TOTAL_COUNT + "回タップ。\n" +
+            "速さはそのまま、拍の位置だけを使います。"
         );
 
     }
@@ -1554,6 +1577,22 @@ function nudgeTapPosition(deltaSec){
  * @return {{minSec:number, maxSec:number}}
  */
 function findTapPosRange(){
+
+    /*
+    (v271)C地点で叩き直す画面では、C地点の範囲(A〜B の 60%〜80%。findTapCRange)の中で動かします。
+    返すのは「測り始める位置」(posSec)の範囲なので、C地点の聴き始めと同じく3秒前にずらします
+    (C地点の画面は、いつも C地点の3秒前から鳴らすため)。
+    */
+    if(tapState.phase === TAP_PHASE_C){
+
+        const cRange = findTapCRange();
+
+        return {
+            minSec: Math.max(0,cRange.minSec - TAP_REPLAY_LEAD_SEC),
+            maxSec: Math.max(0,cRange.maxSec - TAP_REPLAY_LEAD_SEC)
+        };
+
+    }
 
     const durationSec = tapState.songBuffer.duration;
 
@@ -2609,6 +2648,24 @@ function goToTapAdjust(){
 
     }
 
+    /*
+    (v271)C地点で叩き直した時は、別の道です。速さ(BPM)は使わず、拍の位置だけを使います
+    (placeTapCByTaps)。⚠️ 下の tapState.bpm・beatOriginSec の書き換えより先に分けること
+    (C地点の速さは、叩く前の線のまま残すため)。
+    */
+    if(tapState.phase === TAP_PHASE_C){
+
+        tapState.measured = true;
+
+        // 【開発用調査ログ】(v263)叩いた時刻の2つの取り方を比べて🐛に出します(A地点・B地点と同じ。記録するだけ)
+        logTapTimingCompare(grid);
+
+        placeTapCByTaps(grid);
+
+        return;
+
+    }
+
     tapState.bpm = 60 / grid.beatDur;
     tapState.beatOriginSec = grid.origin;
 
@@ -2671,6 +2728,100 @@ function goToTapAdjust(){
         "ぴったり重なるまで調整してください。",
         tapState.playOffset
     );
+
+}
+
+/**
+ * C地点で12回叩き直した後に、C の拍を「叩いた位置」へ置き直します(v271)。
+ *
+ * ------------------------------------------------------------------
+ * 【竹弘の要望(2026-11-09)】
+ *     「C地点で『タップからやり直す』が欲しい」(MISIA アイノカタチで。A の線が C で大きく外れていて、
+ *      タイミングのボタンで合わせるのが大変だった)
+ *
+ * 【使うのは位置だけ。速さは叩く前のまま】
+ * 竹弘が12回叩いた BPM は、耳で合わせた後より速めに出る癖があります(v263〜v266 の実機で12回中9回が
+ * +0.25〜2.9%。private/tap-correction.html の9章)。これを C のテンポにすると、v270 のテンポの比べっこ
+ * (judgeTapTempoSide。1% で「違う」)を狂わせます。だから叩いた線からは「拍がどこにあるか」だけを取り、
+ * 速さは叩く前の線(当てた線。C地点で速度を合わせていればその速さ)のままにします。
+ * だんだんずれていたら、今までどおり速度で合わせてもらいます(支点は C の拍。v269)。
+ *
+ * 【やっていること】
+ *     ① 叩いた線の拍番号 TAP_C_TAPPED_BEAT(5 = 9回目に叩いた拍)の秒を出す(線のまん中なので一番正確)。
+ *        叩いた時刻はそのままだと遅れて聞こえた音に合わせた値なので、A地点・B地点と同じく
+ *        今のタイミング(latencyMs)を足します(goToTapAdjust の applyTapLatencyShift と同じ考え方)
+ *     ② その秒が、叩く前の線で「1拍目から何拍目か」を数える(四捨五入)。
+ *        1拍目からの拍の数は、C地点に入った時と同じく当てた線で数える決まり(placeTapCAt のコメント)
+ *     ③ 速さはそのまま、②の拍が①の秒に来るように線を置き直す(= C地点で自動でタイミングを合わせたのと同じ)
+ *
+ * ⚠️ C の拍は叩いた所(C地点の聴き始めから10秒くらい後)へ移ります。60%〜80% の範囲から少しはみ出すことが
+ *    ありますが、判断(decideTapWholeSongBpmWithC)は 1拍目と接続点の間なら使えます。◀▶ は押した向きにしか
+ *    動かさないので(nudgeTapCPosition)、はみ出していても ◀ で範囲の中へ戻せます。
+ * ⚠️ 叩く前の線が C で半拍くらい外れていた時は、②の四捨五入がどちらの拍にも転びえます(C地点で
+ *    タイミングで合わせる時と同じ迷い)。その時は A〜B の拍の数の端数が大きくなり、最後の確認で分かります。
+ * ------------------------------------------------------------------
+ *
+ * @param {{beatDur:number, origin:number}} grid - 叩いた8回から引いた線(fitTapBeatGrid の答え)
+ */
+function placeTapCByTaps(grid){
+
+    const oldBeatDur = 60 / tapState.bpm;
+    const oldOrigin = tapState.beatOriginSec;
+    const oldCSec = tapState.cTS;
+
+    // ① 叩いた線のまん中の拍の秒(+ 今のタイミング)
+    const tappedSec = grid.origin + grid.beatDur * TAP_C_TAPPED_BEAT + tapState.latencyMs / 1000;
+
+    // ② 叩く前の線で、1拍目から何拍目か(拍番号。拍番号1 = 1拍目なので、1拍目からの拍の数は beat − 1)
+    const beat = Math.round((tappedSec - oldOrigin) / oldBeatDur);
+
+    // ③ 速さはそのまま、その拍が叩いた秒に来るように線を置き直します
+    if(isFinite(beat) && isFinite(oldBeatDur) && oldBeatDur > 0){
+
+        tapState.targetBeat = beat;
+        tapState.beatOriginSec = tappedSec - oldBeatDur * beat;
+
+    }
+
+    updateTapTargetTS();
+
+    console.log(
+        "C地点を叩き直しました :",
+        "叩いた12回の BPM " + (60 / grid.beatDur).toFixed(2) + "(速さには使いません)",
+        "/ C の拍 " + oldCSec.toFixed(3) + "s → " + tapState.cTS.toFixed(3) + "s",
+        "(1拍目から " + (tapState.targetBeat - 1) + "拍・A〜B の " +
+        Math.round((tapState.cTS - tapState.startTS) / (tapState.endTS - tapState.startTS) * 100) + "%)",
+        "/ 速さ " + tapState.bpm.toFixed(2) + " のまま / タイミング " + tapState.latencyMs + "ms"
+    );
+
+    /*
+    C地点の微調整画面へ戻ります。聴き始めは、C の拍の3秒前(C地点の画面の決まり。nudgeTapCPosition)。
+    ⚠️ 2行目は C地点の案内と同じ。1行目は22文字より短く(画面の高さを変えないため)。
+    */
+    showTapAdjustPanel(
+        "叩いた位置に、C の拍を置き直しました。\n" +
+        "ずれは、まずタイミングで合わせてください。",
+        Math.max(0,tapState.cTS - TAP_REPLAY_LEAD_SEC)
+    );
+
+}
+
+/**
+ * 微調整画面の「タップからやり直す」が押された時の処理です(v271)。
+ *
+ * A地点・B地点は今まで通り resetTapPhase だけです(叩く場所 posSec は、その地点で叩き始めた所のまま)。
+ * C地点だけは、叩く場所を「今聴いている C地点の3秒前」(聴き始めの位置 playOffset)にしてから叩き直します。
+ * C地点には「叩き始めた所」が無い(🎯 から直接、微調整画面に入る)ためです。
+ */
+function retryTapFromAdjust(){
+
+    if(tapState.phase === TAP_PHASE_C){
+
+        tapState.posSec = Math.max(0,tapState.playOffset);
+
+    }
+
+    resetTapPhase();
 
 }
 
@@ -3366,6 +3517,7 @@ function backToTapAdjustA(){
  *     「C地点も、C地点の微調整画面にジャンプしたい。必要であれば、C地点でタップし直せばいい。
  *       おそらく、タップをし直さなければならないほどの修正は多くはないと思う」
  *     → 0-5a は「聴く・合わせる・確定」だけ。C地点で叩き直すのは 0-5b。
+ *     (v271)C地点で叩き直せるようにした(retryTapFromAdjust → 12回 → placeTapCByTaps。位置だけを使う)。
  *
  * 【当てる線】1拍目(startTS)から引いた線を、曲の後半(C地点)まで伸ばして聴いてもらいます。
  *     A+B で決められた曲(✅) … 1拍目と接続点を結ぶ線(曲全体のBPM)
@@ -4267,7 +4419,9 @@ document.getElementById("tap-pos-fwd").onclick = function(){
 
 document.getElementById("tap-to-adjust").onclick = goToTapAdjust;
 tapRetryLock.onclick = resetTapPhase;
-tapRetryAdjust.onclick = resetTapPhase;
+
+// (v271)微調整画面の「タップからやり直す」は、C地点で叩く場所を決めてから叩き直します(retryTapFromAdjust)
+tapRetryAdjust.onclick = retryTapFromAdjust;
 
 // 最後の確認画面の「A地点の微調整へ戻る」(v264)
 tapBackA.onclick = backToTapAdjustA;
@@ -4570,7 +4724,7 @@ function logTapTimingCompare(grid){
 
         console.log(
             "【開発用調査ログ】(v263)叩いた時刻のばらつき(" +
-            (tapState.phase === TAP_PHASE_A ? "A地点" : "B地点") + "・" + beats.length + "点。" +
+            (tapState.phase === TAP_PHASE_A ? "A地点" : (tapState.phase === TAP_PHASE_C ? "C地点" : "B地点")) + "・" + beats.length + "点。" +
             "線からの外れの二乗平均) : 音の時計 " + song.spreadMs.toFixed(1) + "ms" +
             "(BPM " + song.bpm.toFixed(2) + ") / 指の時刻 " + finger.spreadMs.toFixed(1) + "ms" +
             "(BPM " + finger.bpm.toFixed(2) + ")"
