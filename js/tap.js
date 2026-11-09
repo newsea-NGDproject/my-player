@@ -2719,7 +2719,13 @@ function goToTapAdjust(){
     遅延はイヤホンの性質なので、曲が変わっても同じ値のはずです。
     1曲目で合わせておけば、2曲目以降は最初から合った状態で
     始められます(369曲を測ることを考えると、この差は大きい)。
+
+    (v272)B地点で叩き直した時は、A地点を確定した時のタイミングを当てます(findTapRetapLatencyMs のコメント)。
+    B地点で「まずタイミングで」A の線のずれを直していた分(v269 から)は、叩いた位置には足しません。
+    A地点では今まで通り、今のタイミングのままです。
     */
+    tapState.latencyMs = findTapRetapLatencyMs();
+
     applyTapLatencyShift(tapState.latencyMs);
 
     // (v265)\n の所で改行します(setTapGuide のコメント参照)
@@ -2749,7 +2755,9 @@ function goToTapAdjust(){
  * 【やっていること】
  *     ① 叩いた線の拍番号 TAP_C_TAPPED_BEAT(5 = 9回目に叩いた拍)の秒を出す(線のまん中なので一番正確)。
  *        叩いた時刻はそのままだと遅れて聞こえた音に合わせた値なので、A地点・B地点と同じく
- *        今のタイミング(latencyMs)を足します(goToTapAdjust の applyTapLatencyShift と同じ考え方)
+ *        タイミングを足します(goToTapAdjust の applyTapLatencyShift と同じ考え方)。
+ *        (v272)足すのは A地点を確定した時のタイミング(findTapRetapLatencyMs)。v271 は今のタイミングを
+ *        足していて、B地点で A の線のずれを直した分(−460ms)まで入ってしまった
  *     ② その秒が、叩く前の線で「1拍目から何拍目か」を数える(四捨五入)。
  *        1拍目からの拍の数は、C地点に入った時と同じく当てた線で数える決まり(placeTapCAt のコメント)
  *     ③ 速さはそのまま、②の拍が①の秒に来るように線を置き直す(= C地点で自動でタイミングを合わせたのと同じ)
@@ -2769,7 +2777,13 @@ function placeTapCByTaps(grid){
     const oldOrigin = tapState.beatOriginSec;
     const oldCSec = tapState.cTS;
 
-    // ① 叩いた線のまん中の拍の秒(+ 今のタイミング)
+    /*
+    (v272)叩いた位置に足すタイミングは、A地点を確定した時の値です(findTapRetapLatencyMs のコメント)。
+    画面のタイミングの数字もこの値から始めます(C地点で動かした分は、確定で C へ入る前の値に戻る。beforeC)。
+    */
+    tapState.latencyMs = findTapRetapLatencyMs();
+
+    // ① 叩いた線のまん中の拍の秒(+ A地点のタイミング)
     const tappedSec = grid.origin + grid.beatDur * TAP_C_TAPPED_BEAT + tapState.latencyMs / 1000;
 
     // ② 叩く前の線で、1拍目から何拍目か(拍番号。拍番号1 = 1拍目なので、1拍目からの拍の数は beat − 1)
@@ -2791,7 +2805,7 @@ function placeTapCByTaps(grid){
         "/ C の拍 " + oldCSec.toFixed(3) + "s → " + tapState.cTS.toFixed(3) + "s",
         "(1拍目から " + (tapState.targetBeat - 1) + "拍・A〜B の " +
         Math.round((tapState.cTS - tapState.startTS) / (tapState.endTS - tapState.startTS) * 100) + "%)",
-        "/ 速さ " + tapState.bpm.toFixed(2) + " のまま / タイミング " + tapState.latencyMs + "ms"
+        "/ 速さ " + tapState.bpm.toFixed(2) + " のまま / タイミング " + tapState.latencyMs + "ms(A地点の値)"
     );
 
     /*
@@ -2803,6 +2817,40 @@ function placeTapCByTaps(grid){
         "ずれは、まずタイミングで合わせてください。",
         Math.max(0,tapState.cTS - TAP_REPLAY_LEAD_SEC)
     );
+
+}
+
+/**
+ * 叩き直した12回に足すタイミング(ms)を返します(v272)。
+ *
+ * ------------------------------------------------------------------
+ * 【何のためのタイミングか】
+ * 叩いた時刻は、イヤホンで遅れて聞こえた音に、竹弘の叩き癖が乗った値です。だから A地点・B地点・C地点の
+ * どこで叩いても、同じ「イヤホンの遅れ + 叩き癖」の分を足して、本物の拍の位置に直します(goToTapAdjust の
+ * applyTapLatencyShift)。この分を一番よく表しているのは、**A地点で12回叩いて耳で合わせた時のタイミング**です。
+ *
+ * 【なぜ「今のタイミング」ではいけないのか(v271 の実機で分かった。2026-11-09)】
+ * v269 から、B地点で A の線がずれていたら「まずタイミングで」合わせます。この時に動かしたタイミング
+ * (MISIA の実機で −460ms)は、イヤホンの遅れではなく「A の線のずれ」の直しです。今のタイミング(−500ms)を
+ * そのまま叩き直した位置に足すと、その分だけ C の拍(B地点で叩き直したら接続点)がずれます。
+ * 実機では C の拍が 0.47秒早く置かれ、竹弘がタイミングを +470ms 押して戻していた。
+ *
+ *     A地点 … 今のタイミング(A地点で合わせている最中の値)
+ *     B地点・C地点 … A地点を確定した時のタイミング(phaseASnapshot.latencyMs)。控えが無い時だけ今の値
+ * ------------------------------------------------------------------
+ *
+ * @return {number} 叩き直した12回に足すタイミング(ms)
+ */
+function findTapRetapLatencyMs(){
+
+    if(tapState.phase !== TAP_PHASE_A &&
+       tapState.phaseASnapshot && isFinite(tapState.phaseASnapshot.latencyMs)){
+
+        return tapState.phaseASnapshot.latencyMs;
+
+    }
+
+    return tapState.latencyMs;
 
 }
 
