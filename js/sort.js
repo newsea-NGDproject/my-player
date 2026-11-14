@@ -7,7 +7,7 @@
 【このファイルの役割】
 
  曲一覧の見出し横にある ⇅ ボタンを押すとメニューが開き、
- 7つの並び順から選べます。
+ 8つの並び順から選べます。
 
    🕺 ノリ注入順     … 最近ノリを注入した曲を上に
    ⭐ お気に入り順   … 最近お気に入りにした曲を上に
@@ -16,6 +16,7 @@
    🔤 タイトル順     … 曲名のあいうえお順
    🎤 アーティスト順 … アーティスト名のあいうえお順
    ⏱ 曲の長さ順     … 短い曲から順に
+   🎼 元ピッチ速度順 … 曲の本来のテンポが遅い曲から順に(v274)
 
  同じ項目をもう一度選ぶと、昇順と降順が入れ替わります。
  今どの順番で並んでいるかは、メニューの中に ▲▼ で表示されます。
@@ -63,6 +64,19 @@
 日付系を desc(新しい順)にしているのは、「さっき入れた曲を
 すぐ見つけたい」という使い方になるためです。
 名前や長さは asc(あいうえお順・短い順)が自然なのでそちらにしています。
+
+【"base_bpm" だけはフィールド名ではありません(v274)】
+
+元ピッチ速度順の key "base_bpm" は、music_library のフィールド名
+ではなく、この並び順に付けた名前です。並べる値は1つのフィールドから
+取れず、getEffectiveBaseBpm()(js/pitch.js)が manualBPM と baseBPM の
+どちらを使うかを決めて返す値だからです(下の compareTracks の解説)。
+⚠️ この名前は settings の main_sort_order に "base_bpm_asc" の形で
+   保存されるので、後から変えると前回の並び順が読めなくなります。
+
+元ピッチ速度順を asc(遅い順)から始めるのは、竹弘の頼み(2026-11-14)が
+「⑬ 拍倍率の試験で、遅い曲(59BPM・76BPM など)を選びやすくしたい」
+だったためです。
 */
 const SORT_DEFINITIONS = [
     { key:"nori_injected_at", icon:"🕺", label:"ノリ注入順",     defaultOrder:"desc" },
@@ -71,7 +85,8 @@ const SORT_DEFINITIONS = [
     { key:"registered_at",    icon:"🆕", label:"登録日時順",     defaultOrder:"desc" },
     { key:"title",            icon:"🔤", label:"タイトル順",     defaultOrder:"asc"  },
     { key:"artist",           icon:"🎤", label:"アーティスト順", defaultOrder:"asc"  },
-    { key:"duration",         icon:"⏱", label:"曲の長さ順",     defaultOrder:"asc"  }
+    { key:"duration",         icon:"⏱", label:"曲の長さ順",     defaultOrder:"asc"  },
+    { key:"base_bpm",         icon:"🎼", label:"元ピッチ速度順", defaultOrder:"asc"  }
 ];
 
 /*
@@ -157,7 +172,58 @@ function compareTracks(trackA,trackB,key){
         return (trackA.registered_at || 0) - (trackB.registered_at || 0);
     }
 
+    if(key === "base_bpm"){
+
+        /*
+        元ピッチ速度順(v274)。
+
+        上半分の「元ピッチ：___」に出ている数字と同じ値で比べます。
+        その数字を決めているのは getEffectiveBaseBpm()(js/pitch.js)の
+        1か所なので、ここでも自分で式を書かずにそれを呼びます
+        (ノリ注入した曲は耳で測った manualBPM、まだの曲は自動解析の
+         baseBPM。画面の数字と並びが食い違わないようにするため)。
+
+        元ピッチがまだ分からない曲は、ここに来る前に applySort が
+        一番下へ分けています(下の isSortValueMissing)。
+        */
+        return getEffectiveBaseBpm(trackA) - getEffectiveBaseBpm(trackB);
+
+    }
+
     return 0;
+
+}
+
+/**
+ * その曲に、並べるための値がまだ無いかどうかを返します(v274)。
+ *
+ * true を返した曲は、applySort が昇順でも降順でも一番下へまとめます
+ * (ただし除外曲よりは上)。
+ *
+ * 【今これに当てはまるのは、元ピッチ速度順だけ】
+ *
+ * 登録したばかりの曲は、baseBPM に仮の 120 が入っています
+ * (docs/db-schema.md の baseBPM)。自動解析は「その曲を初めて鳴らした
+ * 時」に動くので、一度も鳴らしていない曲は本当のテンポが分かりません。
+ * 仮の 120 のまま並べると、120BPM の曲の間に混ざって見分けが付かなく
+ * なるため、分からない曲は分けて下に置きます。
+ *
+ * 分かっているかどうかの見分け方は、bpm.js の決まりに合わせています。
+ *   ・manualBPM がある(ノリ注入で耳で測った)→ 分かっている
+ *   ・bpm_analyzer_version が 1 以上(一度は自動解析した)→ 分かっている
+ *   ・どちらも無い → まだ分からない
+ * ⚠️ baseBPM が 120 かどうかでは決めません。本当に 120 の曲と区別が
+ *    付かないためです(docs/db-schema.md の baseBPM の注意と同じ)。
+ *
+ * ほかの並び順は false を返すだけなので、今までの並び方は変わりません。
+ */
+function isSortValueMissing(track,key){
+
+    if(key === "base_bpm"){
+        return !track.manualBPM && !((track.bpm_analyzer_version || 0) > 0);
+    }
+
+    return false;
 
 }
 
@@ -479,6 +545,26 @@ async function applySort(key){
 
         if(excludedA !== excludedB){
             return excludedA - excludedB;
+        }
+
+        /*
+        並べる値がまだ無い曲も、向きに関係なく下へ(v274)。
+
+        上の除外曲とまったく同じ形です。符号を反転する前に決着を
+        つけるので、降順にしても上へ飛んでいきません。
+        除外の判定より後ろに置いているので、並びは
+
+            ふつうの曲 → 値がまだ無い曲 → 除外曲
+
+        になります(除外曲は今までどおり、必ず一番下)。
+        今これに当てはまるのは元ピッチ速度順だけで、ほかの並び順では
+        isSortValueMissing がいつも false なので素通りします。
+        */
+        const missingA = isSortValueMissing(trackA,currentSortKey) ? 1 : 0;
+        const missingB = isSortValueMissing(trackB,currentSortKey) ? 1 : 0;
+
+        if(missingA !== missingB){
+            return missingA - missingB;
         }
 
         const result = compareTracks(trackA,trackB,currentSortKey);
