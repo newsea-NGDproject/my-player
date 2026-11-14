@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v272)ノリRun
+        (v273)ノリRun
         メインメニュー
 
     </title>
@@ -7344,8 +7344,58 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         「A地点の微調整へ戻る」(v264)。日本語は放っておくと文字の途中で折れるので、
         keep-all で折れないようにし、HTML の <wbr> の所(「A地点の」の後)だけで折ります。
         */
-        #tap-back-a{
+        /*
+        (v273)「タップからやり直す」と「📍」も同じ。3つ並んだ時に <wbr> の所だけで折れるようにします
+        (keep-all が無いと「タップからやり直」「す」のように文字の途中で折れる)。
+        */
+        #tap-back-a,
+        #tap-retry-adjust,
+        #tap-pin{
             word-break:keep-all;
+        }
+
+        /*
+        「📍 ここを接続点に / ここを1拍目に」(v273)。
+        色は 🎯 精度を高める(#tap-final-c)と同じ控えめな青にしました。「やり直す」(赤みの .tap-action-quiet)
+        とは違う、位置を決めるボタンだと分かるように。文字の大きさは .tap-action-quiet にそろえ、
+        上下の余白は枠線(1px)の分だけ減らして 10px にし、下の段の3つの高さが同じになるようにしています。
+        ◀▶ で聴く位置を動かすまでは押せない(disabled)ので、その間は薄く出します。
+        */
+        .tap-action-pin{
+            padding:10px 6px;
+
+            background:#1c2733;
+            color:#9fd8ff;
+            border:1px solid #2e4458;
+
+            font-size:0.88rem;
+        }
+
+        .tap-action-pin:active{ background:#26384a; }
+
+        .tap-action-pin:disabled{
+            opacity:0.35;
+            cursor:default;
+        }
+
+        /*
+        (v273)下の段の3つ(やめる・タップからやり直す・📍)の幅をそろえます。
+
+        flex:1 1 0 でも、左右の余白(padding)は等分の外に足されるので、余白の違うボタンは幅も違います
+        (実測:幅 360px で やめる 114 / タップからやり直す 100 / 📍 102px)。
+        「やめる」(#tap-close。余白 12px + 枠線 1px)と同じ「片側 13px」にして、3つとも同じ幅にしました
+        (縦のラインをそろえる)。📍 は枠線が 1px あるので余白 12px、「タップからやり直す」は枠線が無いので 13px。
+        文字は 1行目「タップから」「📍 ここを」まで入る幅が残ります(sandbox/measure-tap-layout.html で確かめた)。
+        ⚠️ C地点の微調整(やめる + タップからやり直す の2つ)も、これで2つが同じ幅になります。
+        */
+        #tap-retry-adjust{
+            padding-left:13px;
+            padding-right:13px;
+        }
+
+        #tap-pin{
+            padding-left:12px;
+            padding-right:12px;
         }
 
         #tap-close{
@@ -8892,7 +8942,14 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             分かりにくい曲もあるので、5秒ずつ前後できるように。
             この画面では「聴く位置」だけが動き、接続点(13拍目)と B地点の叩き始めの
             位置は動きません(js/tap.js の nudgeTapListenPosition)。
-            A地点の微調整・最後の確認では、今まで通り出しません。
+            最後の確認では、今まで通り出しません。
+
+            【v273 A地点の微調整画面でも出す(B地点と同じ。聴く位置だけを動かす)】
+            竹弘の要望(2026-11-14):接続点(B)と1拍目(A)を、叩き直さずに動かせるように。
+            ◀▶ は今まで通り聴く位置だけを動かし、動かした所で下の段の「📍」を押した時だけ、
+            そこが接続点(B)・1拍目(A)になります(js/tap.js の pinTapListenPosition)。
+            「なるべく長く聴きたい」「途中で崩れても最後に元の拍に戻る曲がある」(2026-11-07)ので、
+            ◀▶ だけでは動かさない作りのままにしています。
 
             【v268 C地点の微調整画面でも出す(C地点そのものを動かす)】
             竹弘と決めた(2026-11-09):C地点の ◀▶ は、聴く位置ではなく C地点そのものを動かします
@@ -9088,9 +9145,17 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
 
                 タップ待ち   … やめる だけ(幅いっぱいに広がる)
                 12回叩いた後 … やめる ＋ 今のタップをやり直す
-                微調整画面   … やめる ＋ タップからやり直す
+                A地点・B地点の微調整 … やめる ＋ タップからやり直す ＋ 📍(v273)
                 最後の確認   … やめる ＋ A地点の微調整へ戻る(v264)
-                C地点の微調整 … やめる だけ(v268。C地点で叩き直すのは段0-5b で足す)
+                C地点の微調整 … やめる ＋ タップからやり直す(v271)
+
+            【v273 A地点・B地点の微調整に「📍」を足した(竹弘と決めた 2026-11-14)】
+            ◀▶ で聴く位置を動かした後だけ押せます(それまでは薄く出しておく = disabled)。
+            押すと、B地点では接続点、A地点では1拍目が、聴いている所へ動きます
+            (js/tap.js の pinTapListenPosition。文字は地点で入れ替わる)。
+            ボタンが3つ並ぶと幅が足りないので、長い2つは <wbr> の所で2行に折れます
+            (「タップから / やり直す」「📍 ここを / 接続点に」。下の段が1行ぶん高くなる。
+            sandbox/measure-tap-layout.html で、いちばん低い機種 592px に収まることを確かめた)。
 
             出ていないボタンは display:none なので、残った「やめる」が
             自動的に幅いっぱいへ広がります(flex:1 1 0 のはたらき)。
@@ -9108,7 +9173,13 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         <div id="tap-bottom-row">
             <button type="button" id="tap-close">やめる</button>
             <button type="button" id="tap-retry-lock" class="tap-action tap-action-quiet" style="display:none;">今のタップをやり直す</button>
-            <button type="button" id="tap-retry-adjust" class="tap-action tap-action-quiet" style="display:none;">タップからやり直す</button>
+            <!-- (v273)<wbr> を足した。📍 と3つ並んだ時に「タップから / やり直す」で折れるように -->
+            <button type="button" id="tap-retry-adjust" class="tap-action tap-action-quiet" style="display:none;">タップから<wbr>やり直す</button>
+            <!--
+                (v273)「📍 ここを接続点に」(B地点)/「📍 ここを1拍目に」(A地点)。
+                出すか・押せるか・文字は js/tap.js の refreshTapRetryVisible が決めます(決めるのは1か所)。
+            -->
+            <button type="button" id="tap-pin" class="tap-action tap-action-pin" style="display:none;" disabled>📍 ここを<wbr>接続点に</button>
             <!--
                 <wbr> は「ここなら改行してよい」という印です。小さい画面で収まらない時、
                 「A地点の / 微調整へ戻る」の切れ目で折れるようにしています
