@@ -590,15 +590,36 @@ const tapState = {
     beforeC: null,
 
     /*
-    B地点の聴く画面で ◀▶ を使って、聴く位置を動かしたか(v269。速度ボタンの支点を決めるのに使う)。
+    A地点・B地点の微調整画面で ◀▶ を使って、聴く位置を動かしたか。
+    (v269 で B地点の bListenMoved として作り、v273 で A地点にも使うので listenMoved に名前を変えた)
 
-        false … 速度ボタンの支点 = 接続点(B地点で決めている拍そのもの)
+        false … 速度ボタンの支点 = その画面で決めている拍そのもの(A = 1拍目・B = 接続点)
+                「📍」は押せない(薄く出す)
         true  … 速度ボタンの支点 = 聴いている所の拍(聴き始めの3秒後にいちばん近い拍)
+                「📍」が押せる(pinTapListenPosition)
 
-    立てるのは nudgeTapListenPosition だけ。B地点へ入る時(startTapPhaseB)・B地点で叩き直した時
-    (goToTapAdjust)・曲を開いた時に下ろします。使うのは findTapSpeedPivotBeat だけ(理由はそちらのコメント)。
+    立てるのは nudgeTapListenPosition だけ。下ろすのは、曲を開いた時・B地点へ入る時(startTapPhaseB)・
+    叩き直した時(goToTapAdjust)・📍 を押した時(pinTapListenPosition)。A地点の微調整へ戻った時
+    (backToTapAdjustA)は、A地点を確定した時の値に戻します。
+    使うのは findTapSpeedPivotBeat と refreshTapRetryVisible(📍 を押せるか)と pinTapListenPosition。
     */
-    bListenMoved: false,
+    listenMoved: false,
+
+    /*
+    A地点で ◀▶ を使う前のタイミング(ms)(v273)。まだ使っていなければ null。
+
+    【なぜ控えるのか】
+    A地点のタイミングは、ふだんは「イヤホンの遅れ + 叩き癖」の直しで、次に測る曲へ引き継ぎ(v264 の案エ)、
+    B地点・C地点で叩き直した時にも足します(v272。findTapRetapLatencyMs)。
+    ところが ◀▶ で叩いた所から離れた後に動かしたタイミングは、「その場所で A の線がずれている分」の直しです
+    (B地点で動かすタイミングと同じ。v264・v272 で引き継がない・足さないと決めたもの)。
+    そこで、◀▶ を初めて押した時の値を控え、引き継ぐ・足すのはこの値にします(竹弘 OK 2026-11-14)。
+
+    入れるのは nudgeTapListenPosition(A地点で初めて ◀▶ を押した時)だけ。使うのは findTapRetapLatencyMs。
+    A地点で叩き直した時(goToTapAdjust)と曲を開いた時に null へ戻し、A地点の微調整へ戻った時は控えから戻します。
+    ⚠️ null を isFinite で確かめないこと(isFinite(null) は 0 とみなして true になる)。必ず !== null で見る。
+    */
+    aListenLatencyMs: null,
 
     wasPlaying: false   // 開く前に曲が鳴っていたか(閉じる時に戻すため)
 
@@ -667,6 +688,12 @@ const tapRetryAdjust = document.getElementById("tap-retry-adjust");
 出し入れは refreshTapRetryVisible() 経由だけで行ってください(理由はそちらのコメント)。
 */
 const tapBackA = document.getElementById("tap-back-a");
+
+/*
+「📍 ここを接続点に / ここを1拍目に」ボタン(v273。画面いちばん下の行、A地点・B地点の微調整画面だけ)。
+出すか・押せるか・文字は refreshTapRetryVisible() だけが決めます(同じ理由)。押した時は pinTapListenPosition。
+*/
+const tapPin = document.getElementById("tap-pin");
 
 
 // ==========================================================
@@ -755,8 +782,12 @@ async function openTapCorrection(trackId){
     tapState.cCheck = null;
     tapState.beforeC = null;
 
-    // 前の曲で B地点の聴く位置を動かした印も消します(v269。速度ボタンの支点が前の曲の続きにならないように)
-    tapState.bListenMoved = false;
+    /*
+    前の曲で聴く位置を動かした印も消します(v269。速度ボタンの支点が前の曲の続きにならないように)。
+    (v273)A地点で ◀▶ を使う前のタイミングの控えも消します(前の曲の値を引き継がないように)。
+    */
+    tapState.listenMoved = false;
+    tapState.aListenLatencyMs = null;
 
     // 位置は毎回この初期値から始めます(前回位置は保存していません)
     tapState.posSec = TAP_POS_A_DEFAULT_SEC;
@@ -1091,6 +1122,30 @@ function refreshTapRetryVisible(){
 
     tapBackA.style.display = backShown ? "block" : "none";
 
+    /*
+    ---- 「📍」(v273。竹弘と決めた 2026-11-14)----
+
+    出すのは A地点・B地点の微調整画面だけです(C地点の ◀▶ は C地点そのものを動かすので、📍 は要らない)。
+    押せるのは ◀▶ で聴く位置を動かした後だけ(listenMoved)。動かす前は薄く出しておきます。
+        ・動かす前に押せると、🕺 の曲を開いた時の B地点では、聴き始め(接続点の3秒前)から数え直して
+          接続点が少し後ろへずれてしまうため
+        ・ボタンが出たり消えたりすると、下の段の並びが揺れるため(いつも同じ場所にあるほうが迷わない)
+    文字は地点で入れ替えます。<wbr> は「ここなら折ってよい」の印なので、決まった文だけを innerHTML で入れます
+    (曲名などの外から来た文字は入れない)。
+    */
+    const pinShown = adjustShown && !tapState.finalCheck && tapState.phase !== TAP_PHASE_C;
+
+    if(tapPin){
+
+        tapPin.style.display = pinShown ? "block" : "none";
+        tapPin.disabled = !tapState.listenMoved;
+
+        tapPin.innerHTML = (tapState.phase === TAP_PHASE_A)
+            ? "📍 ここを<wbr>1拍目に"
+            : "📍 ここを<wbr>接続点に";
+
+    }
+
 }
 
 /**
@@ -1316,8 +1371,9 @@ function startTapPhaseB(){
     /*
     (v269)B地点は、いつも「聴く位置を動かしていない」ところから始まります(◀▶ を押したら立つ印)。
     速度ボタンの支点は、まず接続点そのものになります(findTapSpeedPivotBeat)。
+    (v273)A地点で ◀▶ を使っていても、ここで下ろします(📍 は、B地点で ◀▶ を押すまで押せない)。
     */
-    tapState.bListenMoved = false;
+    tapState.listenMoved = false;
 
     /*
     前に測った値を読み戻して来た時は、保存されている13拍目を
@@ -1510,6 +1566,7 @@ function updateTapPhaseLabel(){
  *
  * (v266)B地点の微調整画面(聴く画面)では、測り始める位置ではなく「聴く位置」を
  * 動かします(nudgeTapListenPosition)。同じ ◀▶ のボタンが、画面によって役目を変えます。
+ * (v273)A地点の微調整画面でも同じく「聴く位置」を動かします。
  *
  * @param {number} deltaSec - 動かす秒数(+で後ろ、-で前)
  */
@@ -1519,11 +1576,11 @@ function nudgeTapPosition(deltaSec){
     if(!tapState.songBuffer){ return; }
 
     /*
-    B地点の聴く画面では、聴く位置だけを動かします(v266)。
-    ⚠️ 下の「タップを始めた後は動かせません」より先に分けること。B地点を叩き直した後の
-       微調整画面では taps が12回ぶん残っているので、順番が逆だと ◀▶ が効かなくなります。
+    A地点・B地点の聴く画面(微調整画面)では、聴く位置だけを動かします(v266。v273 で A地点も)。
+    ⚠️ 下の「タップを始めた後は動かせません」より先に分けること。叩いた後の微調整画面では
+       taps が12回ぶん残っているので、順番が逆だと ◀▶ が効かなくなります。
     */
-    if(isTapListeningAtB()){
+    if(isTapListeningAtAB()){
 
         nudgeTapListenPosition(deltaSec);
 
@@ -1573,6 +1630,8 @@ function nudgeTapPosition(deltaSec){
  * (v266)nudgeTapPosition の中にあった計算を、中身を変えずに切り出しました。
  * 測り始める位置(叩く前)と、B地点の聴く位置(nudgeTapListenPosition)の2か所で
  * 同じ範囲を使うためです(範囲の決め方を1か所にまとめる)。
+ * (v273)A地点の聴く位置も、A地点で叩く時と同じ範囲です(3秒〜曲の真ん中)。
+ * 📍(pinTapListenPosition)で動かした1拍目・接続点も、この範囲から決まります。
  *
  * @return {{minSec:number, maxSec:number}}
  */
@@ -1656,22 +1715,23 @@ function findTapPosRange(){
 }
 
 /**
- * 今、B地点の微調整画面(聴く画面)にいるか(v266)。
+ * 今、A地点・B地点の微調整画面(聴く画面)にいるか(v266 で B地点の isTapListeningAtB として作り、
+ * v273 で A地点も入れて isTapListeningAtAB に名前を変えた)。
  *
  * ◀▶ のボタンと位置の表示が「測り始める位置」と「聴く位置」のどちらを扱うかを、
- * この1か所で決めます。B地点の微調整パネルが出ていて、最後の確認ではない時です
- * (A地点の微調整・最後の確認では ◀▶ の行を出していない)。
+ * この1か所で決めます。A地点か B地点の微調整パネルが出ていて、最後の確認ではない時です
+ * (最後の確認では ◀▶ の行を出していない。C地点は isTapListeningAtC が受け持つ)。
  */
-function isTapListeningAtB(){
+function isTapListeningAtAB(){
 
-    return tapState.phase === TAP_PHASE_B &&
+    return (tapState.phase === TAP_PHASE_A || tapState.phase === TAP_PHASE_B) &&
            !tapState.finalCheck &&
            tapAdjustPanel.style.display !== "none";
 
 }
 
 /**
- * B地点の聴く画面で、聴く位置だけを5秒ずつ動かします(v266。段0-3)。
+ * B地点の聴く画面で、聴く位置だけを5秒ずつ動かします(v266。段0-3。v273 から A地点の微調整画面でも)。
  *
  * 【竹弘の要望(2026-11-07)】
  *     「B地点で『まず聴く』。ただし、ここにもリズムがピッタリ重なっているか
@@ -1692,6 +1752,20 @@ function isTapListeningAtB(){
  *    ⚠️ 🕺の曲の確かめでは、最初の聴く位置(13拍目の3秒前)が範囲の外(終わりに近い側)に
  *       あることがあります。その時に「▶」で前へ引き戻されないよう、押した向きにしか動かしません。
  *
+ * ---- v273:A地点でも同じように使う・動かした所を「📍」で決められる ----
+ *
+ * 【竹弘の要望(2026-11-14)】
+ *     1週間使って、エンディングでテンポが遅くなる曲(ASIAN KUNG-FU GENERATION の ReRe)は、
+ *     接続点を遅くなる前まで動かさないと、繋ぎがおかしく聞こえた。
+ *     「接続点はやはり、ユーザーが自由に動かせるべき」
+ *     A地点も「再設定時にあると便利な為。Bと同じようにしてもらえるかな」
+ * → ◀▶ は今まで通り聴く位置だけを動かし(11-07 の2つの理由を守る)、動かした所で「📍」を押した時だけ
+ *   接続点・1拍目を動かします(pinTapListenPosition)。そのために、ここで listenMoved を立てて 📍 を押せるようにします。
+ *   A地点の範囲は A地点で叩く時と同じ(3秒〜曲の真ん中。findTapPosRange)。
+ *
+ * 【A地点で初めて動かした時は、その時のタイミングを控える】(aListenLatencyMs のコメント)
+ *   ここから先に動かすタイミングは、その場所での A の線のずれの直しで、イヤホンの遅れではないためです。
+ *
  * @param {number} deltaSec - 動かす秒数(+で後ろ、-で前)
  */
 function nudgeTapListenPosition(deltaSec){
@@ -1708,21 +1782,127 @@ function nudgeTapListenPosition(deltaSec){
     // 端に着いていて動かないなら、鳴らし直さずに済ませます
     if(next === current){ return; }
 
+    /*
+    (v273)A地点で初めて動かす時は、今のタイミングを控えます(上の【A地点で初めて動かした時は…】)。
+    ⚠️ listenMoved ではなく「控えがまだ無いか」で見ます。📍 を押すと listenMoved は下りますが、
+       叩いた所から離れていることに変わりはないので、控えは最初の値のまま残します。
+    */
+    if(tapState.phase === TAP_PHASE_A && tapState.aListenLatencyMs === null){
+        tapState.aListenLatencyMs = tapState.latencyMs;
+    }
+
     // 鳴らし直すと playOffset が next になります(playTapSongFrom の中で書き換わる)
     playTapSongFrom(next,true);
 
     /*
     (v269)聴く位置を動かしたので、ここからの速度ボタンの支点は「聴いている所の拍」になります
     (findTapSpeedPivotBeat)。移った先で速度を押しても、聴いているカチッが動かないようにするためです。
+    (v273)この印で「📍」も押せるようになります。押せるかどうかの表示を、ここで書き直します。
     */
-    tapState.bListenMoved = true;
+    tapState.listenMoved = true;
+
+    refreshTapRetryVisible();
 
     updateTapPosLabel();
 
+    const target = findTapTargetInfo();
+
     console.log(
-        "B地点の聴く位置を動かしました :",
+        (tapState.phase === TAP_PHASE_A ? "A地点" : "B地点") + "の聴く位置を動かしました :",
         formatTapTime(next) + " から",
-        "(接続点の13拍目 " + tapState.endTS.toFixed(3) + "s は動かしません)"
+        "(" + target.name + " " + target.sec.toFixed(3) + "s は動かしません。動かすのは 📍 を押した時だけ)"
+    );
+
+}
+
+/**
+ * 「📍 ここを接続点に」(B地点)/「📍 ここを1拍目に」(A地点)が押された時の処理です(v273)。
+ *
+ * ------------------------------------------------------------------
+ * 【竹弘と決めたこと(2026-11-14。private/tap-connect-point-meeting.html。非公開)】
+ *     ・◀▶ は聴く位置だけ(今のまま)。拍が合っている所で 📍 を押した時だけ、そこを接続点・1拍目にする
+ *     ・押せるのは ◀▶ で聴く位置を動かした後だけ(refreshTapRetryVisible)
+ *     ・A地点も B地点と同じ形にする(竹弘「再設定時にあると便利な為」)
+ *
+ * 【どの拍になるか ―― 聴き始め(◀▶ の数字)から数える】
+ *     B地点 … 聴き始めを追い越した最初の拍から数えて13拍目(B地点で叩く時・A の値を引き継ぐ時と
+ *             同じ数え方。inheritGridToPhaseB をそのまま使う)。BPM 155 なら聴き始めの約3〜3.5秒後
+ *     A地点 … 聴き始めの3秒後(TAP_REPLAY_LEAD_SEC)を過ぎた最初の拍。🕺 の曲を開いた時の A地点・
+ *             C地点と同じ「その拍の3秒前から聴く」形になる
+ *     どちらも、決めた拍の数秒前から聴き直せるので、カチッが合っているかを構えて確かめられます。
+ *     ⚠️ 「押した瞬間に鳴っている拍」にはしません。押すのが遅れた分だけずれるためです。
+ *
+ * 【動かすもの・動かさないもの】
+ *     動かす   … 決めている拍(targetBeat → B は endTS、A は startTS)・叩き始めの位置(posSec)
+ *                (「タップからやり直す」が、新しい位置から叩けるように)
+ *     動かさない … 拍の線(BPM・拍番号0 の位置)・タイミング。線はそのままで、線の上のどの拍を使うかだけを変える
+ *     A地点で動かした時、B地点は A を確定した後、今まで通り A の線を引き継ぎます(🕺 の曲なら保存してある接続点)。
+ *     曲全体のBPM(A+B)は、最後の確認を開く時に新しい1拍目・接続点で数え直されます(decideTapWholeSongBpm)。
+ *
+ * 【押した後】
+ *     listenMoved を下ろします(速度ボタンの支点が、新しく決めた拍そのものに戻る。📍 はまた ◀▶ を押すまで薄く)。
+ *     聴き始めから鳴らし直し、短いお知らせ「接続点を 4:40 へ動かしました」を出します。
+ *     戻すボタンは作りません(▶ で戻ってもう一度 📍。最後の確認から「A地点の微調整へ戻る」で入り直せば、
+ *     B地点は📍の前の接続点から始まる。v264 の決まり)。
+ * ------------------------------------------------------------------
+ */
+function pinTapListenPosition(){
+
+    // 押せない時(薄い時)は、ボタン自体が disabled なので来ませんが、念のため同じ条件で確かめます
+    if(!isTapListeningAtAB() || !tapState.listenMoved){ return; }
+
+    const beatDur = 60 / tapState.bpm;
+
+    if(!isFinite(beatDur) || beatDur <= 0){ return; }
+
+    const listenSec = tapState.playOffset;
+    const beforeSec = findTapTargetInfo().sec;
+
+    // 「タップからやり直す」は、ここから叩きます(resetTapPhase は posSec から鳴らす)
+    tapState.posSec = listenSec;
+
+    if(tapState.phase === TAP_PHASE_A){
+
+        /*
+        聴き始めの3秒後を過ぎた最初の拍(Math.ceil は切り上げ)。
+        0.001拍だけ引いてから切り上げるのは、小数の計算の誤差(0.000000000001拍ほど)で、ちょうど3秒後にある拍を
+        「過ぎていない」と取り違えて1拍後ろへ飛ぶのを防ぐためです(🕺 の曲は、1拍目のちょうど3秒前から聴く)。
+        */
+        tapState.targetBeat = Math.ceil(
+            (listenSec + TAP_REPLAY_LEAD_SEC - tapState.beatOriginSec) / beatDur - 0.001
+        );
+
+        updateTapTargetTS();
+
+    }
+    else{
+
+        // B地点は、A の値を引き継ぐ時とまったく同じ数え方(posSec を追い越した最初の拍 + 8拍)
+        inheritGridToPhaseB();
+
+    }
+
+    tapState.listenMoved = false;
+
+    refreshTapRetryVisible();
+
+    updateTapMonitor();
+
+    // 聴き始めから鳴らし直します(決めた拍の数秒前から聴ける)
+    playTapSongFrom(listenSec,true);
+
+    updateTapPosLabel();
+
+    const target = findTapTargetInfo();
+
+    showTapToast(target.name + "を " + formatTapTime(target.sec) + " へ動かしました");
+
+    console.log(
+        "📍 " + target.name + "を動かしました :",
+        beforeSec.toFixed(3) + "s → " + target.sec.toFixed(3) + "s",
+        "(聴き始め " + formatTapTime(listenSec) + " から数えた拍)",
+        "/ 線 BPM " + tapState.bpm.toFixed(2) + "・タイミング " + tapState.latencyMs + "ms はそのまま",
+        "/ 叩き直す時は " + formatTapTime(listenSec) + " から"
     );
 
 }
@@ -1730,7 +1910,7 @@ function nudgeTapListenPosition(deltaSec){
 /**
  * 今、C地点の微調整画面にいるか(v268。段0-5a)。
  *
- * isTapListeningAtB と同じ考え方で、◀▶ のボタンと位置の表示の役目をここで決めます。
+ * isTapListeningAtAB(v272 までは isTapListeningAtB)と同じ考え方で、◀▶ のボタンと位置の表示の役目をここで決めます。
  * C地点はフェーズそのものが C なので、微調整パネルが出ているかだけを見ます。
  */
 function isTapListeningAtC(){
@@ -1845,10 +2025,11 @@ function updateTapPosLabel(){
 
     /*
     (v266)B地点の聴く画面では「聴く位置」(playOffset)を、それ以外(叩く前)では
-    「測り始める位置」(posSec)を出します。どちらかは isTapListeningAtB() が決めます。
+    「測り始める位置」(posSec)を出します。どちらかは isTapListeningAtAB() が決めます。
     (v268)C地点の微調整画面でも「聴く位置」を出します(C地点の3秒前)。
+    (v273)A地点の微調整画面でも「聴く位置」を出します(isTapListeningAtAB に A地点を入れた)。
     */
-    const sec = (isTapListeningAtB() || isTapListeningAtC()) ? tapState.playOffset : tapState.posSec;
+    const sec = (isTapListeningAtAB() || isTapListeningAtC()) ? tapState.playOffset : tapState.posSec;
 
     tapPosLabel.textContent = formatTapTime(sec) + " から";
 
@@ -2698,9 +2879,9 @@ function goToTapAdjust(){
 
     /*
     (v269)叩き直した後は、叩き始めた所から聴き直すので、「聴く位置を動かした」印は下ろします
-    (速度ボタンの支点は、決めている拍そのもの。findTapSpeedPivotBeat)。
+    (速度ボタンの支点は、決めている拍そのもの。findTapSpeedPivotBeat。v273 から 📍 も薄くなる)。
     */
-    tapState.bListenMoved = false;
+    tapState.listenMoved = false;
 
     /*
     叩き直したら、半拍ずらしは解除します(v186)。
@@ -2723,8 +2904,18 @@ function goToTapAdjust(){
     (v272)B地点で叩き直した時は、A地点を確定した時のタイミングを当てます(findTapRetapLatencyMs のコメント)。
     B地点で「まずタイミングで」A の線のずれを直していた分(v269 から)は、叩いた位置には足しません。
     A地点では今まで通り、今のタイミングのままです。
+    (v273)A地点で ◀▶ を使った後に叩き直した時は、◀▶ を使う前のタイミングです(aListenLatencyMs のコメント)。
     */
     tapState.latencyMs = findTapRetapLatencyMs();
+
+    /*
+    (v273)A地点で叩き直したので、新しい線は叩いた12回から引いたものです。ここから先に A地点で動かす
+    タイミングは、また「イヤホンの遅れ + 叩き癖」の直しになるので、◀▶ を使う前の控えは消します。
+    ⚠️ 上の findTapRetapLatencyMs で控えを使い終わってから消すこと(順番が逆だと控えが使われない)。
+    */
+    if(tapState.phase === TAP_PHASE_A){
+        tapState.aListenLatencyMs = null;
+    }
 
     applyTapLatencyShift(tapState.latencyMs);
 
@@ -2837,16 +3028,39 @@ function placeTapCByTaps(grid){
  *
  *     A地点 … 今のタイミング(A地点で合わせている最中の値)
  *     B地点・C地点 … A地点を確定した時のタイミング(phaseASnapshot.latencyMs)。控えが無い時だけ今の値
+ *
+ * 【v273:A地点で ◀▶ を使った後に動かしたタイミングも足さない】
+ * A地点で ◀▶ を使って叩いた所から離れた後に動かしたタイミングは、B地点で動かすのと同じ「その場所での
+ * A の線のずれ」の直しです(aListenLatencyMs のコメント)。だから A地点でも ◀▶ を使った後は「◀▶ を使う前の値」、
+ * B地点・C地点では A地点を確定した時に控えた tapLatencyMs(◀▶ を使っていなければ、確定した時のタイミングと同じ)。
+ *
+ *     A地点 … ◀▶ を使う前のタイミング(使っていなければ今のタイミング)
+ *     B地点・C地点 … phaseASnapshot.tapLatencyMs(A地点を確定した時の、上の A地点の値)
+ * この関数の A地点の答えは、A地点を確定した時に次の曲へ引き継ぐ値にもなります(confirmTapPhase)。
  * ------------------------------------------------------------------
  *
  * @return {number} 叩き直した12回に足すタイミング(ms)
  */
 function findTapRetapLatencyMs(){
 
-    if(tapState.phase !== TAP_PHASE_A &&
-       tapState.phaseASnapshot && isFinite(tapState.phaseASnapshot.latencyMs)){
+    const snap = tapState.phaseASnapshot;
 
-        return tapState.phaseASnapshot.latencyMs;
+    /*
+    ⚠️ null は isFinite で弾けません(isFinite(null) は true)。控えの有る無しは、必ず !== null で見ます。
+    (控えには A地点の確定で必ず tapLatencyMs を入れますが、万一無い時は v272 と同じ latencyMs を使います)
+    */
+    if(tapState.phase !== TAP_PHASE_A && snap){
+
+        if(typeof snap.tapLatencyMs === "number" && isFinite(snap.tapLatencyMs)){ return snap.tapLatencyMs; }
+
+        if(isFinite(snap.latencyMs)){ return snap.latencyMs; }
+
+    }
+
+    if(tapState.phase === TAP_PHASE_A &&
+       tapState.aListenLatencyMs !== null && isFinite(tapState.aListenLatencyMs)){
+
+        return tapState.aListenLatencyMs;
 
     }
 
@@ -2893,10 +3107,10 @@ function showTapAdjustPanel(guideText,fromSec){
     nudgeTapListenPosition)。A地点の微調整では今まで通り隠します。
     位置の数字は、下で鳴らし始めた後に updateTapPosLabel() で書きます。
     (v268)C地点の微調整画面にも出します(C地点そのものを動かす。nudgeTapCPosition)。
+    (v273)A地点の微調整画面にも出します(B地点と同じく聴く位置だけ。動かした所を 📍 で1拍目にできる)。
+    これで微調整画面はどの地点でも ◀▶ の行を出します(隠すのは最後の確認だけ。showTapFinalCheck)。
     */
-    const posRowShown = tapState.phase === TAP_PHASE_B || tapState.phase === TAP_PHASE_C;
-
-    tapPosRow.style.display = posRowShown ? "flex" : "none";
+    tapPosRow.style.display = "flex";
 
     setTapLockUI(false);
     setTapAdjustUI(true);
@@ -2919,7 +3133,7 @@ function showTapAdjustPanel(guideText,fromSec){
 
     /*
     (v266)B地点では ◀▶ の行に「聴く位置」(今鳴らし始めた位置)を出します。
-    A地点では行が隠れているので、書いても見えません(害はない)。
+    (v273)A地点でも同じく「聴く位置」を出します(updateTapPosLabel が isTapListeningAtAB で見分ける)。
     */
     updateTapPosLabel();
 
@@ -3053,6 +3267,10 @@ function adjustTapBpm(delta){
  * 合わせたら接続点の近くへ戻って確かめてもらいます。
  * C地点の ◀▶ は C地点そのものを動かし、聴き始めはいつも C の3秒前なので、ふだんの決まりのままで
  * 「聴いている所 = 支点」になっています。
+ *
+ * (v273)A地点の微調整画面にも ◀▶(聴く位置だけ)を出したので、A地点でも同じ決まりにしました
+ * (竹弘「Bと同じように」2026-11-14)。◀▶ を使った後は、聴いている所の拍が支点です。
+ * 📍 を押すと、その辺りの拍が1拍目・接続点になり、印が下りて「決めている拍そのもの」に戻ります。
  * ------------------------------------------------------------------
  *
  * @param  {number} beatDur - 今(押す前)の1拍の長さ(秒)
@@ -3060,7 +3278,8 @@ function adjustTapBpm(delta){
  */
 function findTapSpeedPivotBeat(beatDur){
 
-    if(tapState.phase === TAP_PHASE_B && !tapState.finalCheck && tapState.bListenMoved &&
+    if((tapState.phase === TAP_PHASE_A || tapState.phase === TAP_PHASE_B) &&
+       !tapState.finalCheck && tapState.listenMoved &&
        isFinite(beatDur) && beatDur > 0){
 
         // Math.round は四捨五入。聴き始めの3秒後にいちばん近い拍の番号です
@@ -3313,9 +3532,9 @@ function updateTapFinalLabel(){
  *
  *   (v270)A・B・C のテンポが食い違った時(judgeTapTempoSide。C で拍の数が合っても C は使わない)
  *   ⑤ A だけ違う                 💡 A地点の辺りだけ、テンポが違うみたい。
- *                                   A地点を後ろへずらして、測り直そう。
+ *                                   📍 で、1拍目を後ろへずらそう。            ← (v273)
  *   ⑥ B だけ違う                 💡 B地点の辺りだけ、テンポが違うみたい。
- *                                   B地点を前へずらして、測り直そう。
+ *                                   📍 で、接続点を前へずらそう。              ← (v273)
  *   ⑦ A+B は ✅・C だけ違う      ✅ 曲全体のBPM 83.48(A〜B 269拍)
  *                                   💡 C地点の辺りだけ、テンポが違うみたい。   ← 緑のまま(A+B で保存)
  *   ⑦' A+B も ⚠️・C だけ違う     💡 C地点の辺りだけ、テンポが違うみたい。
@@ -3327,6 +3546,11 @@ function updateTapFinalLabel(){
  *   シンプルな操作性」2026-11-09):
  *       A地点 … 「A地点の微調整へ戻る」→「タップからやり直す」→ ▶ で後ろへ → 12回
  *       B地点 … 「A地点の微調整へ戻る」→ A地点を確定 → B地点で「タップからやり直す」→ ◀ で前へ → 12回
+ *   (v273)叩き直さずに動かせるようになったので、2行目の文を「📍 で…ずらそう」に変えました
+ *   (竹弘 OK 2026-11-14。1行22文字まで・2行のまま):
+ *       A地点 … 「A地点の微調整へ戻る」→ ▶ で後ろへ(テンポが本編になる所)→ 📍 ここを1拍目に
+ *       B地点 … 「A地点の微調整へ戻る」→ A地点を確定 → B地点で ◀ で前へ → 📍 ここを接続点に
+ *   ずらした所で線が合わなければ、今まで通り「タップからやり直す」(📍 の後は、ずらした所から叩ける)。
  *
  * 【竹弘と決めたこと(2026-11-09)】
  *   ・🎯 を光らせるのは ⚠️ の曲だけ(長い曲というだけでは光らせない)
@@ -3411,19 +3635,21 @@ function updateTapFinalResult(){
     else if(side === "a"){
 
         // ⑤(v270)A だけ違う(MISIA アイノカタチの形)。A地点がイントロなどにあった → 本編へずらす
+        // (v273)叩き直さずに 📍 でずらせるようになったので、2行目を変えた
         good = false;
 
         text = "💡 A地点の辺りだけ、テンポが違うみたい。\n" +
-               "A地点を後ろへずらして、測り直そう。";
+               "📍 で、1拍目を後ろへずらそう。";
 
     }
     else if(side === "b"){
 
-        // ⑥(v270)B だけ違う。最後だけゆっくりになる曲など → B地点を前へ
+        // ⑥(v270)B だけ違う。最後だけゆっくりになる曲など(ReRe)→ 接続点を前へ
+        // (v273)叩き直さずに 📍 でずらせるようになったので、2行目を変えた
         good = false;
 
         text = "💡 B地点の辺りだけ、テンポが違うみたい。\n" +
-               "B地点を前へずらして、測り直そう。";
+               "📍 で、接続点を前へずらそう。";
 
     }
     else if(side === "c"){
@@ -3527,6 +3753,16 @@ function backToTapAdjustA(){
     tapState.resumedFromSaved = snap.resumedFromSaved;
 
     /*
+    (v273)A地点の ◀▶ の状態も、A地点を確定した時に戻します。
+        listenMoved      … 確定した時に ◀▶ で動かした所を聴いていたら、戻っても同じ所から聴くので、
+                           速度の支点も 📍 を押せるかも、その時と同じにする
+        aListenLatencyMs … ◀▶ を使う前のタイミングの控え(引き継ぐ値・叩き直しに足す値)
+    ⚠️ 古い形の控え(この2つが無い)の時は、どちらも「使っていない」にします。
+    */
+    tapState.listenMoved = (snap.listenMoved === true);
+    tapState.aListenLatencyMs = (typeof snap.aListenLatencyMs === "number") ? snap.aListenLatencyMs : null;
+
+    /*
     (v268)C地点の結果も取り消します。A地点を確定し直すと、C を合わせた線の元(1拍目)が
     変わるためです。もう一度 B地点を確定すれば、最後の確認で C地点も使えます。
     */
@@ -3625,7 +3861,7 @@ function startTapPhaseC(){
 
     /*
     最後の確認の旗は下ろします。立てたままだと、確定ボタン(confirmTapPhase)や
-    B地点の聴く画面の判断(isTapListeningAtB)が「最後の確認の中」と取り違えます。
+    聴く画面の判断(isTapListeningAtAB。v272 までは isTapListeningAtB)が「最後の確認の中」と取り違えます。
     戻る時は confirmTapCPhase が立て直します。
     */
     tapState.finalCheck = false;
@@ -4003,6 +4239,12 @@ Bluetoothの遅延は「イヤホンの性質」であって曲の性質では�
 
 ⚠️ どの値から始めても、最後に耳で合わせて確定するので、保存される拍の位置は正しい。
    変わるのは「最初にどれだけずれて聞こえるか」と「押す回数」だけです。
+
+---- (v273)A地点で ◀▶ を使った後に動かした分も、③ と同じ扱い ----
+
+A地点の微調整画面にも ◀▶(聴く位置だけ)と 📍 を出しました。叩いた所から離れて動かしたタイミングは、
+B地点で動かす ③ と同じく「その場所での線のずれ」の直しなので、引き継ぎません。保存するのは ◀▶ を使う前の値です
+(confirmTapPhase が findTapRetapLatencyMs で決めて、saveTapLatency に渡す)。
 */
 
 async function loadTapLatency(){
@@ -4024,11 +4266,20 @@ async function loadTapLatency(){
 
 }
 
-async function saveTapLatency(){
+/**
+ * 次に測る曲へ引き継ぐタイミングを保存します。
+ *
+ * (v273)保存する値を受け取る形にしました。v272 までは今のタイミング(tapState.latencyMs)を
+ * そのまま保存していましたが、A地点で ◀▶ を使った後は、今の値と引き継ぐ値が違うためです
+ * (上の節の頭のコメント)。呼んでいるのは confirmTapPhase の A地点の確定だけです。
+ *
+ * @param {number} valueMs - 保存するタイミング(ms)
+ */
+async function saveTapLatency(valueMs){
 
     try{
 
-        await idbPut(STORE_SETTINGS,tapState.latencyMs,"latency");
+        await idbPut(STORE_SETTINGS,valueMs,"latency");
 
     }
     catch(error){
@@ -4285,9 +4536,15 @@ async function confirmTapPhase(){
         resumedFromSaved が立っている = 🕺の曲を開いて、叩かずに確かめている時です。
         その時の表示の数字は拍に当てていない(保存してある1拍目をそのまま使っている)
         ので、引き継ぎには入れません(竹弘 OK 2026-11-09)。
+
+        (v273)A地点で ◀▶ を使った後に動かしたタイミングは、その場所での線のずれの直しなので引き継ぎません。
+        引き継ぐのは ◀▶ を使う前の値です(aListenLatencyMs のコメント)。どちらの値かは findTapRetapLatencyMs が
+        決めます(A地点では「叩いた12回に足すタイミング」= 次の曲へ引き継ぐ値。使っていなければ今の値そのまま)。
         */
+        const tapLatencyMs = findTapRetapLatencyMs();
+
         if(!tapState.resumedFromSaved){
-            await saveTapLatency();
+            await saveTapLatency(tapLatencyMs);
         }
 
         console.log(
@@ -4295,7 +4552,11 @@ async function confirmTapPhase(){
             "BPM " + tapState.bpm.toFixed(2),
             "/ 1拍目 " + tapState.startTS.toFixed(3) + "s",
             "/ 遅延 " + tapState.latencyMs + "ms",
-            tapState.resumedFromSaved ? "(確かめなので、次の曲へは引き継ぎません)" : "(次の曲へ引き継ぎます)"
+            tapState.resumedFromSaved
+                ? "(確かめなので、次の曲へは引き継ぎません)"
+                : (tapLatencyMs !== tapState.latencyMs
+                    ? "(◀▶ の後に動かした分は入れず、" + tapLatencyMs + "ms を次の曲へ引き継ぎます)"
+                    : "(次の曲へ引き継ぎます)")
         );
 
         /*
@@ -4308,6 +4569,12 @@ async function confirmTapPhase(){
         ⚠️ endTS も控えます。🕺の曲の確かめ(resumedFromSaved)では、B地点で
            「保存してある13拍目」を聴いてもらうため、endTS がその値を運んでいます。
            控えずに戻ると、B地点で動かした後の値を「保存してある値」として出してしまいます。
+
+        (v273)控えを3つ足しました。
+            tapLatencyMs     … B地点・C地点で叩き直した時に足すタイミング(findTapRetapLatencyMs)。
+                               latencyMs は線に焼き込んだ今のタイミングで、戻る時に線と一緒に書き戻す値。
+                               A地点で ◀▶ を使った後に動かした分だけ、2つが違います
+            listenMoved / aListenLatencyMs … 戻った時に A地点の ◀▶ の状態をそのまま戻すため
         */
         tapState.phaseASnapshot = {
             bpm: tapState.bpm,
@@ -4315,6 +4582,9 @@ async function confirmTapPhase(){
             startTS: tapState.startTS,
             endTS: tapState.endTS,
             latencyMs: tapState.latencyMs,
+            tapLatencyMs: tapLatencyMs,
+            listenMoved: tapState.listenMoved,
+            aListenLatencyMs: tapState.aListenLatencyMs,
             posSec: tapState.posSec,
             fromSec: tapState.playOffset,
             resumedFromSaved: tapState.resumedFromSaved
@@ -4473,6 +4743,11 @@ tapRetryAdjust.onclick = retryTapFromAdjust;
 
 // 最後の確認画面の「A地点の微調整へ戻る」(v264)
 tapBackA.onclick = backToTapAdjustA;
+
+// A地点・B地点の微調整画面の「📍 ここを1拍目に / ここを接続点に」(v273)
+if(tapPin){
+    tapPin.onclick = pinTapListenPosition;
+}
 
 tapConfirmBtn.onclick = confirmTapPhase;
 document.getElementById("tap-close").onclick = closeTapCorrection;
