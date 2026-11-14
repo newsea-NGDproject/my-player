@@ -55,6 +55,18 @@ const SETTINGS_DEFINITIONS = [
         label: "曲の繋ぎ方"
     },
     {
+        /*
+        拍倍率(⑬。v275。中身は js/beat-multiplier.js)。
+        1拍に何歩で走るかを選びます(OFF / なるべく1倍の近く / いったん行進の範囲へ揃える)。
+
+        🎚️ 曲の繋ぎ方 の次に置いたのは、どちらも🕺ノリノリRunの「鳴らし方」の設定だから。
+        👣 は「1拍に何歩」から。🥁 は行進とカチッに使っているので避けた(作戦会議 2026-11-14)。
+        */
+        key: "beat_multiplier",
+        icon: "👣",
+        label: "拍倍率"
+    },
+    {
         key: "metronome",
         /*
         🏃 にしたのは竹弘の指示(2026-09-05)。
@@ -269,6 +281,11 @@ function openSettingsItem(key){
         openConnectPanel();
     }
 
+    // 拍倍率(v275)。中身は js/beat-multiplier.js にあります
+    if(key === "beat_multiplier"){
+        openBeatMultiplierPanel();
+    }
+
     if(key === "metronome"){
         openMetronomePanel();
     }
@@ -386,6 +403,71 @@ function openConnectPanel(){
 function closeConnectPanel(){
 
     const panel = document.getElementById("connect-panel");
+
+    if(!panel){ return; }
+
+    panel.style.display = "none";
+
+}
+
+
+// ==========================================================
+// 3-2b. 拍倍率(⑬。v275)
+// ==========================================================
+/*
+🕺ノリノリRun再生で、1拍に何歩で走るかを選びます(遅い曲は「1拍に2歩」、速い曲は「2拍に1歩」)。
+決め方と保存は js/beat-multiplier.js。ここは画面を開け閉めして、選ばれている印を付けるだけです。
+
+見た目と作りは「🏃 ノリノリアシスト」の画面と同じ(.connect-choice を共有)。
+メインメニューからも自由に開けます(ノリノリアシストと同じ考え方。画面に「🕺ノリノリRun再生の
+機能です」と書いてあるので迷わない)。
+
+⚠️ 段1(v275)では、選んでも鳴り方は変わりません(🐛 に出すだけ)。段2 から効きます。
+*/
+
+/**
+ * 選ばれている方のボタンに印を付け直します。
+ *
+ * data-beat-multiplier は "off" / "near" / "march" という文字で、js/beat-multiplier.js の
+ * BEAT_MULTIPLIER_MODE_… と同じ値です。dataset では data-beat-multiplier が
+ * beatMultiplier という名前で読めます(- の次の文字を大文字にする決まり)。
+ */
+function refreshBeatMultiplierPanel(){
+
+    const panel = document.getElementById("beat-multiplier-panel");
+
+    if(!panel){ return; }
+
+    panel.querySelectorAll(".connect-choice").forEach(function(button){
+
+        button.classList.toggle(
+            "connect-choice-on",
+            button.dataset.beatMultiplier === beatMultiplierMode
+        );
+
+    });
+
+}
+
+function openBeatMultiplierPanel(){
+
+    const panel = document.getElementById("beat-multiplier-panel");
+
+    if(!panel){ return; }
+
+    refreshBeatMultiplierPanel();
+
+    panel.style.display = "flex";
+
+    const body = panel.querySelector(".license-body");
+
+    if(body){ body.scrollTop = 0; }
+
+}
+
+function closeBeatMultiplierPanel(){
+
+    const panel = document.getElementById("beat-multiplier-panel");
 
     if(!panel){ return; }
 
@@ -672,6 +754,37 @@ function closeLicensePanel(){
 
             // 選ばれている印を付け替えます
             refreshMetronomePanel();
+
+        });
+
+    });
+
+    // 拍倍率の画面(v275)
+    const beatMultiplierCloseBtn = document.getElementById("beat-multiplier-close-btn");
+
+    if(beatMultiplierCloseBtn){
+        beatMultiplierCloseBtn.addEventListener("click",function(){
+            closeBeatMultiplierPanel();
+        });
+    }
+
+    /*
+    3つの選択肢(OFF / なるべく1倍の近く / いったん行進の範囲へ揃える)。
+
+    setBeatMultiplierMode(js/beat-multiplier.js)は保存まで済ませます。await せずに
+    呼んでいるのは、保存の完了を待たなくても画面には即座に効くためです(上の2つの画面と同じ)。
+
+    ⚠️ js/beat-multiplier.js はこのファイルより後に読み込みますが、ここで使うのはボタンを
+       押した時(関数の中)だけなので、読み込みの順番は関係ありません。
+    */
+    document.querySelectorAll("#beat-multiplier-panel .connect-choice").forEach(function(button){
+
+        button.addEventListener("click",function(){
+
+            setBeatMultiplierMode(button.dataset.beatMultiplier);
+
+            // 選ばれている印を付け替えます
+            refreshBeatMultiplierPanel();
 
         });
 

@@ -221,6 +221,15 @@ async function showMainMenu(){
     await loadCrossfadeSetting();
 
     /*
+    拍倍率の設定を読み込みます(⑬。v275。js/beat-multiplier.js)。
+
+    設定 ⚙️ →「👣 拍倍率」で選んだもの(OFF / なるべく1倍の近く / いったん行進の範囲へ揃える)を、
+    次にアプリを開いた時にも覚えているようにするためです(上の2つと同じ考え方)。
+    まだ一度も選んでいない時は OFF(今までどおり)のままです。
+    */
+    await loadBeatMultiplierSetting();
+
+    /*
     メトロノームのON/OFFを読み込みます(v177)。
 
     設定 ⚙️ →「🥁 メトロノーム」で選んだ状態を、次にアプリを開いた
