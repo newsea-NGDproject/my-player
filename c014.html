@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v274)ノリRun
+        (v275)ノリRun
         メインメニュー
 
     </title>
@@ -3222,6 +3222,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         */
         #license-panel,
         #connect-panel,
+        #beat-multiplier-panel,
         #metronome-panel,
         #sync-panel{
             position:fixed;
@@ -3274,8 +3275,11 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         v221で「みんなで走る同期モード」(#sync-panel)も並べました。
         竹弘の指定「条件がノリ注入済の曲・ノリノリRun再生モードの為、
         イメージカラー暁色」。
+
+        v275で「👣 拍倍率」(#beat-multiplier-panel)も並べました(🕺ノリノリRunの鳴らし方の設定なので暁色)。
         */
         #connect-panel,
+        #beat-multiplier-panel,
         #metronome-panel,
         #sync-panel{
             --theme-color:var(--theme-color-other);
@@ -4305,6 +4309,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         従い、他の画面へ影響が出ない書き方にしています。
         */
         #connect-panel .connect-choice,
+        #beat-multiplier-panel .connect-choice,
         #metronome-panel .connect-choice{
             display:block;
             width:100%;
@@ -4327,6 +4332,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
 
         /* いま選ばれている方。テーマ色(青 / 暁色)で囲みます */
         #connect-panel .connect-choice-on,
+        #beat-multiplier-panel .connect-choice-on,
         #metronome-panel .connect-choice-on{
             border-color:var(--theme-color);
             color:var(--theme-color);
@@ -4334,12 +4340,14 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         }
 
         #connect-panel .connect-choice:active,
+        #beat-multiplier-panel .connect-choice:active,
         #metronome-panel .connect-choice:active{
             filter:brightness(0.85);
         }
 
         /* 選択肢のグループ見出し(v173)。少し上に間を空けます */
         #connect-panel .connect-heading,
+        #beat-multiplier-panel .connect-heading,
         #metronome-panel .connect-heading,
         #sync-panel .connect-heading{
             margin:20px 0 8px 0;
@@ -4351,6 +4359,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
 
         /* 選択肢の下に添える一言。少し小さく、控えめな色にします */
         #connect-panel .connect-note,
+        #beat-multiplier-panel .connect-note,
         #metronome-panel .connect-note,
         #sync-panel .connect-note{
             display:block;
@@ -9362,6 +9371,65 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
 </div>
 
 <!--
+    設定 ⚙️ →「👣 拍倍率」で開く画面(⑬。v275。js/beat-multiplier.js)。
+
+    🕺ノリノリRun再生で、1拍に何歩で走るかを選びます。遅い曲は「1拍に2歩」、
+    速い曲は「2拍に1歩」のように足を着く拍を変えて、どの曲でもマイピッチで走れるようにします。
+    見出し・本文・閉じるボタン・選択肢のクラスは「🎚️ 曲の繋ぎ方」「🏃 ノリノリアシスト」と共有しています。
+
+    ⚠️ data-beat-multiplier の "off" / "near" / "march" は、js/beat-multiplier.js の
+       BEAT_MULTIPLIER_MODE_… と同じ値で、そのまま DB に保存されます(文字を変えない)。
+    ⚠️ 下の「(開発中 v275)」の一文は、段2 で鳴り方を変える時に消す。
+-->
+<div id="beat-multiplier-panel" style="display:none;">
+
+    <div class="license-header">
+        <span class="license-title">👣 拍倍率</span>
+        <button type="button" id="beat-multiplier-close-btn" class="license-close-btn">✕</button>
+    </div>
+
+    <div class="license-body">
+
+        <p>
+            🕺ノリノリRun再生で、遅い曲も速い曲も<br>
+            マイピッチで走れるように、<br>
+            1拍に何歩で走るかを選びます。
+        </p>
+
+        <p class="connect-heading">👣 選び方</p>
+
+        <button type="button" class="connect-choice" data-beat-multiplier="off">
+            OFF(今までどおり)
+            <span class="connect-note">速さだけで合わせます。0.5〜2.0倍で止まるので、遅い曲・速い曲は走るテンポが合わないことがあります</span>
+        </button>
+
+        <button type="button" class="connect-choice" data-beat-multiplier="near">
+            なるべく1倍の近く
+            <span class="connect-note">曲を 0.8〜1.6倍で鳴らします。原曲の速さに近く、音がいちばん崩れにくい</span>
+        </button>
+
+        <button type="button" class="connect-choice" data-beat-multiplier="march">
+            いったん行進の範囲へ揃える
+            <span class="connect-note">マラソンより速く走る時は、いつも 1.0〜2.0倍。原曲より遅くしないので、疾走感が出ます</span>
+        </button>
+
+        <p class="connect-note">
+            ※ 遅い曲は「1拍に2歩」、速い曲は<br>
+            　 「2拍に1歩」のように、足を着く拍を<br>
+            　 変えます。曲の拍に足が乗ったままなので、<br>
+            　 ノリは崩れません。<br>
+            <br>
+            ※ 切り替えは、次の曲から効きます。<br>
+            <br>
+            ※ (開発中 v275)いまは 🐛 に出すだけで、<br>
+            　 鳴り方はまだ変わりません。
+        </p>
+
+    </div>
+
+</div>
+
+<!--
     設定 ⚙️ →「🏃 ノリノリアシスト」で開く画面(v177 / v178で改名 / v179で🏃へ)。
 
     🕺ノリノリRun再生の間、マイピッチに合わせて音を鳴らします。
@@ -10731,6 +10799,13 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
 <script src="js/player.js"></script>
 <script src="js/queue.js"></script>
 <script src="js/media-session.js"></script>
+<!--
+    拍倍率(⑬。v275)。倍率を決める関数(decideBeatMultiplier)と、⚙️「👣 拍倍率」の設定。
+    ⚠️ js/deck.js より後に読み込むこと(読み込んだその場で bindDeckEvent を呼ぶため)。
+       ほかのファイルの名前(isNoriRunMode など)は関数の中から使うだけなので、順番は関係ない。
+    接続(js/connect.js)より前に置いたのは、段2 から接続がこの関数を使う「下の部品」だから。
+-->
+<script src="js/beat-multiplier.js"></script>
 <!--
     曲接続モジュール(v170)。拍で曲と曲を繋ぐ司令塔。
     js/deck.js より後に読み込むこと(読み込んだその場で bindDeckEvent を
