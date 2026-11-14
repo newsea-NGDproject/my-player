@@ -325,7 +325,11 @@ function drawOutOfRangeMask(centerBpm,width,height,centerX){
     // 曲を選んでいない間は、そもそも設定できる範囲が決まりません
     if(!track){ return; }
 
-    const base = getEffectiveBaseBpm(track);
+    /*
+    (v276)🕺 では「元ピッチ × 拍倍率」を基準にします(js/beat-multiplier.js の getPlaybackBaseBpm)。
+    ×2 の曲なら、動かせる範囲も2倍になります。メインメニューでは倍率 1 なので今までと同じ。
+    */
+    const base = getPlaybackBaseBpm(track);
 
     // 設定できるBPMの下限と上限
     const minBpm = base * RATE_MIN;
@@ -377,7 +381,19 @@ function applyTempo(rate,shouldSave,keepMyPitch){
 
     if(!track){ return; }
 
+    // 元ピッチ(画面の「元ピッチ：」に出す、曲そのもののテンポ)
     const base = getEffectiveBaseBpm(track);
+
+    /*
+    速さの基準(v276)。🕺 では「元ピッチ × 拍倍率」(js/beat-multiplier.js の getPlaybackBaseBpm)、
+    メインメニューでは元ピッチそのまま(倍率 1)。
+
+    ⚠️ 呼ぶ側が渡す rate も、この値で割って作っています(applyNoriRunPitch・applyTrackTempo・
+       changePitchBy / changePitchTo・数字入力)。下の currentBpm がちょうど走るテンポ
+       (マイピッチ)に戻るのは、掛ける側と割る側が同じ値だからです。片方だけ base に戻すと、
+       ×2 の曲で表示とマイピッチが半分に化けます(v170 の「マイピッチが化ける」と同じ形の穴)。
+    */
+    const tempoBase = getPlaybackBaseBpm(track);
 
     // 安全装置。0.5〜2.0倍からはみ出さないようにします
     const safeRate = Math.min(Math.max(rate,RATE_MIN),RATE_MAX);
@@ -398,14 +414,21 @@ function applyTempo(rate,shouldSave,keepMyPitch){
     audioPlayer.webkitPreservesPitch = true;
     audioPlayer.playbackRate = safeRate;
 
-    // 今鳴らしているテンポ(小数は出さず、1BPM単位に丸めます)
-    const currentBpm = Math.round(base * safeRate);
+    // 今鳴らしているテンポ(小数は出さず、1BPM単位に丸めます)。🕺 では走るテンポ
+    const currentBpm = Math.round(tempoBase * safeRate);
 
     currentRulerBpm = currentBpm;
 
     // --- 画面を更新します ---
     pitchValueEl.textContent = formatPitch(currentBpm);
     basePitchValueEl.textContent = formatPitch(base);
+
+    /*
+    「再生ピッチ」⇔「ノリRunBPM」と「×2」を、今の曲の拍倍率に合わせます(v276)。
+    🕺 で ① ② の時だけ「ノリRunBPM 170 ×2」、ほかは今までどおり「再生ピッチ 170」。
+    中身は js/beat-multiplier.js の refreshBeatMultiplierDisplay にあります。
+    */
+    refreshBeatMultiplierDisplay();
 
     /*
     「再生ピッチ」の後ろの絵文字を、今のテンポに合わせて入れ替えます(v193)。
@@ -554,7 +577,11 @@ function applyTrackTempo(track){
 
     if(!track){ return; }
 
-    const base = getEffectiveBaseBpm(track);
+    /*
+    速さの基準(v276)。🕺 では「元ピッチ × 拍倍率」、メインメニューでは元ピッチそのまま。
+    メインメニューの「前回のテンポが無い時は元ピッチ(等速)」も、倍率 1 なのでこの値で同じです。
+    */
+    const base = getPlaybackBaseBpm(track);
 
     /*
     ---- どの速さで鳴らし始めるか(v165で分岐) ----
@@ -610,7 +637,8 @@ function changePitchBy(delta){
     // 曲を選んでいない時は、動かしても意味がないので何もしません
     if(!track){ return; }
 
-    const base = getEffectiveBaseBpm(track);
+    // (v276)🕺 では「元ピッチ × 拍倍率」。applyTempo の tempoBase と同じ値で割ること
+    const base = getPlaybackBaseBpm(track);
 
     applyTempo((currentRulerBpm + delta) / base,false);
 
@@ -631,7 +659,8 @@ function changePitchTo(bpm){
 
     if(!track){ return; }
 
-    const base = getEffectiveBaseBpm(track);
+    // (v276)🕺 では「元ピッチ × 拍倍率」。applyTempo の tempoBase と同じ値で割ること
+    const base = getPlaybackBaseBpm(track);
 
     applyTempo(bpm / base,false);
 
@@ -693,7 +722,8 @@ canvasにだけ登録すると、少し外へはみ出した瞬間に操作が�
 
         if(!track){ return; }
 
-        const base = getEffectiveBaseBpm(track);
+        // (v276)🕺 では「元ピッチ × 拍倍率」。×2 の曲なら動ける範囲も2倍
+        const base = getPlaybackBaseBpm(track);
 
         const minBpm = base * RATE_MIN;
         const maxBpm = base * RATE_MAX;
@@ -945,7 +975,8 @@ function openPitchInput(){
     // 曲を選んでいない時は、変える相手がいないので開きません
     if(!track || !pitchInputPanel){ return; }
 
-    const base = getEffectiveBaseBpm(track);
+    // (v276)🕺 では「元ピッチ × 拍倍率」。設定できる範囲も倍率のぶん広がる
+    const base = getPlaybackBaseBpm(track);
 
     // 設定できる範囲を先に見せておきます
     const minBpm = Math.round(base * RATE_MIN);
@@ -1001,7 +1032,8 @@ function commitPitchInput(){
         return;
     }
 
-    const base = getEffectiveBaseBpm(track);
+    // (v276)🕺 では「元ピッチ × 拍倍率」。applyTempo の tempoBase と同じ値で割ること
+    const base = getPlaybackBaseBpm(track);
 
     /*
     applyTempo には「基準に対する倍率」を渡します。範囲からはみ出す値は

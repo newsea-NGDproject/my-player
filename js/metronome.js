@@ -738,8 +738,15 @@ function scheduleMetronomeBeats(){
     // 0拍目の位置(曲内秒)。1拍目(startTS)の1拍前です
     const beat0Sec = getBeat0AtSec(track);
 
-    // その曲の元テンポでの1拍の長さ(曲内秒)
-    const beatDurSongSec = 60 / getEffectiveBaseBpm(track);
+    /*
+    走る1拍の長さ(曲内秒)。
+
+    ⚠️ (v276)拍倍率が入りました。v275 までは「曲の1拍」(60 ÷ 元ピッチ)でしたが、
+       カチッは足を出す拍で鳴らすので「走る1拍」= 60 ÷(元ピッチ × 倍率)にしました
+       (js/beat-multiplier.js の getRunnerBeatSongSec)。×2 なら曲の1拍に2回鳴ります。
+       0拍目(beat0Sec)から数えるので、曲の拍の上でも必ず鳴ります。倍率 1 なら今までと同じ値。
+    */
+    const beatDurSongSec = getRunnerBeatSongSec(track);
 
     // いまのマイピッチで鳴らす時の再生速度(倍率)
     const rate = getTrackRate(track);

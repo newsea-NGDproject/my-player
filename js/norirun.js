@@ -269,7 +269,12 @@ function applyNoriRunPitch(){
 
     }
 
-    const base = getEffectiveBaseBpm(track);
+    /*
+    (v276)拍倍率が入りました:元ピッチ × 倍率(js/beat-multiplier.js の getPlaybackBaseBpm)。
+    元ピッチ 76 の曲を ×2(1拍に2歩)で走るなら 152 として扱い、170 ÷ 152 = 1.12倍で鳴らします。
+    設定が OFF なら倍率はいつも 1 で、今までと同じです。
+    */
+    const base = getPlaybackBaseBpm(track);
 
     /*
     速さの倍率は「走りたいテンポ ÷ その曲の本来のテンポ」です。
@@ -356,6 +361,15 @@ async function enterNoriRunMode(){
     noriRunMyPitch = noriRunBasePitch;
 
     isNoriRunMode = true;
+
+    /*
+    拍倍率を決め直します(v276。js/beat-multiplier.js)。
+
+    マイピッチを初期設定の値に読み直したので、前に🕺にいた時の控え(古いマイピッチで
+    決めた倍率)は使いません。今鳴っている曲も、この後の applyNoriRunPitch で
+    新しいマイピッチの倍率が決まります(🕺 に入った時が、その曲の「頭」)。
+    */
+    startBeatMultiplierSession();
 
     /*
     #app に印を付けるだけで、中の色がまとめて暁色に変わります。

@@ -790,6 +790,11 @@ function getConnectAnchorSec(track){
        「腕時計で何秒」ですが、拍の長さは「曲の中で何秒」なので、
        再生速度を掛けて曲の時間軸へ直してから割ります。
     */
+    /*
+    ⚠️ (v276)ここは拍倍率を入れず、**曲の1拍**でずらします(わざと)。
+       ×2・×4 なら曲の1拍は走る拍2つ・4つぶんなので、曲の拍でずらせば足の格子も崩れません。
+       ×½(段3)の時だけは、曲の拍2つで走る1拍になるので、偶数の拍でずらす直しが要ります。
+    */
     const beatDurSongSec = 60 / getEffectiveBaseBpm(track);
 
     if(!isFinite(beatDurSongSec) || beatDurSongSec <= 0){ return beat0AtSec; }
@@ -816,10 +821,16 @@ function getConnectAnchorSec(track){
 
 /**
  * その曲を、いまのマイピッチで鳴らす時の再生速度を返します。
+ *
+ * ⚠️ (v276)拍倍率が入りました:速さ = マイピッチ ÷(元ピッチ × 倍率)。
+ *    元ピッチ 76 の曲を ×2(1拍に2歩)で走るなら、170 ÷ 152 = 1.12倍です。
+ *    「元ピッチ × 倍率」は js/beat-multiplier.js の getPlaybackBaseBpm から借ります
+ *    (倍率は曲の頭で決めて、曲の間は変えない。設定が OFF なら倍率はいつも 1 = 今までと同じ式)。
+ *    助走・追いかけ補正・🎬・同期モードは、どれもこの関数を通るので、ここ1か所で効きます。
  */
 function getTrackRate(track){
 
-    const base = getEffectiveBaseBpm(track);
+    const base = getPlaybackBaseBpm(track);
 
     return Math.min(Math.max(noriRunMyPitch / base,RATE_MIN),RATE_MAX);
 

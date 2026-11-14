@@ -39,10 +39,22 @@
    【作る順番】(1段 = 1版。竹弘の GO の後に次の段)
 
        段1(v275・このファイルを新設)⚙️ の画面・設定の保存・倍率を決める関数・🐛 のログ。
-                                   ⚠️ 鳴り方はまだ何も変えていない(決め方を 🐛 で先に確かめる)
-       段2  ×1・×2・×4 を実際に効かせる(再生の速さ・拍の長さ・アシスト・接続・同期モード)。
-            上半分の「ノリRunBPM ×2」
+                                   鳴り方は変えなかった(決め方を 🐛 で先に確かめた。実機 OK)
+       段2(v276)×1・×2・×4 を実際に効かせる(再生の速さ・拍の長さ・アシスト・接続・同期モード)。
+                  上半分の「ノリRunBPM ×2」。×½・×¼ が選ばれた曲は、まだ ×1(今までどおり)で鳴らす
        段3  ×½・×¼ を効かせる(繋ぐ拍を偶数に・0拍目の位置・カチッの側)
+
+   【段2 で倍率が入った所】(どれもこのファイルの関数を通す。式を書き写さない)
+
+       再生の速さ       js/connect.js の getTrackRate・js/deck.js の applyPitchToDeck・
+                        js/pitch.js(🕺 の時の定規・表示)・js/norirun.js の applyNoriRunPitch
+                        → getPlaybackBaseBpm / getDeckBeatMultiplier
+       走る1拍の長さ     js/metronome.js(カチッの間隔)・js/sync.js(頭から鳴らす時の無音・直後の拍)
+                        → getRunnerBeatSongSec
+       変えていない所   0拍目(getBeat0AtSec = 曲の拍1つ前)・接続点(endTS)・助走が足りない時に
+                        ずらす拍(getConnectAnchorSec。曲の拍で動かす)・🎬 の無音の合わせ方。
+                        ×1・×2・×4 では曲の拍がいつも走る拍の上に乗るので、速さに倍率が入るだけで
+                        正しく繋がる。×½ は曲の拍の2つに1つしか走る拍に乗らないので、段3 で直す
 
    ⚠️ 決めるのは1か所(decideBeatMultiplier)。ジャケの getTrackCover と同じ考え方で、
       倍率を使う所(段2・段3)は全部この関数を通すこと。各所が同じ式を書くと、
@@ -128,6 +140,19 @@ const BEAT_MULTIPLIER_SAMPLES = 33;
 */
 const BEAT_MULTIPLIER_EPSILON = 1e-9;
 
+/*
+×½・×¼(曲の拍の2つ・4つに1歩)を、実際の鳴らし方に使うか。
+
+段2(v276)では false。×½ は、曲の拍の2つに1つだけが走る拍になるので、繋ぐ拍の数を
+偶数にそろえる直し(接続点を1拍手前にする等)が要ります。それは段3 で作ります。
+それまでは ×½・×¼ が選ばれても ×1(今までどおり。0.5〜2.0倍で止める)で鳴らし、
+🐛 に「×½ は段3 から」と出します。
+
+⚠️ 段3 で true にする時は、js/connect.js の接続点・getBeat0AtSec・getConnectAnchorSec と、
+   js/metronome.js のカチッの側(1拍目と同じ側)も一緒に直すこと(作戦会議の資料の6章)。
+*/
+const BEAT_MULTIPLIER_USE_SLOWER = false;
+
 
 // ==========================================================
 // 2. 今の状態
@@ -138,6 +163,34 @@ const BEAT_MULTIPLIER_EPSILON = 1e-9;
 起動時に loadBeatMultiplierSetting() が、保存してある値に置き換えます。
 */
 let beatMultiplierMode = BEAT_MULTIPLIER_MODE_OFF;
+
+/*
+デッキごとに「この曲はこの倍率で鳴らす」と決めた答えの控え(段2・v276)。
+
+    デッキ → { trackId, baseBpm, session, answer, multiplier }
+
+倍率は曲の頭で決めて、曲の間は変えません(竹弘 2026-11-15)。走りながら定規を動かすと
+マイピッチが変わりますが、毎回決め直すと、倍率の境目をまたいだ瞬間に曲の速さが半分や
+2倍へ跳んでしまいます。だから一度決めたら、その曲がデッキに載っている間はこの控えを使います。
+
+【いつ決めるか】
+曲をデッキに載せた後、最初に「この曲の倍率は?」と聞かれた時(getDeckBeatMultiplier)。
+載せる入口は js/deck.js の setDeckSource の1か所で、そこで控えを捨てます(forgetDeckBeatMultiplier)。
+
+    竹弘が曲をタップ          → 載せた直後に速さを当てる時に決まる
+    次の曲へ繋ぐ(助走)       → 助走を始める時に決まる(= 作戦会議の「曲の頭」)
+
+【決め直す時】控えは次の時に使わなくなり、次に聞かれた時に決め直します。
+    ・別の曲を載せた(上の setDeckSource)
+    ・🕺 に入り直した・同期モードをスタートした(startBeatMultiplierSession。マイピッチが変わるため)
+    ・その曲の元ピッチが変わった(ノリ注入をやり直した)
+
+⚠️ 設定(OFF / ① / ②)を切り替えても、今の曲の控えはそのまま。次の曲から効きます。
+
+session は「🕺 に入った回の番号」です。入り直すたびに1つ増やし、古い回の控えを使わないようにします。
+*/
+const deckBeatMultiplierMemos = new Map();
+let beatMultiplierSession = 0;
 
 
 // ==========================================================
@@ -415,6 +468,266 @@ function formatBeatMultiplier(multiplier){
 
 
 // ==========================================================
+// 3-2. 鳴らす時に使う倍率(デッキごとの控え。段2・v276)
+// ==========================================================
+/*
+ほかのファイルが使うのは、この節の4つだけです。式を書き写さず、必ずここを通すこと。
+
+    getDeckBeatMultiplier(deck)  … そのデッキの曲の倍率(js/deck.js の applyPitchToDeck)
+    getTrackBeatMultiplier(track) … その曲の倍率(デッキが分からない所から)
+    getPlaybackBaseBpm(track)    … 速さの計算に使う「元ピッチ × 倍率」(接続・定規・上半分)
+    getRunnerBeatSongSec(track)  … 走る1拍が、曲の中で何秒か(カチッ・同期モード)
+
+⚠️ どれも、🕺ノリノリRun の外(メインメニュー)では倍率 1 = 今までと同じ値を返します。
+   メインメニューの再生は STEP7 の見比べ役なので、拍倍率を一切効かせません。
+*/
+
+/**
+ * そのデッキに載っている曲の倍率を返します(無ければ、ここで決めて控えます)。
+ *
+ * @param  {HTMLAudioElement} deck
+ * @return {number} 倍率(1・2・4。段2 では ×½・×¼ も 1 として返す)
+ */
+function getDeckBeatMultiplier(deck){
+
+    const memo = getDeckBeatMultiplierMemo(deck);
+
+    return memo ? memo.multiplier : 1;
+
+}
+
+/**
+ * そのデッキの控えを返します(まだ無い・古い時は、ここで決めて控えます)。
+ *
+ * 🕺 の外・曲が載っていない時は null(倍率 1 として扱う)。
+ */
+function getDeckBeatMultiplierMemo(deck){
+
+    if(!isNoriRunMode){ return null; }
+
+    const track = getDeckTrack(deck);
+
+    if(!track){ return null; }
+
+    const baseBpm = getEffectiveBaseBpm(track);
+
+    const memo = deckBeatMultiplierMemos.get(deck);
+
+    // 同じ曲・同じ元ピッチ・同じ回の控えがあれば、それを使います(曲の間は変えない)
+    if(memo &&
+       memo.trackId === track.track_id &&
+       memo.baseBpm === baseBpm &&
+       memo.session === beatMultiplierSession){
+
+        return memo;
+
+    }
+
+    return decideDeckBeatMultiplier(deck,track,baseBpm);
+
+}
+
+/**
+ * そのデッキの曲の倍率を、今のマイピッチと設定で決めて控えます(= 曲の頭)。
+ */
+function decideDeckBeatMultiplier(deck,track,baseBpm){
+
+    /*
+    1曲ループ接続(同じ曲を、もう1枚のデッキで続けて鳴らす)の時は、鳴っている方の倍率を
+    そのまま引き継ぎます。同じ曲の続きなので、途中で定規を動かしていても倍率は変えません
+    (変えると、繋いだ瞬間に曲の速さが半分や2倍へ跳ぶ)。
+    */
+    const otherDeck = (deck === deckAudioA) ? deckAudioB : deckAudioA;
+    const otherMemo = deckBeatMultiplierMemos.get(otherDeck);
+
+    if(otherMemo &&
+       !otherDeck.paused &&
+       otherMemo.trackId === track.track_id &&
+       otherMemo.baseBpm === baseBpm &&
+       otherMemo.session === beatMultiplierSession){
+
+        const copied = Object.assign({},otherMemo);
+
+        deckBeatMultiplierMemos.set(deck,copied);
+
+        // 【開発用調査ログ】(v276)
+        console.log(
+            "👣 拍倍率 : 1曲ループなので、鳴っている方の倍率を引き継ぎます(" +
+            formatBeatMultiplier(copied.multiplier) + ")"
+        );
+
+        return copied;
+
+    }
+
+    // 今はプログラムが無いので、幅0(同じ値を2つ)で渡します(decideBeatMultiplier の説明)
+    const answer = decideBeatMultiplier(baseBpm,noriRunMyPitch,noriRunMyPitch,beatMultiplierMode);
+
+    /*
+    段2 では ×½・×¼ はまだ使いません(上の BEAT_MULTIPLIER_USE_SLOWER)。
+    ×1 にすると、今までどおり「マイピッチ ÷ 元ピッチ」を 0.5〜2.0倍で止めた速さになります。
+    */
+    const multiplier = (answer.multiplier < 1 && !BEAT_MULTIPLIER_USE_SLOWER)
+        ? 1
+        : answer.multiplier;
+
+    const memo = {
+        trackId: track.track_id,
+        baseBpm: baseBpm,
+        session: beatMultiplierSession,
+        answer: answer,
+        multiplier: multiplier
+    };
+
+    deckBeatMultiplierMemos.set(deck,memo);
+
+    // 【開発用調査ログ】(v276)決めた時に1行(下の 5. の節)
+    logBeatMultiplierDecision(deck,track,memo);
+
+    return memo;
+
+}
+
+/**
+ * その曲の倍率を返します(デッキではなく曲で聞かれる所から。js/connect.js の getTrackRate など)。
+ *
+ * 【どの控えを使うか】
+ *     主役のデッキに載っている曲  → 主役の控え
+ *     もう1枚に載っていて、鳴っている曲(助走中・🎬 の待ち・繋いだ後の先行曲)→ その控え
+ *     どちらでもない曲(助走を始めるか確かめている次の曲)→ その場で決めた答え(控えない)
+ *
+ * ⚠️ もう1枚のデッキが止まっている時(前に鳴っていた曲が残っているだけ)は、その控えを使いません。
+ *    古いマイピッチで決めた倍率が、次に同じ曲を鳴らす時に混ざらないようにするためです。
+ *    その曲を本当に載せた時(setDeckSource)に控えを捨てて、決め直します。
+ */
+function getTrackBeatMultiplier(track){
+
+    if(!isNoriRunMode || !track){ return 1; }
+
+    /*
+    同じ曲かどうかは track_id で比べます(曲のデータの入れ物そのもので比べると、
+    ノリ注入をやり直して入れ物が作り直された時に、同じ曲なのに「違う」となるため)。
+    */
+    if(isSameBeatMultiplierTrack(getDeckTrack(audioPlayer),track)){
+
+        return getDeckBeatMultiplier(audioPlayer);
+
+    }
+
+    const otherDeck = (audioPlayer === deckAudioA) ? deckAudioB : deckAudioA;
+
+    if(isSameBeatMultiplierTrack(getDeckTrack(otherDeck),track) && !otherDeck.paused){
+
+        return getDeckBeatMultiplier(otherDeck);
+
+    }
+
+    // まだどのデッキにも載っていない曲。控えずに、今のマイピッチと設定で答えます
+    const baseBpm = getEffectiveBaseBpm(track);
+
+    const answer = decideBeatMultiplier(baseBpm,noriRunMyPitch,noriRunMyPitch,beatMultiplierMode);
+
+    return (answer.multiplier < 1 && !BEAT_MULTIPLIER_USE_SLOWER) ? 1 : answer.multiplier;
+
+}
+
+// 2つの曲のデータが同じ曲か(どちらかが無ければ false)
+function isSameBeatMultiplierTrack(trackA,trackB){
+
+    return !!trackA && !!trackB && trackA.track_id === trackB.track_id;
+
+}
+
+/**
+ * 速さの計算に使う「元ピッチ × 倍率」を返します。
+ *
+ * 元ピッチ 76 の曲を ×2 で走るなら 152。再生の速さは「マイピッチ ÷ この値」になります
+ * (170 ÷ 152 = 1.12倍)。🕺 の外では、元ピッチそのまま(倍率 1)。
+ */
+function getPlaybackBaseBpm(track){
+
+    return getEffectiveBaseBpm(track) * getTrackBeatMultiplier(track);
+
+}
+
+/**
+ * 走る1拍が、曲の中で何秒かを返します(曲の秒。再生の速さで伸び縮みする前)。
+ *
+ * ×1 なら曲の1拍(60 ÷ 元ピッチ)、×2 なら曲の半拍、×4 なら曲の¼拍。
+ * ノリノリアシストのカチッはこの間隔で鳴ります(×2 なら曲の1拍に2回)。
+ */
+function getRunnerBeatSongSec(track){
+
+    return 60 / getPlaybackBaseBpm(track);
+
+}
+
+/**
+ * 🕺 に入った時・同期モードをスタートした時に呼びます。今までの控えを全部使わなくします。
+ *
+ * どちらもマイピッチが変わる(入るたびに初期設定の値を読み直す / みんなのピッチにする)ので、
+ * 今鳴っている曲の倍率も、新しいマイピッチで決め直します。
+ */
+function startBeatMultiplierSession(){
+
+    beatMultiplierSession++;
+
+    deckBeatMultiplierMemos.clear();
+
+}
+
+/**
+ * そのデッキの控えを捨てます。js/deck.js の setDeckSource(曲を載せる入口)から呼ばれます。
+ */
+function forgetDeckBeatMultiplier(deck){
+
+    deckBeatMultiplierMemos.delete(deck);
+
+}
+
+/**
+ * 上半分の左の表示(「再生ピッチ」⇔「ノリRunBPM」と「×2」)を、主役の曲に合わせて直します。
+ *
+ * js/pitch.js の applyTempo(速さを変えるたびに通る)から呼ばれます。
+ *
+ *     🕺 で、今の曲を ① か ② で決めた時   ノリRunBPM 170 ×2(×1 の時は「×2」を出さない)
+ *     それ以外(OFF・メインメニュー)        再生ピッチ 170(今までどおり)
+ *
+ * 数字は、どちらも走るテンポ(= マイピッチ)です(竹弘 2026-11-15「走るテンポで行こう」)。
+ * ⚠️ 設定を切り替えても、今の曲は決めた時の設定のまま表示します(次の曲から効くのと同じ)。
+ */
+function refreshBeatMultiplierDisplay(){
+
+    const labelEl = document.getElementById("pitch-label-text");
+    const badgeEl = document.getElementById("pitch-multiplier");
+
+    if(!labelEl || !badgeEl){ return; }
+
+    const memo = getDeckBeatMultiplierMemo(audioPlayer);
+
+    const isNoriRunBpm = !!memo && memo.answer.mode !== BEAT_MULTIPLIER_MODE_OFF;
+
+    labelEl.textContent = isNoriRunBpm ? "ノリRunBPM" : "再生ピッチ";
+
+    badgeEl.textContent = (isNoriRunBpm && memo.multiplier !== 1)
+        ? formatBeatMultiplier(memo.multiplier)
+        : "";
+
+    /*
+    「ノリRunBPM」の間は、「：」と数字の後ろの小さな「BPM」を消します(見出しにもう BPM があり、
+    幅 360px の画面では、そのままだと右のマイピッチボタンに重なって見出しが2行に折り返すため。
+    くわしい測った値は c014.html の .ua-pitch-now--norirun-bpm の CSS)。
+
+    closest は「自分から親へたどって、最初に条件に合う要素」を返す命令です。
+    */
+    const nowEl = labelEl.closest(".ua-pitch-now");
+
+    if(nowEl){ nowEl.classList.toggle("ua-pitch-now--norirun-bpm",isNoriRunBpm); }
+
+}
+
+
+// ==========================================================
 // 4. 設定の切り替え・保存・読み込み
 // ==========================================================
 
@@ -423,8 +736,8 @@ function formatBeatMultiplier(multiplier){
  *
  * 設定画面(js/settings.js の 👣 拍倍率)のボタンから呼ばれます。
  *
- * ⚠️ 段1(v275)では、切り替えても鳴り方は変わりません(🐛 に出すだけ)。
- *    段2 から、切り替えは「次の曲から」効くようにします(倍率は曲の頭で決めて曲の間は変えないため)。
+ * ⚠️ 切り替えは「次の曲から」効きます(段2・v276〜)。倍率は曲の頭で決めて曲の間は変えないので、
+ *    今鳴っている曲は、決めた時の設定のまま鳴り続けます(上の deckBeatMultiplierMemos)。
  *
  * @param {string} mode - BEAT_MULTIPLIER_MODE_OFF / _NEAR / _MARCH
  */
@@ -443,9 +756,9 @@ async function setBeatMultiplierMode(mode){
 
     beatMultiplierMode = mode;
 
-    console.log("拍倍率 :",describeBeatMultiplierMode(beatMultiplierMode));
+    console.log("拍倍率 :",describeBeatMultiplierMode(beatMultiplierMode),"(次の曲から効きます)");
 
-    // 【開発用調査ログ】(v275)切り替えた時の、今の曲の答えを 🐛 に出します(下の 5. の節)
+    // 【開発用調査ログ】(v276)今の曲がどの倍率のままかを 🐛 に出します(下の 5. の節)
     logBeatMultiplierOnModeChange();
 
     try{
@@ -511,80 +824,88 @@ function describeBeatMultiplierMode(mode){
 
 
 // ==========================================================
-// 5. 【開発用調査ログ】(v275)曲ごとの答えを 🐛 に出す
+// 5. 【開発用調査ログ】(v275〜)倍率を決めた時に 🐛 へ出す
 // ==========================================================
 /*
-段1 の目的:鳴り方を変える前に、決め方が竹弘の曲で正しいかを 🐛 で確かめる。
+段1(v275)で、決め方が竹弘の曲で正しいことを確かめた(実機 OK)。段2(v276)からは、
+**倍率を決めた瞬間**(曲をデッキに載せた後、最初に聞かれた時)に1行出します。
+次の曲なら、助走を始める時に出ます。決めた設定の答えを先に、残り2つの設定ならどうなるかを
+[ ] の中に出すので、OFF・①・② をその場で見比べられます。
 
-🕺ノリノリRun で曲が鳴り始めたら、1曲につき1行だけ出します。いまの設定の答えを先に、
-残り2つの設定ならどうなるかを [ ] の中に出すので、OFF・①・② をその場で見比べられます。
-
-    👣 拍倍率(② 行進へ揃える)「曲名」: 元ピッチ 76 / マイピッチ 170 → ×2・1.12倍
+    👣 拍倍率 デッキA(② 行進へ揃える)「曲名」: 元ピッチ 76 / マイピッチ 170 → ×2・1.12倍
        [OFF なら 2.00倍で止まり 152 / ① なら ×2・1.12倍]
 
-⚠️ 本番リリース前に消してよいのは、この 5. の節と、setBeatMultiplierMode の中の
-   logBeatMultiplierOnModeChange() の呼び出し1行だけ(CLAUDE.md の「本番リリース前に削除するもの」)。
-   上の 3. の decideBeatMultiplier ほかは本番の処理なので消さない。
+⚠️ 本番リリース前に消してよいのは、この 5. の節と、次の3か所の呼び出しだけ
+   (CLAUDE.md の「本番リリース前に削除するもの」):
+       setBeatMultiplierMode の logBeatMultiplierOnModeChange() の1行
+       decideDeckBeatMultiplier の logBeatMultiplierDecision(…) の1行と、1曲ループの console.log
+   上の 3.・3-2. の関数は本番の処理なので消さない。
 */
-
-/*
-最後に 🐛 へ出した曲。同じ曲で何度も出さないための印です。
-🕺ノリノリRun を抜けたら空にして、次に入った時にもう一度出します。
-*/
-let beatMultiplierLoggedTrackId = null;
 
 /**
- * 1曲ぶんの答えを 🐛 に1行で出します。
+ * 倍率を決めた時に、1行で 🐛 に出します。
  *
- * @param {Object} track - libraryMap の曲のデータ
- * @param {string} note  - 行の頭に添える一言(切り替えた時など。無ければ "")
+ * @param {HTMLAudioElement} deck - 決めたデッキ
+ * @param {Object}           track
+ * @param {Object}           memo  - decideDeckBeatMultiplier が作った控え
  */
-function logBeatMultiplierForTrack(track,note){
+function logBeatMultiplierDecision(deck,track,memo){
 
-    const baseBpm = getEffectiveBaseBpm(track);
+    const answer = memo.answer;
+    const pitch = answer.pitchLow;
 
-    // 今はプログラムが無いので、幅0(同じ値を2つ)で渡します(decideBeatMultiplier の説明)
-    const pitch = noriRunMyPitch;
-
-    const answers = {};
-
-    [BEAT_MULTIPLIER_MODE_OFF,BEAT_MULTIPLIER_MODE_NEAR,BEAT_MULTIPLIER_MODE_MARCH].forEach(function(mode){
-
-        answers[mode] = decideBeatMultiplier(baseBpm,pitch,pitch,mode);
-
-    });
-
-    // いまの設定以外の2つを、[ ] の中に並べます
+    // 残り2つの設定ならどうなるか(同じ元ピッチ・同じマイピッチで計算し直す)
     const others = [BEAT_MULTIPLIER_MODE_OFF,BEAT_MULTIPLIER_MODE_NEAR,BEAT_MULTIPLIER_MODE_MARCH]
-        .filter(function(mode){ return mode !== beatMultiplierMode; })
+        .filter(function(mode){ return mode !== answer.mode; })
         .map(function(mode){
-            return getBeatMultiplierShortName(mode) + " なら " + describeBeatMultiplierAnswer(answers[mode]);
+            const other = decideBeatMultiplier(answer.baseBpm,pitch,pitch,mode);
+            return getBeatMultiplierShortName(mode) + " なら " + describeBeatMultiplierAnswer(other);
         });
+
+    let chosen = describeBeatMultiplierAnswer(answer);
+
+    /*
+    段2 では ×½・×¼ をまだ使わないので、×1(今までどおり)で鳴らしたことも書き添えます。
+    */
+    if(memo.multiplier !== answer.multiplier){
+
+        const fallback = decideBeatMultiplier(answer.baseBpm,pitch,pitch,BEAT_MULTIPLIER_MODE_OFF);
+
+        chosen += "(⚠️ " + formatBeatMultiplier(answer.multiplier) + " は段3 から。今は " +
+                  describeBeatMultiplierAnswer(fallback) + " = 今までどおり)";
+
+    }
 
     const title = (track.title || "(曲名なし)").slice(0,24);
 
     console.log(
-        "👣 拍倍率(" + getBeatMultiplierLogName(beatMultiplierMode) + ")" + note +
-        "「" + title + "」: 元ピッチ " + formatBeatMultiplierBpm(baseBpm) +
+        "👣 拍倍率 デッキ" + ((deck === deckAudioA) ? "A" : "B") +
+        "(" + getBeatMultiplierLogName(answer.mode) + ")" +
+        "「" + title + "」: 元ピッチ " + formatBeatMultiplierBpm(answer.baseBpm) +
         " / マイピッチ " + formatBeatMultiplierBpm(pitch) +
-        " → " + describeBeatMultiplierAnswer(answers[beatMultiplierMode]) +
+        " → " + chosen +
         " [" + others.join(" / ") + "]"
     );
 
 }
 
 /**
- * 設定を切り替えた時に、今の曲の答えを出し直します(🕺ノリノリRun で曲が載っている時だけ)。
+ * 設定を切り替えた時に、今の曲はどの倍率のまま鳴るかを出します(🕺 で曲が載っている時だけ)。
  */
 function logBeatMultiplierOnModeChange(){
 
     if(!isNoriRunMode){ return; }
 
+    const memo = deckBeatMultiplierMemos.get(audioPlayer);
     const track = getDeckTrack(audioPlayer);
 
-    if(!track){ return; }
+    if(!memo || !track){ return; }
 
-    logBeatMultiplierForTrack(track,"【切り替えた時の今の曲】");
+    console.log(
+        "👣 拍倍率 : 今の曲「" + (track.title || "(曲名なし)").slice(0,24) + "」は " +
+        formatBeatMultiplier(memo.multiplier) + "(" + getBeatMultiplierLogName(memo.answer.mode) +
+        " で決めた)のまま。" + getBeatMultiplierLogName(beatMultiplierMode) + " は次の曲から"
+    );
 
 }
 
@@ -647,37 +968,10 @@ function formatBeatMultiplierBpm(bpm){
 }
 
 /*
-曲が鳴り始めたら出します。
+(v275 では、主役のデッキの timeupdate を見張って「曲が変わったら1行」を出していた。
+ v276 からは倍率を決めた瞬間に出すので、見張りは外した)
 
-timeupdate は、鳴っている曲の位置が進むたびに(1秒に4回くらい)届く知らせです。
-bindDeckEvent(js/deck.js)は主役のデッキの知らせだけを渡すので、
-「主役のデッキに今載っている曲」が前に出した曲と違えば、新しい曲が鳴り始めたと分かります。
-
-【なぜ play や playing ではないのか】
-繋いで交代する時、次の曲は裏で助走している間に鳴り始めています(その時はまだ主役ではないので、
-知らせは関所で聞き流される)。交代した後は、もう鳴っているので play は届きません。
-timeupdate なら交代の後も届き続けるので、繋いだ曲も取りこぼしません。
-止まっている間は届かないので、無駄に動くこともありません。
-
-⚠️ 読み込んだその場で bindDeckEvent を呼ぶので、js/deck.js より後に読み込むこと。
-   isNoriRunMode(js/norirun.js)・noriRunMyPitch・getEffectiveBaseBpm は、関数の中から
-   使うだけなので、読み込みの順番は関係ありません(曲が鳴る頃には全部読み終わっている)。
+⚠️ このファイルは、読み込んだその場では何も呼びません(関数と値を用意するだけ)。
+   ほかのファイルの名前(isNoriRunMode・noriRunMyPitch・getEffectiveBaseBpm・getDeckTrack など)は
+   関数の中から使うだけなので、読み込みの順番は関係ありません(曲が鳴る頃には全部読み終わっている)。
 */
-bindDeckEvent("timeupdate",function(){
-
-    if(!isNoriRunMode){
-
-        beatMultiplierLoggedTrackId = null;
-        return;
-
-    }
-
-    const track = getDeckTrack(audioPlayer);
-
-    if(!track || track.track_id === beatMultiplierLoggedTrackId){ return; }
-
-    beatMultiplierLoggedTrackId = track.track_id;
-
-    logBeatMultiplierForTrack(track,"");
-
-});

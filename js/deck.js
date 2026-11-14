@@ -336,6 +336,13 @@ function setDeckSource(deck,file,trackId){
     // どの曲を載せたかも覚えます(速さを計算し直す時に要ります)
     deckTrackIds.set(deck,trackId);
 
+    /*
+    新しい曲を載せたので、このデッキで前の曲に決めていた拍倍率の控えを捨てます(v276)。
+    次に「この曲の倍率は?」と聞かれた時に、今のマイピッチと設定で決め直します(= 曲の頭で決める)。
+    ここ1か所で捨てれば、上の安全網と同じく、どの入口から載せても漏れません(js/beat-multiplier.js)。
+    */
+    forgetDeckBeatMultiplier(deck);
+
     deck.src = url;
 
 }
@@ -1070,7 +1077,12 @@ function applyPitchToDeck(deck,targetBpm){
     // 何も載っていないデッキには、当てるべき速さがありません
     if(!track){ return false; }
 
-    const base = getEffectiveBaseBpm(track);
+    /*
+    (v276)拍倍率が入りました:元ピッチ × そのデッキの曲の倍率(js/beat-multiplier.js)。
+    ×2 なら「1拍に2歩」なので、曲の拍を2倍に数えてから速さを決めます。
+    🕺 の外・設定が OFF の時は倍率 1 で、今までと同じ式です。
+    */
+    const base = getEffectiveBaseBpm(track) * getDeckBeatMultiplier(deck);
 
     // 安全装置。0.5〜2.0倍からはみ出さないようにします(pitch.jsと同じ)
     const rate = Math.min(Math.max(targetBpm / base,RATE_MIN),RATE_MAX);

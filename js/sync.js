@@ -5348,6 +5348,14 @@ async function scheduleSyncStart(targetWallMs){
  */
 function applySyncPitch(){
 
+    /*
+    (v276)拍倍率を決め直します。マイピッチがみんなのピッチに変わるので、今の曲の倍率も
+    新しいマイピッチで決め直さないと、曲によっては安全装置(2.0倍)に当たって拍の格子から
+    ずれていきます(js/beat-multiplier.js の startBeatMultiplierSession)。
+    この後の applyNoriRunPitch と ② の計画(getTrackRate)で、みんなのピッチで決まります。
+    */
+    startBeatMultiplierSession();
+
     noriRunMyPitch = syncState.pitch;
     noriRunBasePitch = syncState.pitch;
 
@@ -5434,8 +5442,12 @@ async function prepareSyncPlan(){
  */
 function buildSyncResumePlan(track,pausedSec){
 
-    // 曲の中での1拍の長さ(元テンポの1拍。再生速度で伸び縮みする前)
-    const beatSongSec = 60 / getEffectiveBaseBpm(track);
+    /*
+    曲の中での走る1拍の長さ(再生速度で伸び縮みする前)。
+    (v276)拍倍率が入ったので、曲の1拍ではなく走る1拍(×2 なら曲の半拍)にしました
+    (js/beat-multiplier.js の getRunnerBeatSongSec。倍率 1 なら今までと同じ 60 ÷ 元ピッチ)。
+    */
+    const beatSongSec = getRunnerBeatSongSec(track);
 
     const beat0Sec = getBeat0AtSec(track);
 
@@ -5486,7 +5498,12 @@ function buildSyncResumePlan(track,pausedSec){
  */
 function buildSyncHeadPlan(track){
 
-    const beatSongSec = 60 / getEffectiveBaseBpm(track);
+    /*
+    走る1拍の長さ(曲の秒)。(v276)拍倍率が入ったので、曲の1拍ではなく走る1拍にしました。
+    曲の1拍のままだと、×2 の曲で無音が最大2拍ぶんになり、竹弘と決めた「0〜1拍未満」を
+    はみ出すためです(下の beatRealSec が、いつもマイピッチの1拍 = 60 ÷ マイピッチ になる)。
+    */
+    const beatSongSec = getRunnerBeatSongSec(track);
 
     const beat0Sec = getBeat0AtSec(track);
 
@@ -7290,7 +7307,8 @@ function isSyncResumeWanted(){
  */
 function findSyncNextBeatSec(track,sec){
 
-    const beatSongSec = 60 / getEffectiveBaseBpm(track);
+    // 走る1拍の長さ(曲の秒)。(v276)buildSyncResumePlan と同じく、拍倍率の入った走る1拍
+    const beatSongSec = getRunnerBeatSongSec(track);
 
     const beat0Sec = getBeat0AtSec(track);
 
