@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v275)ノリRun
+        (v276)ノリRun
         メインメニュー
 
     </title>
@@ -1538,6 +1538,61 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         #pitch-pace-emoji{
             font-size:1.5em;
             vertical-align:-0.1em;
+        }
+
+        /*
+        拍倍率の「×2」(v276。js/beat-multiplier.js)。数字の後ろに小さく付けます。
+
+        作戦会議の見本(竹弘が選んだ「ノリRunBPM + ×2」)どおり、数字とは別の色(海の青)にして、
+        「走るテンポの数字」と「1拍に何歩か」が混ざって見えないようにしています。
+        「×2」が出るのは🕺の中だけで、そこでは --theme-color-other が海の青を指します
+        (#app.norirun-mode の「行き先の色」。色の数字を書き写さないための借り方)。
+        大きさは、数字の後ろの小さな「BPM」と同じくらい(0.6rem)。その「BPM」は、
+        「ノリRunBPM」の間は消して、空いた場所に「×2」が入る形です(下の .ua-pitch-now--norirun-bpm)。
+        ⚠️ 中身が空(×1・OFF・メインメニュー)の時は :empty で幅も余白も0にして、
+           今までの並びを1pxも動かしません。
+        */
+        #pitch-multiplier{
+            margin-left:2px;
+            font-size:0.6rem;
+            font-weight:900;
+            color:var(--theme-color-other);
+            white-space:nowrap;
+        }
+
+        #pitch-multiplier:empty{
+            display:none;
+        }
+
+        /*
+        見出しが「ノリRunBPM」の間だけ、「：」と、数字の後ろの小さな「BPM」(下の #pitch-value::after)を
+        消します(v276)。
+
+        【なぜ】この行は幅がぎりぎりで、「ノリRunBPM」と「×2」が入ると右の「マイピッチ」ボタンに
+        重なり、見出しが2行に折り返すためです。見出しにもう「BPM」が入っているので、数字の後ろの
+        単位は無くても読めます。のりが幅 360px の画面(GALAXY と同じ)で測った値(2026-11-15):
+
+            再生ピッチ🏃‍♂️：170BPM           マイピッチボタンまで 5px の余り(今まで)
+            ノリRunBPM🏃‍♂️：170 ×2(0.8rem)  9px 重なる ✗(見出しが2行に折り返す)
+            ノリRunBPM🏃‍♂️：170 ×2(0.6rem)  2px 重なる ✗
+            ノリRunBPM🏃‍♂️ 170 ×2(これ)     7px の余り ✓(今より広い。×4 も同じ。×1 は 24px)
+
+        ⚠️ 付け外しは js/beat-multiplier.js の refreshBeatMultiplierDisplay が行います
+           (.ua-pitch-now に ua-pitch-now--norirun-bpm を付ける)。「再生ピッチ」の時は今までどおり
+           「：」も単位も出ます(メインメニュー・OFF の見た目は1pxも変わらない)。
+        ⚠️ #pitch-value::after より後ろに書いていなくても効きます(クラス + id の方が、id だけより強いため)。
+        ⚠️ 見出しの文字を長くする時は、この行を幅 360px で測り直すこと。
+        */
+        .ua-pitch-now--norirun-bpm .ua-pitch-colon{
+            display:none;
+        }
+
+        .ua-pitch-now--norirun-bpm #pitch-value{
+            margin-left:0.15em;
+        }
+
+        .ua-pitch-now--norirun-bpm #pitch-value::after{
+            content:none;
         }
 
         /*
@@ -8211,8 +8266,17 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
                     テンポに応じて 🚶‍♂️🥁🏃‍♂️🏎️ が入れ替わります**。
                     中身は js/pitch.js の applyTempo() が入れています。
                 -->
-                <span class="ua-pitch-label">再生ピッチ<span id="pitch-pace-emoji"></span>：</span>
+                <!--
+                    (v276)拍倍率。🕺 で ① ② の時だけ、見出しが「ノリRunBPM」になり、数字の後ろに
+                    「×2」が付きます(×1 の時は付けない)。数字はどちらも走るテンポ(マイピッチ)。
+                    中身は js/beat-multiplier.js の refreshBeatMultiplierDisplay() が入れます。
+                    ⚠️ 見出しの文字を span で包んだのは、横の絵文字(#pitch-pace-emoji)を消さずに
+                       文字だけ書き換えるためです。「：」も span で包み、「ノリRunBPM」の間だけ隠します
+                       (幅が足りないため。CSS の .ua-pitch-now--norirun-bpm)。
+                -->
+                <span class="ua-pitch-label"><span id="pitch-label-text">再生ピッチ</span><span id="pitch-pace-emoji"></span><span class="ua-pitch-colon">：</span></span>
                 <span class="ua-pitch-value" id="pitch-value">---</span>
+                <span id="pitch-multiplier"></span>
             </div>
 
             <div class="ua-pitch-base">
@@ -9379,7 +9443,8 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
 
     ⚠️ data-beat-multiplier の "off" / "near" / "march" は、js/beat-multiplier.js の
        BEAT_MULTIPLIER_MODE_… と同じ値で、そのまま DB に保存されます(文字を変えない)。
-    ⚠️ 下の「(開発中 v275)」の一文は、段2 で鳴り方を変える時に消す。
+    (v276)段2 で鳴り方に効くようにしたので、v275 の「(開発中)いまは 🐛 に出すだけ」の一文は消した。
+    ×½・×¼(速い曲を2拍・4拍に1歩)は段3 までは今までどおりの鳴り方なので、その一文を代わりに置いた。
 -->
 <div id="beat-multiplier-panel" style="display:none;">
 
@@ -9421,8 +9486,9 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
             <br>
             ※ 切り替えは、次の曲から効きます。<br>
             <br>
-            ※ (開発中 v275)いまは 🐛 に出すだけで、<br>
-            　 鳴り方はまだ変わりません。
+            ※ (開発中)速い曲を「2拍に1歩」で<br>
+            　 走る形は、まだ今までどおりの<br>
+            　 鳴り方です(次の版で入れます)。
         </p>
 
     </div>
@@ -10800,10 +10866,10 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
 <script src="js/queue.js"></script>
 <script src="js/media-session.js"></script>
 <!--
-    拍倍率(⑬。v275)。倍率を決める関数(decideBeatMultiplier)と、⚙️「👣 拍倍率」の設定。
-    ⚠️ js/deck.js より後に読み込むこと(読み込んだその場で bindDeckEvent を呼ぶため)。
+    拍倍率(⑬。v275〜)。倍率を決める関数(decideBeatMultiplier)・デッキごとの控え・⚙️「👣 拍倍率」の設定。
+    (v276)読み込んだその場では何も呼ばなくなった(v275 の bindDeckEvent の見張りは外した)。
        ほかのファイルの名前(isNoriRunMode など)は関数の中から使うだけなので、順番は関係ない。
-    接続(js/connect.js)より前に置いたのは、段2 から接続がこの関数を使う「下の部品」だから。
+    接続(js/connect.js)より前に置いたのは、接続・デッキ・定規がこの関数を使う「下の部品」だから。
 -->
 <script src="js/beat-multiplier.js"></script>
 <!--
