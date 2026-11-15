@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v278)ノリRun
+        (v279)ノリRun
         メインメニュー
 
     </title>
@@ -9219,34 +9219,60 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
                表裏がいちばん判別しやすいためです(B地点は終盤で
                リズムが崩れがちで、確認には向きません)。
         -->
+        <!--
+            (v279)最後の確認を「段」に分けました(竹弘と決めた 2026-11-15)。
+
+                ① BPM確認            … 下の #tap-final-bpm(結果の1行・🎯)        緑のボタン「次へ ▶」
+                ② 表打ちの確認 1/2   … 下の #tap-final-beat(⇄ 表打ちにする)     「OK 次へ ▶」/ 遅い曲は「確定保存」
+                ② 表打ちの確認 2/2   … 同じ #tap-final-beat。カチッは2拍に1回     「確定保存」(速い曲だけ)
+
+            竹弘「BPMの設定と裏打ち確認を、今同じ画面で同時に実施しているけど、画面を遷移させて、
+                  新たな表打ち確認画面として独立させた方がよくないかな」
+            2/2 は、速い曲を🕺で「2拍に1歩」(拍倍率 ×½)で鳴らした時に、カチッが「タン」の拍(裏)に乗らないかを確かめる段。
+            どの段に何を見せるか・案内の2行・緑のボタンの文字は、js/tap.js の showTapFinalStep が決めます。
+            ⚠️ v278 までの説明の1行(メトロノームが曲の拍と合っていますか / ※裏で鳴っていたら…)は外しました。
+               同じことを上の案内(#tap-guide)の2行に書くためです(画面の高さも1行ぶん減る)。
+        -->
         <div id="tap-final" style="display:none;">
 
-            <!--
-                (v267)曲全体のBPMにしたかどうかの1行(段0-4)。
-                ✅ 曲全体のBPM 83.48(A〜B 269拍) / ⚠️ 拍の数を決めきれません。…
-                (v268)C地点の結果も入れて4つの形になりました(どれも2行まで)。
-                文字と色は js/tap.js の updateTapFinalResult が書きます(4つの形はそちらのコメント)。
-            -->
-            <p id="tap-final-result"></p>
+            <!-- ① BPM確認(v279 で囲みました。中身は v278 までと同じ) -->
+            <div id="tap-final-bpm">
 
-            <!--
-                (v268)「🎯 精度を高める(C地点)」(段0-5a)。押すと C地点の微調整画面へ入ります
-                (js/tap.js の startTapPhaseC)。結果の1行が「🎯 C地点で精度をあげよう。」と案内するので、
-                そのすぐ下に置きました。拍の数を決めきれなかった曲だけ光ります(.is-lit。
-                竹弘 2026-11-09「⚠️ の曲だけでいい」)。光らせるかは js/tap.js の updateTapFinalResult が決めます。
-            -->
-            <button type="button" id="tap-final-c" class="tap-action">🎯 精度を高める(C地点)</button>
+                <!--
+                    (v267)曲全体のBPMにしたかどうかの1行(段0-4)。
+                    ✅ 曲全体のBPM 83.48(A〜B 269拍) / ⚠️ 拍の数を決めきれません。…
+                    (v268)C地点の結果も入れて4つの形になりました(どれも2行まで)。
+                    文字と色は js/tap.js の updateTapFinalResult が書きます(4つの形はそちらのコメント)。
+                -->
+                <p id="tap-final-result"></p>
 
-            <p class="tap-desc">
-                メトロノームが曲の拍と合っていますか
-                <span>※裏で鳴っていたら「表打ちにする」を押してください</span>
-            </p>
+                <!--
+                    (v268)「🎯 精度を高める(C地点)」(段0-5a)。押すと C地点の微調整画面へ入ります
+                    (js/tap.js の startTapPhaseC)。結果の1行が「🎯 C地点で精度をあげよう。」と案内するので、
+                    そのすぐ下に置きました。拍の数を決めきれなかった曲だけ光ります(.is-lit。
+                    竹弘 2026-11-09「⚠️ の曲だけでいい」)。光らせるかは js/tap.js の updateTapFinalResult が決めます。
+                -->
+                <button type="button" id="tap-final-c" class="tap-action">🎯 精度を高める(C地点)</button>
 
-            <div class="tap-adj-group tap-adj-half">
-                <button type="button" id="tap-final-half">⇄ 表打ちにする</button>
             </div>
 
-            <!-- (v265)上の間を 12px → 8px に詰めた(画面を収めるため) -->
+            <!--
+                ② 表打ちの確認(v279)。1/2 と 2/2 は同じボタンです(竹弘「ボタンの表記は同じ ⇄ 表打ちにする でいい」)。
+                1/2 では半拍(js/tap.js の toggleTapFinalHalfBeat)、2/2 では曲の1拍(toggleTapFinalStride)ずらします。
+            -->
+            <div id="tap-final-beat" style="display:none;">
+
+                <div class="tap-adj-group tap-adj-half">
+                    <button type="button" id="tap-final-half">⇄ 表打ちにする</button>
+                </div>
+
+            </div>
+
+            <!--
+                (v265)上の間を 12px → 8px に詰めた(画面を収めるため)
+                (v279)文字は段で変わります(次へ ▶ / OK 次へ ▶ / 確定保存。js/tap.js の showTapFinalStep)。
+                押した時は confirmTapPhase → まだ次の段があれば進むだけ(advanceTapFinalStep)、最後の段なら保存。
+            -->
             <div style="margin-top:8px;">
                 <button type="button" id="tap-final-save" class="tap-action tap-action-go">確定保存</button>
             </div>
