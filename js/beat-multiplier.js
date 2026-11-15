@@ -793,9 +793,42 @@ function refreshBeatMultiplierDisplay(){
 
     labelEl.textContent = isNoriRunBpm ? "ノリRunBPM" : "再生ピッチ";
 
-    badgeEl.textContent = (isNoriRunBpm && memo.multiplier !== 1)
+    const badgeText = (isNoriRunBpm && memo.multiplier !== 1)
         ? formatBeatMultiplier(memo.multiplier)
         : "";
+
+    /*
+    (v278)「×½」「×¼」の分数だけを span で包み、CSS(c014.html の .ua-pitch-frac)で2倍の大きさにします
+    (竹弘「½ だけ倍サイズにできないでしょうか。小さすぎて読めませんでした」)。
+    「×2」「×4」は今までどおり文字だけです(数字は普通の大きさで読めるため)。
+
+        textContent = ""       … 中身をいったん空にする(前の曲で作った span も消える。
+                                 空なら CSS の :empty が効いて、幅も余白も0になる)
+        slice(-1)              … 文字の最後の1文字(-1 は「後ろから1つ目」の意味)。"×½" なら "½"
+        slice(0,-1)            … 最後の1文字を除いた残り。"×½" なら "×"
+        createElement("span")  … 新しい span を作る(この時点では、まだ画面のどこにも入っていない)
+        append(文字, 要素)      … 中身の最後に、順に付け足す。文字は文字のまま入る(タグとして読まれない)
+
+    ⚠️ 文字を作るのは今までどおり formatBeatMultiplier の1か所(🐛 のログと同じ文字)。ここは包むだけ。
+    */
+    badgeEl.textContent = "";
+
+    const lastChar = badgeText.slice(-1);
+
+    if(lastChar === "½" || lastChar === "¼"){
+
+        const fracEl = document.createElement("span");
+
+        fracEl.className = "ua-pitch-frac";
+        fracEl.textContent = lastChar;
+
+        badgeEl.append(badgeText.slice(0,-1),fracEl);
+
+    } else {
+
+        badgeEl.textContent = badgeText;
+
+    }
 
     /*
     「ノリRunBPM」の間は、「：」と数字の後ろの小さな「BPM」を消します(見出しにもう BPM があり、
