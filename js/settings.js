@@ -57,7 +57,8 @@ const SETTINGS_DEFINITIONS = [
     {
         /*
         拍倍率(⑬。v275。中身は js/beat-multiplier.js)。
-        1拍に何歩で走るかを選びます(OFF / なるべく1倍の近く / いったん行進の範囲へ揃える)。
+        1拍に何歩で走るかを選びます(OFF / なるべく1倍の近く / なるべくなめらかに)。
+        (v281)3つ目は v280 まで「いったん行進の範囲へ揃える」でした。
 
         🎚️ 曲の繋ぎ方 の次に置いたのは、どちらも🕺ノリノリRunの「鳴らし方」の設定だから。
         👣 は「1拍に何歩」から。🥁 は行進とカチッに使っているので避けた(作戦会議 2026-11-14)。
@@ -428,7 +429,7 @@ function closeConnectPanel(){
 /**
  * 選ばれている方のボタンに印を付け直します。
  *
- * data-beat-multiplier は "off" / "near" / "march" という文字で、js/beat-multiplier.js の
+ * data-beat-multiplier は "off" / "near" / "smooth"(v281。v280 までは "march")という文字で、js/beat-multiplier.js の
  * BEAT_MULTIPLIER_MODE_… と同じ値です。dataset では data-beat-multiplier が
  * beatMultiplier という名前で読めます(- の次の文字を大文字にする決まり)。
  */
@@ -769,7 +770,7 @@ function closeLicensePanel(){
     }
 
     /*
-    3つの選択肢(OFF / なるべく1倍の近く / いったん行進の範囲へ揃える)。
+    3つの選択肢(OFF / なるべく1倍の近く / なるべくなめらかに。v281 で3つ目を置き換えた)。
 
     setBeatMultiplierMode(js/beat-multiplier.js)は保存まで済ませます。await せずに
     呼んでいるのは、保存の完了を待たなくても画面には即座に効くためです(上の2つの画面と同じ)。

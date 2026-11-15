@@ -3738,13 +3738,15 @@ function advanceTapFinalStep(){
  *     いちばん遅いマイピッチだけで足りる理由は TAP_STRIDE_CHECK_PITCH のコメント。
  *
  *     目安:元ピッチがだいたい 126 より速い曲(① なるべく1倍の近くで、マイピッチ 100 だと ×½ になる曲)
+ *     (v281)② なるべくなめらかに で ×½ になるのは、元ピッチ 200 より速い曲だけ(① の目安の内側)なので、目安は変わりません。
  *
  * 【BPM】いま保存しようとしている BPM(tapState.bpm)で調べます。
  *
  * ⚠️ js/beat-multiplier.js は tap.js より後に読み込まれますが、この関数は画面を操作した時に呼ばれる
  *    (その頃には全部読み終わっている)ので、名前を使って大丈夫です(CLAUDE.md「読み込み順の罠」)。
  *    念のため、無い時は false(2/2 を出さない = v278 までと同じ流れ)にします。
- * ⚠️ (v281 の予定)拍倍率の ② を「なるべくなめらかに」に置き換えたら、ここで聞く設定も入れ替えること。
+ * ⚠️ 拍倍率の設定を足したり入れ替えたりしたら、下の modes も直すこと(v281 で旧②「行進へ揃える」を
+ *    ② なるべくなめらかに に入れ替えた)。
  */
 function canTapSongRunHalfTime(){
 
@@ -3754,7 +3756,7 @@ function canTapSongRunHalfTime(){
 
     if(!(bpm > 0)){ return false; }
 
-    const modes = [BEAT_MULTIPLIER_MODE_NEAR,BEAT_MULTIPLIER_MODE_MARCH];
+    const modes = [BEAT_MULTIPLIER_MODE_NEAR,BEAT_MULTIPLIER_MODE_SMOOTH];
 
     /*
     some は「並びの中に、条件を満たすものが1つでもあれば true」を返す命令です。
