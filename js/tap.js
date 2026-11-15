@@ -389,6 +389,43 @@ A地点(拍番号1)・B地点(拍番号9)は線の端なので、叩いた12回�
 */
 const TAP_C_TAPPED_BEAT = 5;
 
+/*
+(v279)最後の確認の「段」。B地点を確定した後(と C地点から戻った後)は、この順に進みます。
+
+    ① BPM確認               … 曲全体のBPMの結果と 🎯。カチッは1拍に1回       → 緑のボタン「次へ ▶」
+    ② 表打ちの確認 1/2      … 「⇄ 表打ちにする」= 半拍ずらす。カチッは1拍に1回 → 「OK 次へ ▶」(速い曲)/「確定保存」
+    ② 表打ちの確認 2/2      … 「⇄ 表打ちにする」= 曲の1拍ずらす。カチッは2拍に1回 → 「確定保存」(速い曲だけ)
+
+【竹弘と決めたこと(2026-11-15)】
+    ・v278 までは①と②1/2 が1画面にあった。竹弘「BPMの設定と裏打ち確認を、今同じ画面で同時に実施しているけど、
+      画面を遷移させて、新たな表打ち確認画面として独立させた方がよくないかな」
+    ・2/2 も「表打ちの確認」と呼ぶ(竹弘「足の拍は馴染みがない。どちらも表打ちの確認で2種類のパターンの確認がある、
+      という感じ」)。ボタンの文字も同じ「⇄ 表打ちにする」
+    ・2/2 は「×½(2拍に1歩)になりうる速い曲」だけに出す(canTapSongRunHalfTime)
+
+【なぜ 2/2 が要るのか】
+    ×½ の曲は、カチッ(と足)が曲の2拍に1回になります。どちらの拍で鳴らすかは1拍目(startTS)の側に揃えていますが
+    (js/connect.js の getBeat0AtSec)、1拍目は「竹弘が叩き始めた拍」で、小節の何拍目かはアプリには分かりません。
+    叩き始めが小節の2拍目・4拍目(スネアの「タン」)だった曲は、カチッが「タン」に乗って裏に聞こえます
+    (竹弘が見つけた:マイピッチ 100 のアイドル・アルビレオ・アシンメトリ。メロウは表)。
+    ×1 では全部の拍で鳴るので、1拍目が小節のどこでも関係ありませんでした。
+
+⚠️ 最後の確認は今までどおり「フェーズ B + finalCheck の旗」です(TAP_PHASE_C のコメント)。段はその中の印で、
+   phase を増やしていないので、phase で分けている所は1つも変わりません。
+*/
+const TAP_FINAL_STEP_BPM    = "bpm";     // ① BPM確認
+const TAP_FINAL_STEP_BEAT   = "beat";    // ② 表打ちの確認 1/2(カチッは1拍に1回)
+const TAP_FINAL_STEP_STRIDE = "stride";  // ② 表打ちの確認 2/2(カチッは2拍に1回)
+
+/*
+(v279)「×½ になりうる曲か」を調べる時のマイピッチ。マイピッチのいちばん遅い値です
+(js/setup.js の定規の minBpm、js/sync.js の SYNC_PITCH_MIN と同じ 100)。
+
+いちばん遅いマイピッチで ×½ にならない曲は、どのマイピッチでもなりません。マイピッチを上げると、
+拍倍率は「大きい側」(×½ → ×1 → ×2)へしか動かないためです。だからこの1か所だけ調べれば足ります。
+*/
+const TAP_STRIDE_CHECK_PITCH = 100;
+
 
 // ==========================================================
 // 2. 今の状態
@@ -536,6 +573,30 @@ const tapState = {
     B地点のままで支障がありません。
     */
     finalCheck: false,
+
+    /*
+    (v279)最後の確認の、いまの段(TAP_FINAL_STEP_… のどれか)。finalCheck が立っている間だけ意味があります。
+    ① に戻すのは、最後の確認を開いた時(startTapFinalCheck)・C地点から戻った時(confirmTapCPhase)・
+    曲を開いた時・A地点の微調整へ戻った時。進めるのは advanceTapFinalStep だけです。
+    */
+    finalStep: TAP_FINAL_STEP_BPM,
+
+    /*
+    (v279)表打ちの確認 2/2 の答え(曲ごと。DB の strideOffsetBeats)。
+
+        strideOffsetSaved … 曲を開いた時に DB から読んだ値(0 か 1。まだ無い曲は 0)
+        strideFlipped     … 2/2 で「⇄ 表打ちにする」を押したか(押すたびに入れ替わる)
+
+    保存する値は「読んだ値を、押した分だけ入れ替えたもの」(getTapStrideOffset)。
+    「表打ちにする」の半拍(halfShifted)と同じく、開き直した時は保存してある値が「今の正しい形」で、
+    ボタンはそこからの入れ替えです(押す前は「⇄ 表打ちにする」、押した後は「⇄ 元に戻す」)。
+
+    0 … 2拍に1回のカチッを、1拍目と同じ側で鳴らす
+    1 … 曲の1拍ぶん後ろの側で鳴らす(1拍目が小節の「タン」の拍だった曲)
+    ⚠️ v279 では保存するだけで、鳴り方(🕺ノリノリRun)はまだ変えていません(v280 で効かせる)。
+    */
+    strideOffsetSaved: 0,
+    strideFlipped: false,
 
     /*
     前に測った値を読み戻して開いたか(v153)。
@@ -773,6 +834,14 @@ async function openTapCorrection(trackId){
     tapState.halfShifted = false;
     tapState.finalCheck = false;
 
+    /*
+    (v279)最後の確認の段と、表打ちの確認 2/2 の答えも、曲ごとに入れ直します。
+    答えはこの曲に保存してある値から始めます(まだ無い曲は 0 = 1拍目と同じ側)。
+    */
+    tapState.finalStep = TAP_FINAL_STEP_BPM;
+    tapState.strideOffsetSaved = readTapStrideOffset(track);
+    tapState.strideFlipped = false;
+
     // 前の曲の A地点の控えも消します(v264。別の曲の A地点へ戻ってしまわないように)
     tapState.phaseASnapshot = null;
 
@@ -853,7 +922,9 @@ async function openTapCorrection(trackId){
         "/ 測定済み :",(hasSaved ? "はい(微調整から)" : "いいえ(タップから)"),
         "/ manualBPM :",track.manualBPM,
         "/ startTS :",track.startTS,
-        "/ endTS :",track.endTS
+        "/ endTS :",track.endTS,
+        // (v279)表打ちの確認 2/2 で保存した答え(まだ無い曲は undefined と出る)
+        "/ strideOffsetBeats :",track.strideOffsetBeats
     );
 
     if(hasSaved){
@@ -2129,6 +2200,18 @@ function scheduleTapMetronome(){
 
     if(!isFinite(beatDur) || beatDur <= 0){ return; }
 
+    /*
+    (v279)表打ちの確認 2/2 の間だけは、2拍に1回の道へ分かれます(scheduleTapStrideMetronome)。
+    ⚠️ ここから下(1拍に1回)の計算は v278 までと1文字も変えていません。
+    */
+    if(tapState.finalCheck && tapState.finalStep === TAP_FINAL_STEP_STRIDE){
+
+        scheduleTapStrideMetronome(beatDur);
+
+        return;
+
+    }
+
     const offset = tapState.playOffset;
 
     /*
@@ -2151,6 +2234,78 @@ function scheduleTapMetronome(){
         t = t + beatDur;
 
     }
+
+}
+
+/**
+ * 表打ちの確認 2/2 のメトロノーム(2拍に1回)を予約します(v279)。
+ *
+ * 🕺ノリノリRun で曲を ×½(2拍に1歩)で鳴らした時に、カチッ(と足)が来る拍と同じ所で鳴らします。
+ *
+ *     1拍目(startTS)                       ← strideOffset 0 なら、ここから2拍おき
+ *        ┊    1拍後                         ← strideOffset 1 なら、ここから2拍おき
+ *        ●    ┊    ●    ┊    ●    ┊    ●
+ *
+ * ⚠️ 2拍おきの起点は「1拍目 + 曲の1拍 × strideOffset」。v280 で🕺ノリノリRun の0拍目
+ *    (js/connect.js の getBeat0AtSec)にも同じ形で効かせます。ここと食い違うと、確かめた側と
+ *    鳴る側がずれるので、片方を変える時はもう片方も直すこと。
+ * ⚠️ 最後の確認の格子は、1拍目の1拍前が原点(showTapFinalCheck)なので、1拍目は必ず格子の上にあります。
+ *    「表打ちにする」(半拍)を押した後も、startTS と原点は一緒に動くので同じです。
+ *
+ * @param {number} beatDur - 曲の1拍の長さ(秒)
+ */
+function scheduleTapStrideMetronome(beatDur){
+
+    const offset = tapState.playOffset;
+
+    // 2拍おきに鳴らす時の、起点と間隔
+    const anchorSec = tapState.startTS + beatDur * getTapStrideOffset();
+    const stepSec = beatDur * 2;
+
+    /*
+    鳴らし始めた位置より後にある、最初の「2拍おきの拍」を求めます(上の scheduleTapMetronome と同じ考え方)。
+    起点より前から鳴らす時は答えがマイナスになりますが、Math.ceil(切り上げ)はマイナスでも正しく働くので、
+    起点の手前の「2拍おきの拍」も鳴ります。
+    */
+    const stepsFromAnchor = Math.ceil((offset - anchorSec) / stepSec);
+
+    let t = anchorSec + stepsFromAnchor * stepSec;
+
+    const until = offset + TAP_METRONOME_WINDOW_SEC;
+
+    while(t < until){
+
+        scheduleTapTick(tapState.ctxStartTime + (t - offset));
+
+        t = t + stepSec;
+
+    }
+
+}
+
+/**
+ * 表打ちの確認 2/2 の答え(0 か 1)を返します(v279)。保存する値・2/2 のカチッの両方がこれを使います。
+ *
+ * 読んだ値(strideOffsetSaved)を、「⇄ 表打ちにする」を押した分だけ入れ替えます。
+ * 「1 − 値」は 0 と 1 を入れ替える書き方です(0 → 1、1 → 0)。
+ */
+function getTapStrideOffset(){
+
+    return tapState.strideFlipped
+        ? 1 - tapState.strideOffsetSaved
+        : tapState.strideOffsetSaved;
+
+}
+
+/**
+ * 曲に保存してある「表打ちの確認 2/2 の答え」を読みます(v279。DB の strideOffsetBeats)。
+ *
+ * 1 の時だけ 1、それ以外(まだ確かめていない曲の undefined も)は 0 にします。
+ * 変な値が入っていても、0 か 1 のどちらかに収めるためです。
+ */
+function readTapStrideOffset(track){
+
+    return (track && track.strideOffsetBeats === 1) ? 1 : 0;
 
 }
 
@@ -3331,6 +3486,13 @@ function startTapFinalCheck(){
     tapState.halfShifted = false;
 
     /*
+    (v279)最後の確認は ① BPM確認から始めます。表打ちの確認 2/2 の「押した」印も下ろします
+    (半拍の halfShifted と同じく、B地点を確定し直したら確かめ直してもらうため)。
+    */
+    tapState.finalStep = TAP_FINAL_STEP_BPM;
+    tapState.strideFlipped = false;
+
+    /*
     ---- 曲全体のBPMにするかを決めます(v267。段0-4)----
 
     A地点の1拍目と B地点の13拍目の間の拍の数を数え、決まりを満たせば
@@ -3419,21 +3581,190 @@ function showTapFinalCheck(){
     setTapAdjustUI(false);
     setTapFinalUI(true);
 
-    // (v265)2行に短くしました
-    setTapGuide(
-        "最後の確認です。拍と重なって聞こえますか。\n" +
-        "裏で鳴っていたら「表打ちにする」を。"
-    );
-
-    updateTapFinalLabel();
-
     // (v267)曲全体のBPMにしたかどうかを、この画面の1行に出します
     updateTapFinalResult();
 
     updateTapMonitor();
 
+    /*
+    (v279)案内・見せる部品・緑のボタンの文字・音は、いまの段(finalStep)に合わせて showTapFinalStep が決めます。
+    ここへ来るのは ① BPM確認の時です(呼ぶ側が finalStep を ① にしてから呼ぶ)。
+    v278 までの案内「最後の確認です。拍と重なって聞こえますか。/ 裏で鳴っていたら…」は、② 1/2 の案内へ移しました。
+    */
+    showTapFinalStep();
+
+}
+
+/**
+ * 最後の確認の、いまの段(① BPM確認 / ② 表打ちの確認 1/2・2/2)の画面にして、A地点のあたりを鳴らします(v279)。
+ *
+ * 段ごとに変えるのは次の4つだけで、どの段も同じ形(案内2行 → 直すボタン → 緑のボタン)です。
+ *
+ *              案内(上の2行)                 見せる部品                  緑のボタン
+ *     ①        テンポの確認です。…             結果の1行・🎯              次へ ▶
+ *     ② 1/2    表打ちの確認 1/2。…(速い曲)    ⇄ 表打ちにする             OK 次へ ▶(速い曲)/ 確定保存
+ *              表打ちの確認です。…(遅い曲)
+ *     ② 2/2    表打ちの確認 2/2。…             ⇄ 表打ちにする             確定保存
+ *
+ * 下の段(「やめる」「A地点の微調整へ戻る」)は、どの段も同じです(refreshTapRetryVisible。
+ * 竹弘「欲しいと思ったボタンを追加するのがシンプルな操作性」で、段ごとの「戻る」は足していません)。
+ *
+ * 鳴らすのは毎回、1拍目の3秒前(posSec)から。段が変わったら、頭から聴き直せるようにするためです。
+ * カチッを1拍に1回にするか2拍に1回にするかは、scheduleTapMetronome が finalStep を見て決めます。
+ */
+function showTapFinalStep(){
+
+    const step = tapState.finalStep;
+
+    const bpmBlock  = document.getElementById("tap-final-bpm");
+    const beatBlock = document.getElementById("tap-final-beat");
+
+    if(bpmBlock){  bpmBlock.style.display  = (step === TAP_FINAL_STEP_BPM) ? "block" : "none"; }
+    if(beatBlock){ beatBlock.style.display = (step === TAP_FINAL_STEP_BPM) ? "none"  : "block"; }
+
+    /*
+    案内は2行まで・1行は全角22文字まで(setTapGuide のコメント)。
+    ② の2行目は 1/2 も 2/2 も同じ文にしました(どちらも「裏なら押す」で、押すボタンも同じため)。
+    */
+    const hasStride = canTapSongRunHalfTime();
+
+    if(step === TAP_FINAL_STEP_BPM){
+
+        setTapGuide(
+            "テンポの確認です。✅ ならそのまま次へ。\n" +
+            "⚠️ の時は 🎯 で精度をあげよう。"
+        );
+
+    }
+    else if(step === TAP_FINAL_STEP_BEAT){
+
+        setTapGuide(
+            (hasStride ? "表打ちの確認 1/2。" : "表打ちの確認です。") + "カチッは1拍に1回。\n" +
+            "裏で鳴っていたら「表打ちにする」を。"
+        );
+
+    }
+    else{
+
+        setTapGuide(
+            "表打ちの確認 2/2。カチッは2拍に1回。\n" +
+            "裏で鳴っていたら「表打ちにする」を。"
+        );
+
+    }
+
+    // 緑のボタン。押した時の行き先は confirmTapPhase → advanceTapFinalStep が同じ判断で決めます
+    const saveButton = document.getElementById("tap-final-save");
+
+    if(saveButton){
+
+        if(step === TAP_FINAL_STEP_BPM){
+            saveButton.textContent = "次へ ▶";
+        }
+        else if(step === TAP_FINAL_STEP_BEAT && hasStride){
+            saveButton.textContent = "OK 次へ ▶";
+        }
+        else{
+            saveButton.textContent = "確定保存";
+        }
+
+    }
+
+    updateTapFinalLabel();
+
     // メトロノームを重ねて鳴らします
     playTapSongFrom(tapState.posSec,true);
+
+}
+
+/**
+ * 最後の確認の緑のボタンで、次の段へ進みます(v279)。進んだら true、もう進む段が無い(= 保存する)なら false。
+ *
+ *     ① BPM確認        → ② 表打ちの確認(1/2)
+ *     ② 1/2(速い曲)   → ② 2/2
+ *     ② 1/2(遅い曲)   → 保存(false)
+ *     ② 2/2            → 保存(false)
+ *
+ * 呼ぶのは confirmTapPhase だけです(緑のボタン #tap-final-save は confirmTapPhase につないである)。
+ */
+function advanceTapFinalStep(){
+
+    if(tapState.finalStep === TAP_FINAL_STEP_BPM){
+
+        tapState.finalStep = TAP_FINAL_STEP_BEAT;
+
+        console.log(
+            "BPM の確認 OK → 表打ちの確認へ進みます :",
+            canTapSongRunHalfTime()
+                ? "2拍に1回の確認もします(マイピッチ " + TAP_STRIDE_CHECK_PITCH + " で ×½ になる速い曲)"
+                : "1拍に1回だけ(どのマイピッチでも ×½ にならない曲)"
+        );
+
+        showTapFinalStep();
+
+        return true;
+
+    }
+
+    if(tapState.finalStep === TAP_FINAL_STEP_BEAT && canTapSongRunHalfTime()){
+
+        tapState.finalStep = TAP_FINAL_STEP_STRIDE;
+
+        console.log(
+            "表打ちの確認 1/2 OK → 2/2(カチッは2拍に1回)へ進みます :",
+            "保存してある答え " + tapState.strideOffsetSaved +
+            "(" + (tapState.strideOffsetSaved === 1 ? "1拍目の1拍後ろの側" : "1拍目と同じ側") + "で鳴らします)"
+        );
+
+        showTapFinalStep();
+
+        return true;
+
+    }
+
+    return false;
+
+}
+
+/**
+ * この曲が、どこかのマイピッチ・どこかの拍倍率の設定で ×½(2拍に1歩)以下になるかを返します(v279)。
+ * true の曲だけ、表打ちの確認 2/2 を出します。
+ *
+ * 【調べ方】倍率を決める関数(js/beat-multiplier.js の decideBeatMultiplier。決めるのはこの1か所)に、
+ *     いちばん遅いマイピッチ(TAP_STRIDE_CHECK_PITCH = 100)で、倍率を使う設定それぞれの答えを聞きます。
+ *     倍率が 1 より小さい(×½・×¼)答えが1つでもあれば true。今の設定(OFF など)には関係なく調べます
+ *     (設定は後から変えられるため)。
+ *     いちばん遅いマイピッチだけで足りる理由は TAP_STRIDE_CHECK_PITCH のコメント。
+ *
+ *     目安:元ピッチがだいたい 126 より速い曲(① なるべく1倍の近くで、マイピッチ 100 だと ×½ になる曲)
+ *
+ * 【BPM】いま保存しようとしている BPM(tapState.bpm)で調べます。
+ *
+ * ⚠️ js/beat-multiplier.js は tap.js より後に読み込まれますが、この関数は画面を操作した時に呼ばれる
+ *    (その頃には全部読み終わっている)ので、名前を使って大丈夫です(CLAUDE.md「読み込み順の罠」)。
+ *    念のため、無い時は false(2/2 を出さない = v278 までと同じ流れ)にします。
+ * ⚠️ (v281 の予定)拍倍率の ② を「なるべくなめらかに」に置き換えたら、ここで聞く設定も入れ替えること。
+ */
+function canTapSongRunHalfTime(){
+
+    if(typeof decideBeatMultiplier !== "function"){ return false; }
+
+    const bpm = tapState.bpm;
+
+    if(!(bpm > 0)){ return false; }
+
+    const modes = [BEAT_MULTIPLIER_MODE_NEAR,BEAT_MULTIPLIER_MODE_MARCH];
+
+    /*
+    some は「並びの中に、条件を満たすものが1つでもあれば true」を返す命令です。
+    */
+    return modes.some(function(mode){
+
+        const answer = decideBeatMultiplier(bpm,TAP_STRIDE_CHECK_PITCH,TAP_STRIDE_CHECK_PITCH,mode);
+
+        return answer.multiplier < 1;
+
+    });
 
 }
 
@@ -3509,12 +3840,45 @@ function updateTapFinalLabel(){
 
     if(!button){ return; }
 
-    button.textContent = tapState.halfShifted
+    /*
+    (v279)表打ちの確認 2/2 では、同じボタンが「曲の1拍ずらす」になります(竹弘「ボタンの表記は同じでいい」)。
+    押したかどうかの印も、2/2 では strideFlipped を見ます。
+    */
+    const flipped = (tapState.finalStep === TAP_FINAL_STEP_STRIDE)
+        ? tapState.strideFlipped
+        : tapState.halfShifted;
+
+    button.textContent = flipped
         ? "⇄ 元に戻す"
         : "⇄ 表打ちにする";
 
     // 色でも分かるようにします(文字だけだと見落とすため)
-    button.classList.toggle("tap-half-on",tapState.halfShifted);
+    button.classList.toggle("tap-half-on",flipped);
+
+}
+
+/**
+ * 表打ちの確認 2/2 で「⇄ 表打ちにする」が押された時の処理です(v279)。もう一度押すと元に戻ります。
+ *
+ * 2拍に1回のカチッを、曲の1拍ぶん反対側へ移します。1拍目(startTS)・接続点(endTS)・BPM は動かしません
+ * (半拍の toggleTapFinalHalfBeat と違い、拍の格子そのものは正しいため。変えるのは「どちらの拍で足を着くか」だけ)。
+ *
+ * ⚠️ 2/2 の答えは「曲の1拍」単位なので、×1 の鳴り方・繋ぎ方には効きません(全部の拍で鳴るため)。
+ */
+function toggleTapFinalStride(){
+
+    tapState.strideFlipped = !tapState.strideFlipped;
+
+    console.log(
+        "表打ちの確認 2/2 :",
+        tapState.strideFlipped ? "1拍ずらした" : "元へ戻した",
+        "/ 2拍に1回のカチッは「" + (getTapStrideOffset() === 1 ? "1拍目の1拍後ろ" : "1拍目") + "」の側"
+    );
+
+    updateTapFinalLabel();
+
+    // メトロノームを鳴らし直して、耳で確かめられるようにします
+    playTapSongFrom(tapState.posSec,true);
 
 }
 
@@ -3743,6 +4107,10 @@ function backToTapAdjustA(){
     tapState.halfShifted = false;
     tapState.measured = true;
 
+    // (v279)最後の確認の段と、表打ちの確認 2/2 で押した分も取り消します(次は ① BPM確認から)
+    tapState.finalStep = TAP_FINAL_STEP_BPM;
+    tapState.strideFlipped = false;
+
     tapState.bpm = snap.bpm;
     tapState.beatOriginSec = snap.beatOriginSec;
     tapState.targetBeat = 1;
@@ -3822,8 +4190,12 @@ function backToTapAdjustA(){
  */
 function startTapPhaseC(){
 
-    // 最後の確認画面にいて、A+B の判断がある時だけ入れます(ボタンもそこにしか無い)
+    /*
+    最後の確認画面にいて、A+B の判断がある時だけ入れます(ボタンもそこにしか無い)。
+    (v279)🎯 は ① BPM確認の段にだけ出しているので、段も確かめます(表打ちの確認から C へは入らない)。
+    */
     if(!tapState.finalCheck || !tapState.wholeSongAB){ return; }
+    if(tapState.finalStep !== TAP_FINAL_STEP_BPM){ return; }
 
     const lengthSec = tapState.endTS - tapState.startTS;
 
@@ -3991,6 +4363,12 @@ function confirmTapCPhase(){
     // 最後の確認画面は「フェーズ B + finalCheck の旗」です(TAP_PHASE_C のコメント)
     tapState.phase = TAP_PHASE_B;
     tapState.finalCheck = true;
+
+    /*
+    (v279)戻る先は ① BPM確認です(🎯 は ① にしか無いので、C地点へは ① から入っている)。
+    C地点の結果(✅ / ⚠️)を見てから、表打ちの確認へ進んでもらいます。
+    */
+    tapState.finalStep = TAP_FINAL_STEP_BPM;
 
     updateTapPhaseLabel();
 
@@ -4442,6 +4820,13 @@ async function saveTapResult(){
         track.endTS = tapState.endTS;
 
         /*
+        (v279)表打ちの確認 2/2 の答え(0 か 1。docs/db-schema.md の strideOffsetBeats)。
+        2/2 を出さなかった遅い曲は、読んだ値のまま書き戻します(押していないので入れ替わらない)。
+        ⚠️ v279 では保存するだけで、🕺ノリノリRun の鳴り方はまだ変えていません(v280 で効かせる)。
+        */
+        track.strideOffsetBeats = getTapStrideOffset();
+
+        /*
         ---- メインメニューの再生ピッチ(userBPM)を消します(v254) ----
 
         userBPM は「メインメニューでこの曲を何BPMで鳴らすか」を、竹弘が
@@ -4482,7 +4867,12 @@ async function saveTapResult(){
             "/ 1拍目 " + tapState.startTS.toFixed(3) + "s",
             "/ 13拍目 " + tapState.endTS.toFixed(3) + "s",
             "/ 遅延 " + tapState.latencyMs + "ms",
-            "/ 再生ピッチ " + (oldUserBpm ? oldUserBpm + " → 元ピッチに戻しました" : "無し(元ピッチのまま)")
+            "/ 再生ピッチ " + (oldUserBpm ? oldUserBpm + " → 元ピッチに戻しました" : "無し(元ピッチのまま)"),
+            // (v279)表打ちの確認 2/2 の答え。2/2 を出さなかった曲は「確かめていない」と出します
+            "/ 表打ち(2拍に1回) " + track.strideOffsetBeats +
+            (canTapSongRunHalfTime()
+                ? (track.strideOffsetBeats === 1 ? "(1拍目の1拍後ろの側)" : "(1拍目と同じ側)")
+                : "(遅い曲なので確かめていない)")
         );
 
         return true;
@@ -4631,6 +5021,12 @@ async function confirmTapPhase(){
         return;
 
     }
+
+    /*
+    (v279)最後の確認は段に分かれました(① BPM確認 → ② 表打ちの確認 1/2 → 速い曲だけ 2/2)。
+    緑のボタンは、まだ次の段があればそこへ進むだけです。保存は最後の段で押した時だけ。
+    */
+    if(advanceTapFinalStep()){ return; }
 
     /*
     ここから下は表打ち確認の確定 ＝ この曲のノリ注入の仕上げです。
@@ -4789,7 +5185,18 @@ const tapFinalHalfBtn = document.getElementById("tap-final-half");
 if(tapFinalHalfBtn){
 
     tapFinalHalfBtn.onclick = function(){
-        toggleTapFinalHalfBeat();
+
+        /*
+        (v279)同じボタンが、表打ちの確認 1/2 では半拍、2/2 では曲の1拍をずらします
+        (竹弘「ボタンの表記は確認②と同じ、⇄ 表打ちにする でいい」)。
+        */
+        if(tapState.finalStep === TAP_FINAL_STEP_STRIDE){
+            toggleTapFinalStride();
+        }
+        else{
+            toggleTapFinalHalfBeat();
+        }
+
     };
 
 }
