@@ -593,7 +593,8 @@ const tapState = {
 
     0 … 2拍に1回のカチッを、1拍目と同じ側で鳴らす
     1 … 曲の1拍ぶん後ろの側で鳴らす(1拍目が小節の「タン」の拍だった曲)
-    ⚠️ v279 では保存するだけで、鳴り方(🕺ノリノリRun)はまだ変えていません(v280 で効かせる)。
+    (v280)🕺ノリノリRun の ×½・×¼ に効きます(js/beat-multiplier.js の getTrackStrideOffsetBeats →
+    js/connect.js の getBeat0AtSec・js/beat-multiplier.js の getBeatStrideBackBeats)。v279 では保存するだけでした。
     */
     strideOffsetSaved: 0,
     strideFlipped: false,
@@ -2246,8 +2247,8 @@ function scheduleTapMetronome(){
  *        ┊    1拍後                         ← strideOffset 1 なら、ここから2拍おき
  *        ●    ┊    ●    ┊    ●    ┊    ●
  *
- * ⚠️ 2拍おきの起点は「1拍目 + 曲の1拍 × strideOffset」。v280 で🕺ノリノリRun の0拍目
- *    (js/connect.js の getBeat0AtSec)にも同じ形で効かせます。ここと食い違うと、確かめた側と
+ * ⚠️ 2拍おきの起点は「1拍目 + 曲の1拍 × strideOffset」。(v280)🕺ノリノリRun の0拍目
+ *    (js/connect.js の getBeat0AtSec)も同じ形です。ここと食い違うと、確かめた側と
  *    鳴る側がずれるので、片方を変える時はもう片方も直すこと。
  * ⚠️ 最後の確認の格子は、1拍目の1拍前が原点(showTapFinalCheck)なので、1拍目は必ず格子の上にあります。
  *    「表打ちにする」(半拍)を押した後も、startTS と原点は一緒に動くので同じです。
@@ -4822,7 +4823,7 @@ async function saveTapResult(){
         /*
         (v279)表打ちの確認 2/2 の答え(0 か 1。docs/db-schema.md の strideOffsetBeats)。
         2/2 を出さなかった遅い曲は、読んだ値のまま書き戻します(押していないので入れ替わらない)。
-        ⚠️ v279 では保存するだけで、🕺ノリノリRun の鳴り方はまだ変えていません(v280 で効かせる)。
+        (v280)🕺ノリノリRun の ×½・×¼ の0拍目・接続点に効きます(js/beat-multiplier.js の getTrackStrideOffsetBeats)。
         */
         track.strideOffsetBeats = getTapStrideOffset();
 

@@ -741,12 +741,26 @@ function getBeatSec(){
  *    走る拍で数える。js/metronome.js)も1拍目の反対側で鳴ってしまいます。
  *    何拍戻るかは js/beat-multiplier.js の getTrackBeatStride(×1・×2・×4 は 1 = 今までどおり)。
  *    同期モード(js/sync.js)の「頭から」「続きから」・🎬 の無音の長さも、この0拍目から数えます。
+ *
+ * ⚠️ (v280)×½・×¼ で、ノリ注入の「表打ちの確認 2/2」を「1拍ずらす」にした曲は、0拍目を曲の1拍ぶん後ろへ
+ *    動かします(足の拍が1拍目の1拍後ろから並ぶ曲。1拍目が小節の「タン」の拍だった曲)。
+ *
+ *        答え 0(v279 まで)… 0拍目 = 1拍目 − 曲の2拍    → 足の拍は 1拍目・3拍目・5拍目 …
+ *        答え 1             … 0拍目 = 1拍目 + 1拍 − 2拍 → 足の拍は 2拍目・4拍目・6拍目 …(1拍目から数えて)
+ *
+ *    何拍ずらすかは js/beat-multiplier.js の getTrackStrideOffsetBeats(×1・×2・×4 と答え 0 の曲は 0)。
+ *    0 の曲は下で v279 までと同じ式を通るので、値は1つも変わりません。
  */
 function getBeat0AtSec(track){
 
     const beatDurAtSec = 60 / track.manualBPM * getTrackBeatStride(track);
 
-    const beat0 = track.startTS - beatDurAtSec;
+    // (v280)表打ちの確認 2/2 の答えのぶん(曲の1拍 × 0 か 1)
+    const strideOffsetBeats = getTrackStrideOffsetBeats(track);
+
+    const beat0 = (strideOffsetBeats === 0)
+        ? track.startTS - beatDurAtSec
+        : track.startTS + 60 / track.manualBPM * strideOffsetBeats - beatDurAtSec;
 
     /*
     0より手前になることはまずありませんが、A地点を曲の先頭ぎりぎりで
@@ -860,6 +874,8 @@ function getTrackRate(track){
  *    偶数(×¼ は4の倍数)になるよう、接続点を曲の拍いくつか**手前**へ動かします。
  *    奇数のままだと接続点が足の拍の裏に来て、繋いだ瞬間に足が半拍ずれる(タタン)ためです。
  *    何拍動かすかは js/beat-multiplier.js の getBeatStrideBackBeats(×1・×2・×4 はいつも0 = endTS のまま)。
+ *    (v280)表打ちの確認 2/2 で「1拍ずらす」にした曲は、数える起点も1拍目の1拍後ろ(足の拍)になります
+ *    (getBeat0AtSec の ⚠️ と同じ。数え方は getBeatStrideBackBeats の中)。
  *    接続点はこの関数で受け取ること(助走を始める時刻・🎬 の格子・同期モードの「繋ぐ位置に近いか」)。
  *    endTS をじかに見ると、×½ の曲でそこだけ1拍ずれます。
  */

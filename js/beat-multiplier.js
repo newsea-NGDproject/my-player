@@ -58,6 +58,8 @@
                         ×½・×¼ は曲の拍の2つ・4つに1つしか走る拍に乗らないので、0拍目を「走る拍1つ前」に、
                         接続点を「1拍目から偶数(×¼ は4の倍数)の拍」にそろえる。カチッ・同期モード・🎬 は
                         0拍目と接続点をこの関数から取るので、自動で1拍目と同じ側にそろう
+       足の拍の側        (v280)ノリ注入の「表打ちの確認 2/2」で「1拍ずらす」にした曲は、上の「1拍目と同じ側」を
+       (v280)           「1拍目の1拍後ろの側」にする → getTrackStrideOffsetBeats(getBeat0AtSec・getBeatStrideBackBeats が使う)
 
    ⚠️ 決めるのは1か所(decideBeatMultiplier)。ジャケの getTrackCover と同じ考え方で、
       倍率を使う所(段2・段3)は全部この関数を通すこと。各所が同じ式を書くと、
@@ -475,6 +477,8 @@ function formatBeatMultiplier(multiplier){
     getRunnerBeatSongSec(track)  … 走る1拍が、曲の中で何秒か(カチッ・同期モード)
     getTrackBeatStride(track)    … (v277)曲の拍と足の拍が両方そろう間隔(曲の拍いくつ。0拍目・ずらす拍)
     getBeatStrideBackBeats(track) … (v277)接続点を曲の拍いくつ手前へ動かすか(×½・×¼ の時だけ)
+    getTrackStrideOffsetBeats(track) … (v280)足の拍を1拍目から曲の拍いくつ後ろへずらすか(0 か 1。表打ちの確認 2/2 の答え。
+                                       ×½・×¼ の時だけ。0拍目)
 
 ⚠️ どれも、🕺ノリノリRun の外(メインメニュー)では倍率 1 = 今までと同じ値を返します。
    メインメニューの再生は STEP7 の見比べ役なので、拍倍率を一切効かせません。
@@ -691,6 +695,40 @@ function getTrackBeatStride(track){
 }
 
 /**
+ * ×½・×¼ の曲で、足の拍を1拍目から「曲の拍いくつ」後ろへずらすかを返します(v280)。0 か 1。
+ *
+ * 中身は、ノリ注入の最後の「表打ちの確認 2/2」の答え(DB の strideOffsetBeats。js/tap.js が保存する)。
+ *
+ *     0 … 足の拍は1拍目(startTS)から2拍おき(×¼ は4拍おき)。v279 までと同じ
+ *     1 … 足の拍は1拍目の1拍後ろから2拍おき(1拍目が小節の 2・4拍目 = スネアの「タン」だった曲)
+ *
+ * 【なぜ要るのか】1拍目は「竹弘が叩き始めた拍」で、小節の何拍目かはアプリには分かりません。
+ *     ×½ はその側に足を着くので、叩き始めが「タン」の拍だった曲は、カチッ(と足)が裏に聞こえました
+ *     (竹弘がマイピッチ 100 で見つけた:アイドル・アルビレオ・アシンメトリ。2026-11-15)。
+ *
+ * 【何に使うか】js/connect.js の getBeat0AtSec(0拍目)と、下の getBeatStrideBackBeats(接続点)。
+ *     カチッ(js/metronome.js)・同期モード(js/sync.js)・🎬・助走のずらし(getConnectAnchorSec)は、
+ *     どれも0拍目と接続点をこの2つから受け取るので、ここ1か所で全部に効きます。
+ *
+ * ⚠️ ×1・×2・×4 はいつも 0 を返します(答えを見ない)。曲の拍が全部、足の拍の上に乗るので、
+ *    どちら側かという話がそもそも無いためです。だから ×1・×2・×4 の0拍目・接続点は v279 までとまったく同じ値。
+ * ⚠️ 1拍目(startTS)そのものは動かしません(動かすと ×1 の後続曲の0拍目も動き、繋ぎ方が変わるため)。
+ * ⚠️ ノリ注入の 2/2 のカチッ(js/tap.js の scheduleTapStrideMetronome)も「1拍目 + 曲の1拍 × この値」から
+ *    2拍おきに鳴らします。確かめた側と鳴る側がずれないよう、片方を変える時はもう片方も直すこと。
+ *
+ * @param  {Object} track
+ * @return {number} 0 か 1
+ */
+function getTrackStrideOffsetBeats(track){
+
+    if(getTrackBeatStride(track) === 1){ return 0; }
+
+    // 1 の時だけ 1。まだ確かめていない曲(undefined)や変な値は 0(js/tap.js の readTapStrideOffset と同じ読み方)
+    return (track && track.strideOffsetBeats === 1) ? 1 : 0;
+
+}
+
+/**
  * 先行曲の接続点(13拍目 = endTS)を、曲の拍いくつ手前へ動かすかを返します(段3・v277)。
  *
  * 【なぜ動かすのか】
@@ -725,10 +763,21 @@ function getBeatStrideBackBeats(track){
     if(!isFinite(beatCount)){ return 0; }
 
     /*
+    (v280)表打ちの確認 2/2 で「1拍ずらす」にした曲は、足の拍が1拍目の1拍後ろから並びます
+    (getTrackStrideOffsetBeats)。接続点もその足の拍の上に来るよう、数える起点を同じだけ後ろへずらします。
+
+        1拍目から 459拍・答え 1 → 足の拍から 458拍(偶数)→ endTS のまま(足の拍の上)
+        1拍目から 458拍・答え 1 → 足の拍から 457拍(奇数)→ 曲の拍1つ手前(457拍)で繋ぐ
+
+    答え 0 の曲(と ×1・×2・×4)は fromFootBeat = beatCount なので、v279 までとまったく同じ値です。
+    */
+    const fromFootBeat = beatCount - getTrackStrideOffsetBeats(track);
+
+    /*
     「% stride」は割り算の余りです(149 % 2 = 1)。余りの分だけ手前へ動かせば、ちょうど割り切れる数になります。
     ( + stride) % stride は、万一拍の数がマイナスでも余りを 0〜stride−1 に収めるための書き方です。
     */
-    return ((beatCount % stride) + stride) % stride;
+    return ((fromFootBeat % stride) + stride) % stride;
 
 }
 
@@ -1064,6 +1113,20 @@ function describeBeatStrideConnect(track){
 
     const stride = getTrackBeatStride(track);
     const backBeats = getBeatStrideBackBeats(track);
+
+    /*
+    (v280)表打ちの確認 2/2 で「1拍ずらす」にした曲は、頭に「表打ち 1拍ずらし」と書き、
+    「そのまま」の理由も「足の拍の上なので」にします(1拍目からの拍の数は奇数でも、足の拍からは偶数のため)。
+    答え 0 の曲は v277 と同じ文字です。
+    */
+    if(getTrackStrideOffsetBeats(track) === 1){
+
+        return "表打ち 1拍ずらし(足の拍は1拍目の1拍後ろから)・接続点 : 1拍目から " + beatCount + "拍" +
+               (backBeats === 0
+                   ? " = 足の拍の上なのでそのまま"
+                   : " → 曲の拍" + backBeats + "つ手前(" + (beatCount - backBeats) + "拍)で繋ぐ");
+
+    }
 
     if(backBeats === 0){
 
