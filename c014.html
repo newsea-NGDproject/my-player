@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v280)ノリRun
+        (v281)ノリRun
         メインメニュー
 
     </title>
@@ -4474,6 +4474,15 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             font-size:0.8rem;
             font-weight:normal;
             color:var(--text-sub);
+        }
+
+        /*
+        (v281)👣 拍倍率の「なるべくなめらかに」の一言は、意味の塊で折り返します(竹弘の決まり 2026-08-16
+        「文言は見栄え良く改行位置も検討して欲しい」。手本は .exclude-box .text-chunk)。
+        inline-block は「1つのかたまり」として扱われ、途中で折れずに、入りきらない時は塊ごと次の行へ送られます。
+        */
+        #beat-multiplier-panel .text-chunk{
+            display:inline-block;
         }
 
         /* ======================================================
@@ -9518,11 +9527,14 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
     速い曲は「2拍に1歩」のように足を着く拍を変えて、どの曲でもマイピッチで走れるようにします。
     見出し・本文・閉じるボタン・選択肢のクラスは「🎚️ 曲の繋ぎ方」「🏃 ノリノリアシスト」と共有しています。
 
-    ⚠️ data-beat-multiplier の "off" / "near" / "march" は、js/beat-multiplier.js の
+    ⚠️ data-beat-multiplier の "off" / "near" / "smooth" は、js/beat-multiplier.js の
        BEAT_MULTIPLIER_MODE_… と同じ値で、そのまま DB に保存されます(文字を変えない)。
     (v276)段2 で鳴り方に効くようにしたので、v275 の「(開発中)いまは 🐛 に出すだけ」の一文は消した。
     ×½・×¼(速い曲を2拍・4拍に1歩)は段3 までは今までどおりの鳴り方なので、その一文を代わりに置いた。
     (v277)段3 で ×½・×¼ も効くようにしたので、その「(開発中)」の一文も消した。
+    (v281)3つ目を「いったん行進の範囲へ揃える」("march")から「なるべくなめらかに」("smooth")に置き換えた
+    (竹弘 2026-11-15「ちょっとピッチを上げたのに速度が極端に落ちるのが違和感」。名前も竹弘が決めた)。
+    説明文も竹弘と決めたもの。保存してある "march" は js/beat-multiplier.js の loadBeatMultiplierSetting が "smooth" に読み替える。
 -->
 <div id="beat-multiplier-panel" style="display:none;">
 
@@ -9551,9 +9563,9 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
             <span class="connect-note">曲を 0.8〜1.6倍で鳴らします。原曲の速さに近く、音がいちばん崩れにくい</span>
         </button>
 
-        <button type="button" class="connect-choice" data-beat-multiplier="march">
-            いったん行進の範囲へ揃える
-            <span class="connect-note">マラソンより速く走る時は、いつも 1.0〜2.0倍。原曲より遅くしないので、疾走感が出ます</span>
+        <button type="button" class="connect-choice" data-beat-multiplier="smooth">
+            なるべくなめらかに
+            <span class="connect-note"><span class="text-chunk">マイピッチを</span><span class="text-chunk">少し動かしても、</span><span class="text-chunk">曲の速さが</span><span class="text-chunk">急に半分や倍に</span><span class="text-chunk">なりません。</span><br><span class="text-chunk">遅いマイピッチでは、</span><span class="text-chunk">曲がゆっくりめに</span><span class="text-chunk">なることがあります</span></span>
         </button>
 
         <p class="connect-note">
