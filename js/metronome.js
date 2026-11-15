@@ -735,7 +735,10 @@ function scheduleMetronomeBeats(){
     「腕時計で何秒後か」なので実秒に直す、という往復が要ります。
     */
 
-    // 0拍目の位置(曲内秒)。1拍目(startTS)の1拍前です
+    /*
+    0拍目の位置(曲内秒)。1拍目(startTS)の1拍前です。
+    (v277)×½・×¼ の曲は「走る拍1つ前」(曲の拍2つ・4つ前)。js/connect.js の getBeat0AtSec の説明
+    */
     const beat0Sec = getBeat0AtSec(track);
 
     /*
@@ -745,6 +748,9 @@ function scheduleMetronomeBeats(){
        カチッは足を出す拍で鳴らすので「走る1拍」= 60 ÷(元ピッチ × 倍率)にしました
        (js/beat-multiplier.js の getRunnerBeatSongSec)。×2 なら曲の1拍に2回鳴ります。
        0拍目(beat0Sec)から数えるので、曲の拍の上でも必ず鳴ります。倍率 1 なら今までと同じ値。
+    ⚠️ (v277)×½ なら曲の2拍に1回、×¼ なら4拍に1回鳴ります。どの拍で鳴るかは0拍目で決まり、
+       0拍目を走る拍1つ前にしてあるので、**1拍目(竹弘がノリ注入で決めた拍)と同じ側**で鳴ります
+       (作戦会議の資料の6章)。ここで側を選び直す計算はしません(0拍目が決める)。
     */
     const beatDurSongSec = getRunnerBeatSongSec(track);
 

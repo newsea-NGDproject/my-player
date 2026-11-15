@@ -41,20 +41,23 @@
        段1(v275・このファイルを新設)⚙️ の画面・設定の保存・倍率を決める関数・🐛 のログ。
                                    鳴り方は変えなかった(決め方を 🐛 で先に確かめた。実機 OK)
        段2(v276)×1・×2・×4 を実際に効かせる(再生の速さ・拍の長さ・アシスト・接続・同期モード)。
-                  上半分の「ノリRunBPM ×2」。×½・×¼ が選ばれた曲は、まだ ×1(今までどおり)で鳴らす
-       段3  ×½・×¼ を効かせる(繋ぐ拍を偶数に・0拍目の位置・カチッの側)
+                  上半分の「ノリRunBPM ×2」(実機 OK)
+       段3(v277)×½・×¼ も効かせる(0拍目の位置・接続点を偶数の拍に・ずらす拍・カチッの側)
 
-   【段2 で倍率が入った所】(どれもこのファイルの関数を通す。式を書き写さない)
+   【倍率が入った所】(どれもこのファイルの関数を通す。式を書き写さない)
 
        再生の速さ       js/connect.js の getTrackRate・js/deck.js の applyPitchToDeck・
                         js/pitch.js(🕺 の時の定規・表示)・js/norirun.js の applyNoriRunPitch
                         → getPlaybackBaseBpm / getDeckBeatMultiplier
        走る1拍の長さ     js/metronome.js(カチッの間隔)・js/sync.js(頭から鳴らす時の無音・直後の拍)
                         → getRunnerBeatSongSec
-       変えていない所   0拍目(getBeat0AtSec = 曲の拍1つ前)・接続点(endTS)・助走が足りない時に
-                        ずらす拍(getConnectAnchorSec。曲の拍で動かす)・🎬 の無音の合わせ方。
-                        ×1・×2・×4 では曲の拍がいつも走る拍の上に乗るので、速さに倍率が入るだけで
-                        正しく繋がる。×½ は曲の拍の2つに1つしか走る拍に乗らないので、段3 で直す
+       曲の拍と足の拍が  js/connect.js の getBeat0AtSec(0拍目)・getConnectAtSec(接続点)・
+       両方そろう間隔    getConnectAnchorSec(助走が足りない時にずらす拍)
+       (段3・v277)      → getTrackBeatStride / getBeatStrideBackBeats
+                        ×1・×2・×4 では曲の拍がいつも走る拍の上に乗るので、この3つは段2 までと同じ値。
+                        ×½・×¼ は曲の拍の2つ・4つに1つしか走る拍に乗らないので、0拍目を「走る拍1つ前」に、
+                        接続点を「1拍目から偶数(×¼ は4の倍数)の拍」にそろえる。カチッ・同期モード・🎬 は
+                        0拍目と接続点をこの関数から取るので、自動で1拍目と同じ側にそろう
 
    ⚠️ 決めるのは1か所(decideBeatMultiplier)。ジャケの getTrackCover と同じ考え方で、
       倍率を使う所(段2・段3)は全部この関数を通すこと。各所が同じ式を書くと、
@@ -141,17 +144,10 @@ const BEAT_MULTIPLIER_SAMPLES = 33;
 const BEAT_MULTIPLIER_EPSILON = 1e-9;
 
 /*
-×½・×¼(曲の拍の2つ・4つに1歩)を、実際の鳴らし方に使うか。
-
-段2(v276)では false。×½ は、曲の拍の2つに1つだけが走る拍になるので、繋ぐ拍の数を
-偶数にそろえる直し(接続点を1拍手前にする等)が要ります。それは段3 で作ります。
-それまでは ×½・×¼ が選ばれても ×1(今までどおり。0.5〜2.0倍で止める)で鳴らし、
-🐛 に「×½ は段3 から」と出します。
-
-⚠️ 段3 で true にする時は、js/connect.js の接続点・getBeat0AtSec・getConnectAnchorSec と、
-   js/metronome.js のカチッの側(1拍目と同じ側)も一緒に直すこと(作戦会議の資料の6章)。
+(段2・v276 には「×½・×¼ を使うか」のスイッチ BEAT_MULTIPLIER_USE_SLOWER = false があり、
+ ×½・×¼ が選ばれても ×1 で鳴らしていた。段3・v277 で、繋ぐ拍をそろえる直し
+ 〔下の getTrackBeatStride・getBeatStrideBackBeats〕と一緒に外した)
 */
-const BEAT_MULTIPLIER_USE_SLOWER = false;
 
 
 // ==========================================================
@@ -471,12 +467,14 @@ function formatBeatMultiplier(multiplier){
 // 3-2. 鳴らす時に使う倍率(デッキごとの控え。段2・v276)
 // ==========================================================
 /*
-ほかのファイルが使うのは、この節の4つだけです。式を書き写さず、必ずここを通すこと。
+ほかのファイルが使うのは、この節の6つだけです。式を書き写さず、必ずここを通すこと。
 
     getDeckBeatMultiplier(deck)  … そのデッキの曲の倍率(js/deck.js の applyPitchToDeck)
     getTrackBeatMultiplier(track) … その曲の倍率(デッキが分からない所から)
     getPlaybackBaseBpm(track)    … 速さの計算に使う「元ピッチ × 倍率」(接続・定規・上半分)
     getRunnerBeatSongSec(track)  … 走る1拍が、曲の中で何秒か(カチッ・同期モード)
+    getTrackBeatStride(track)    … (v277)曲の拍と足の拍が両方そろう間隔(曲の拍いくつ。0拍目・ずらす拍)
+    getBeatStrideBackBeats(track) … (v277)接続点を曲の拍いくつ手前へ動かすか(×½・×¼ の時だけ)
 
 ⚠️ どれも、🕺ノリノリRun の外(メインメニュー)では倍率 1 = 今までと同じ値を返します。
    メインメニューの再生は STEP7 の見比べ役なので、拍倍率を一切効かせません。
@@ -486,7 +484,7 @@ function formatBeatMultiplier(multiplier){
  * そのデッキに載っている曲の倍率を返します(無ければ、ここで決めて控えます)。
  *
  * @param  {HTMLAudioElement} deck
- * @return {number} 倍率(1・2・4。段2 では ×½・×¼ も 1 として返す)
+ * @return {number} 倍率(0.25・0.5・1・2・4)
  */
 function getDeckBeatMultiplier(deck){
 
@@ -564,19 +562,16 @@ function decideDeckBeatMultiplier(deck,track,baseBpm){
     const answer = decideBeatMultiplier(baseBpm,noriRunMyPitch,noriRunMyPitch,beatMultiplierMode);
 
     /*
-    段2 では ×½・×¼ はまだ使いません(上の BEAT_MULTIPLIER_USE_SLOWER)。
-    ×1 にすると、今までどおり「マイピッチ ÷ 元ピッチ」を 0.5〜2.0倍で止めた速さになります。
+    (v277)×½・×¼ もそのまま使います(段2 では ×1 に置き換えていた)。
+    控えの multiplier と answer.multiplier は、今はいつも同じ値です。2つ持っているのは、
+    段2 の名残と、将来「決めた答えと、実際に鳴らす倍率」を分けたくなった時のためです。
     */
-    const multiplier = (answer.multiplier < 1 && !BEAT_MULTIPLIER_USE_SLOWER)
-        ? 1
-        : answer.multiplier;
-
     const memo = {
         trackId: track.track_id,
         baseBpm: baseBpm,
         session: beatMultiplierSession,
         answer: answer,
-        multiplier: multiplier
+        multiplier: answer.multiplier
     };
 
     deckBeatMultiplierMemos.set(deck,memo);
@@ -627,7 +622,7 @@ function getTrackBeatMultiplier(track){
 
     const answer = decideBeatMultiplier(baseBpm,noriRunMyPitch,noriRunMyPitch,beatMultiplierMode);
 
-    return (answer.multiplier < 1 && !BEAT_MULTIPLIER_USE_SLOWER) ? 1 : answer.multiplier;
+    return answer.multiplier;
 
 }
 
@@ -659,6 +654,95 @@ function getPlaybackBaseBpm(track){
 function getRunnerBeatSongSec(track){
 
     return 60 / getPlaybackBaseBpm(track);
+
+}
+
+/**
+ * 「曲の拍」と「足の拍(走る拍)」が両方そろう間隔が、曲の拍いくつぶんかを返します(段3・v277)。
+ *
+ *     ×1・×2・×4 → 1   曲の拍はいつも走る拍の上に乗る(×2 なら走る拍の2つに1つが曲の拍)
+ *     ×½         → 2   走る拍は曲の拍の2つに1つ(2拍に1歩)
+ *     ×¼         → 4   走る拍は曲の拍の4つに1つ
+ *
+ * 【何に使うか】js/connect.js の3つの関数が、これで「曲の拍いくつで動くか」を決めます。
+ *
+ *     getBeat0AtSec       … 0拍目 = 1拍目(startTS)から、この数だけ曲の拍を戻った所
+ *     getConnectAtSec     … 接続点 = 1拍目から、この数の倍数だけ曲の拍を進んだ所(下の getBeatStrideBackBeats)
+ *     getConnectAnchorSec … 助走が足りない時に、この数の単位でずらす
+ *
+ * どれも「1拍目(A地点。竹弘がノリ注入で決めた拍)と同じ側の拍に足を着く」ための決まりです
+ * (作戦会議の資料の6章)。ここを 1 にしたまま ×½ で鳴らすと、0拍目と接続点が足の拍の
+ * 裏(曲の拍1つぶん = 半歩)に来て、繋いだ瞬間にカチッと足が半拍ずれます(タタン)。
+ *
+ * ⚠️ ×1・×2・×4 は 1 を返すので、3つの関数は段2 までとまったく同じ値になります。
+ *
+ * @param  {Object} track
+ * @return {number} 1・2・4
+ */
+function getTrackBeatStride(track){
+
+    const multiplier = getTrackBeatMultiplier(track);
+
+    if(!(multiplier < 1)){ return 1; }
+
+    // ×½ → 2、×¼ → 4。小数の誤差で 1.9999… にならないよう、丸めてから返します
+    return Math.round(1 / multiplier);
+
+}
+
+/**
+ * 先行曲の接続点(13拍目 = endTS)を、曲の拍いくつ手前へ動かすかを返します(段3・v277)。
+ *
+ * 【なぜ動かすのか】
+ * ×½ は2拍に1歩なので、1拍目(startTS)から接続点(endTS)までの拍の数が**奇数**だと、
+ * 接続点が足の拍の裏(半歩ずれた所)に来ます。そこで後続曲の0拍目と重ねると、
+ * 繋いだ瞬間に足のリズムが半拍ずれます(タタン)。
+ *
+ *     1拍目から 149拍(奇数)の曲を ×½ で鳴らす
+ *       → 接続点を曲の拍1つ手前(148拍 = 偶数)へ。足の拍の上で繋がる
+ *     ×¼ なら4の倍数へ(149拍 → 1つ手前の 148拍、150拍 → 2つ手前の 148拍)
+ *
+ * 手前へ動かすのは、後ろへ動かすと接続の後の重ね(クロスフェード)の分の曲が足りなくなることが
+ * あるためです(資料の6章「その時は接続点を1拍手前にする」)。
+ *
+ * 【拍の数の数え方】A〜B の長さ ÷ 曲の1拍 を、いちばん近い整数に丸めます。段0(v267〜)で保存した曲は
+ * 「曲全体の BPM」なので割り切れます(🐛 の「149.00拍 → 149拍(端数 +0.00・安心)」)。
+ * それより前に保存した曲で端数が出ても、丸めた数で偶数・奇数を決めれば、足の拍の側はそろいます。
+ *
+ * ⚠️ ×1・×2・×4 はいつも 0(接続点は endTS のまま。段2 までと同じ)。
+ *
+ * @param  {Object} track - 先行曲(manualBPM / startTS / endTS がある曲)
+ * @return {number} 手前へ動かす曲の拍の数(0〜3)
+ */
+function getBeatStrideBackBeats(track){
+
+    const stride = getTrackBeatStride(track);
+
+    if(stride === 1){ return 0; }
+
+    const beatCount = countTrackConnectBeats(track);
+
+    if(!isFinite(beatCount)){ return 0; }
+
+    /*
+    「% stride」は割り算の余りです(149 % 2 = 1)。余りの分だけ手前へ動かせば、ちょうど割り切れる数になります。
+    ( + stride) % stride は、万一拍の数がマイナスでも余りを 0〜stride−1 に収めるための書き方です。
+    */
+    return ((beatCount % stride) + stride) % stride;
+
+}
+
+/**
+ * 1拍目(startTS)から接続点(endTS)までが、曲の拍いくつかを返します(いちばん近い整数。v277)。
+ * 数えられない曲(BPM や位置が無い)は NaN。
+ */
+function countTrackConnectBeats(track){
+
+    const songBeatSec = 60 / track.manualBPM;
+
+    if(!isFinite(songBeatSec) || songBeatSec <= 0){ return NaN; }
+
+    return Math.round((track.endTS - track.startTS) / songBeatSec);
 
 }
 
@@ -865,14 +949,12 @@ function logBeatMultiplierDecision(deck,track,memo){
     let chosen = describeBeatMultiplierAnswer(answer);
 
     /*
-    段2 では ×½・×¼ をまだ使わないので、×1(今までどおり)で鳴らしたことも書き添えます。
+    (v277)×½・×¼ の時は、接続点を動かしたかも書き添えます。
+    「1拍目から 149拍 → 1拍手前へ」なら、繋ぐ瞬間が足の拍の上へ動いた印です。
     */
-    if(memo.multiplier !== answer.multiplier){
+    if(memo.multiplier < 1){
 
-        const fallback = decideBeatMultiplier(answer.baseBpm,pitch,pitch,BEAT_MULTIPLIER_MODE_OFF);
-
-        chosen += "(⚠️ " + formatBeatMultiplier(answer.multiplier) + " は段3 から。今は " +
-                  describeBeatMultiplierAnswer(fallback) + " = 今までどおり)";
+        chosen += "(" + describeBeatStrideConnect(track) + ")";
 
     }
 
@@ -932,6 +1014,32 @@ function describeBeatMultiplierAnswer(answer){
     }
 
     return text;
+
+}
+
+/**
+ * ×½・×¼ の曲の接続点を、どう扱ったかの文字にします(v277)。
+ *
+ *     接続点 : 1拍目から 149拍 → 曲の拍1つ手前(148拍)で繋ぐ
+ *     接続点 : 1拍目から 148拍 = 2の倍数なのでそのまま
+ */
+function describeBeatStrideConnect(track){
+
+    const beatCount = countTrackConnectBeats(track);
+
+    if(!isFinite(beatCount)){ return "接続点 : 拍の数を数えられません"; }
+
+    const stride = getTrackBeatStride(track);
+    const backBeats = getBeatStrideBackBeats(track);
+
+    if(backBeats === 0){
+
+        return "接続点 : 1拍目から " + beatCount + "拍 = " + stride + "の倍数なのでそのまま";
+
+    }
+
+    return "接続点 : 1拍目から " + beatCount + "拍 → 曲の拍" + backBeats + "つ手前(" +
+           (beatCount - backBeats) + "拍)で繋ぐ";
 
 }
 

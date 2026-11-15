@@ -18,6 +18,11 @@
    をぴたりと重ねます。0拍目は「1拍目(startTS)の1拍前」です。
    こうすると、曲が変わっても拍の間隔が1ミリも乱れません。
 
+   (v277・拍倍率の段3)×½・×¼(曲の2拍・4拍に1歩)の曲だけは、0拍目を「走る拍1つ前」
+   (曲の拍2つ・4つ前)にし、接続点を「1拍目から偶数〔×¼ は4の倍数〕の拍」へ手前にそろえます。
+   どちらも足の拍の上で繋ぐためです(getBeat0AtSec・getConnectAtSec の説明)。
+   ×1・×2・×4 は今までどおり。
+
    ------------------------------------------------------------
    【この版(v170)でやること = STEP5の本体】
 
@@ -729,10 +734,17 @@ function getBeatSec(){
  *    startTS がその曲の時間軸の上の値なので、引く長さも同じ
  *    時間軸で測らなければ辻褄が合いません。
  *    (再生速度で伸び縮みするのは、鳴らした時の実秒の方です)
+ *
+ * ⚠️ (v277・拍倍率の段3)×½・×¼ の曲は、**走る拍1つ前**(曲の拍2つ・4つ前)にします。
+ *    ×½ は2拍に1歩なので、曲の拍1つ前は足の拍の裏(半歩ずれた所)です。そこを0拍目に
+ *    すると、接続で先行曲の接続点(足の拍)と重ねた時に足が半拍ずれ、カチッ(この0拍目から
+ *    走る拍で数える。js/metronome.js)も1拍目の反対側で鳴ってしまいます。
+ *    何拍戻るかは js/beat-multiplier.js の getTrackBeatStride(×1・×2・×4 は 1 = 今までどおり)。
+ *    同期モード(js/sync.js)の「頭から」「続きから」・🎬 の無音の長さも、この0拍目から数えます。
  */
 function getBeat0AtSec(track){
 
-    const beatDurAtSec = 60 / track.manualBPM;
+    const beatDurAtSec = 60 / track.manualBPM * getTrackBeatStride(track);
 
     const beat0 = track.startTS - beatDurAtSec;
 
@@ -793,9 +805,11 @@ function getConnectAnchorSec(track){
     /*
     ⚠️ (v276)ここは拍倍率を入れず、**曲の1拍**でずらします(わざと)。
        ×2・×4 なら曲の1拍は走る拍2つ・4つぶんなので、曲の拍でずらせば足の格子も崩れません。
-       ×½(段3)の時だけは、曲の拍2つで走る1拍になるので、偶数の拍でずらす直しが要ります。
+    ⚠️ (v277・段3)×½・×¼ だけは、曲の拍2つ・4つ(= 走る拍1つ)の単位でずらします
+       (js/beat-multiplier.js の getTrackBeatStride。×1・×2・×4 は 1 なので今までどおり)。
+       曲の拍1つでずらすと、繋ぐ拍が足の拍の裏に来て、繋いだ瞬間に半拍ずれます。
     */
-    const beatDurSongSec = 60 / getEffectiveBaseBpm(track);
+    const beatDurSongSec = 60 / getEffectiveBaseBpm(track) * getTrackBeatStride(track);
 
     if(!isFinite(beatDurSongSec) || beatDurSongSec <= 0){ return beat0AtSec; }
 
@@ -841,10 +855,27 @@ function getTrackRate(track){
  *
  * 「脳内整理モード」で接続点をずらす設定になっていれば、その拍数
  * ぶんだけ後ろへ動かします(v170では0なので endTS のままです)。
+ *
+ * ⚠️ (v277・拍倍率の段3)×½・×¼ の曲は、1拍目(startTS)から接続点までの拍の数が
+ *    偶数(×¼ は4の倍数)になるよう、接続点を曲の拍いくつか**手前**へ動かします。
+ *    奇数のままだと接続点が足の拍の裏に来て、繋いだ瞬間に足が半拍ずれる(タタン)ためです。
+ *    何拍動かすかは js/beat-multiplier.js の getBeatStrideBackBeats(×1・×2・×4 はいつも0 = endTS のまま)。
+ *    接続点はこの関数で受け取ること(助走を始める時刻・🎬 の格子・同期モードの「繋ぐ位置に近いか」)。
+ *    endTS をじかに見ると、×½ の曲でそこだけ1拍ずれます。
  */
 function getConnectAtSec(track){
 
-    if(CONNECT_OFFSET_BEATS === 0){ return track.endTS; }
+    /*
+    足の拍にそろえた接続点。動かさない時(×1・×2・×4 と、×½ で偶数の時)は計算をせず
+    endTS をそのまま使います(今までとまったく同じ値にするため)。
+    */
+    const backBeats = getBeatStrideBackBeats(track);
+
+    const strideAtSec = (backBeats === 0)
+        ? track.endTS
+        : track.endTS - backBeats * (60 / track.manualBPM);
+
+    if(CONNECT_OFFSET_BEATS === 0){ return strideAtSec; }
 
     /*
     ずらす長さは「拍数 × 1拍の長さ(実秒)」で決め、それを先行曲の
@@ -852,7 +883,7 @@ function getConnectAtSec(track){
     */
     const offsetSec = CONNECT_OFFSET_BEATS * getBeatSec();
 
-    return track.endTS + offsetSec * getTrackRate(track);
+    return strideAtSec + offsetSec * getTrackRate(track);
 
 }
 

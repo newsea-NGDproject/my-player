@@ -5461,10 +5461,14 @@ function buildSyncResumePlan(track,pausedSec){
 
     const targetSec = beat0Sec + k * beatSongSec;
 
-    // 繋ぐ位置まで、実時間で20秒以上残っているか
+    /*
+    繋ぐ位置まで、実時間で20秒以上残っているか。
+    (v277)繋ぐ位置は getConnectAtSec(js/connect.js)で受け取ります。×½・×¼ の曲は、
+    endTS より曲の拍いくつか手前で繋ぐため(足の拍にそろえる。拍倍率の段3)。×1・×2・×4 は endTS のまま。
+    */
     const rate = getTrackRate(track);
 
-    if(targetSec < 0 || targetSec + SYNC_RESUME_MARGIN_SEC * rate > track.endTS){ return null; }
+    if(targetSec < 0 || targetSec + SYNC_RESUME_MARGIN_SEC * rate > getConnectAtSec(track)){ return null; }
 
     return {
         trackId:currentTrackId,
@@ -7574,7 +7578,8 @@ function handleSyncPlay(){
 
         resume.targetSec = findSyncNextBeatSec(track,resume.pausedSec);
 
-        if(!isFinite(resume.targetSec) || resume.targetSec >= track.endTS){
+        // (v277)繋ぐ位置は getConnectAtSec で(×½・×¼ は endTS より手前。buildSyncResumePlan のコメント)
+        if(!isFinite(resume.targetSec) || resume.targetSec >= getConnectAtSec(track)){
 
             skipWhy = "止めた位置が繋ぐ位置に近すぎる";
 
@@ -7738,7 +7743,8 @@ function syncResumeFire(resume){
     if(deck !== audioPlayer || deck.paused){ return; }
 
     // やり直しの拍が繋ぐ位置より後になっていたら、もう頭出しせずに音を出します
-    if(resume.targetSec >= resume.track.endTS){
+    // (v277)繋ぐ位置は getConnectAtSec で(×½・×¼ は endTS より手前)
+    if(resume.targetSec >= getConnectAtSec(resume.track)){
 
         resume.checks.push("やり直す拍が繋ぐ位置より後なので、このまま音を出します");
 
