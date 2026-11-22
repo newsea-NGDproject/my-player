@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v284)ノリRun
+        (v285)ノリRun
         メインメニュー
 
     </title>
@@ -2362,10 +2362,91 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
 
         ▶ の間だけ効くよう、js/upper-area.js が付け外しする
         .paused-icon クラスに掛けています(■ の時は付きません)。
+
+        (v285)■ / ▶ を下の「図形の記号 .shape-icon」で描くようにしたので、この padding-left と
+        .paused-icon は外しました。右へ寄せる分は .shape-icon--play が受け持ちます(竹弘の「3つの頂点と
+        枠との距離が等しい位置が中心」を、図形の寸法から計算して寄せる)。
         */
-        #stop-btn.paused-icon{
-            padding-left:4px;
+
+        /*
+        ---- 図形の記号(v285)… ■ 止める / ▶ 鳴らす / ❚❚ 一時停止 を、文字ではなく図形で描く部品 ----
+
+        【なぜ文字をやめたのか】竹弘の報告(2026-11-23):
+            「Chromeのバージョンアップの影響と思われます。停止ボタン『■』が小さくなり、
+              さらに下にズレてしまいました。アプリの再起動でも直りません」
+        写真を測ると、メインの ■ は約11px(▶ は約19×22px)で、丸の中心より約2.5px 下でした
+        (ロック画面のつまみの ▶ ❚❚ ■ も 1〜2px 下)。文字は同じ ■(U+25A0)のままなので、
+        Chrome かスマホの更新で、文字の絵(字形)の大きさと位置が変わったと見ています。
+        文字の絵はスマホの機種や更新で変わるので、どれだけ位置を直しても、また変わりえます。
+        → 単純な形は、CSS で四角と三角を描けば、どの機種でも丸のちょうど真ん中に同じ大きさで出ます
+          (⏮ ⏭ などほかの記号は今ずれていないので、文字のまま。全部をそろえるのは
+           CLAUDE.md の「画面の絵文字を、自前の図形(絵)にそろえる」で、公開前に)。
+
+        【使い方】ボタンの中に <span class="shape-icon shape-icon--stop"></span> を1つ置き、
+        記号を変える時は --stop / --play / --pause のクラスを入れ替えます(js/upper-area.js・js/sync-lock.js)。
+        大きさは --shape-size(図形の高さ)で、置く場所ごとに決めます(下の #stop-btn・.sync-lock-slide-thumb)。
+        色は currentColor(置いたボタンの文字の色)なので、ボタンの色の決まりにそのまま従います。
+
+            background:currentColor … 図形を文字と同じ色で塗りつぶす
+            clip-path:polygon(…)    … 四角を、点を結んだ形(ここでは三角)に切り抜く。
+                                      (0 0)=左上、(100% 50%)=右の真ん中、(0 100%)=左下
+            pointer-events:none     … 図形は指を受けない(指はボタン・つまみ自身が受ける。
+                                      スライドのつまみは、つまみの要素で指を追いかけているため)
+        */
+        .shape-icon{
+            display:block;
+            flex-shrink:0;
+
+            height:var(--shape-size,18px);
+
+            background:currentColor;
+
+            pointer-events:none;
         }
+
+        /* ■ 止める … 高さと同じ幅の正方形 */
+        .shape-icon--stop{
+            width:var(--shape-size,18px);
+        }
+
+        /*
+        ▶ 鳴らす … 正三角形に近い三角(幅 = 高さ × 0.866 = √3 ÷ 2)。
+
+        【右へ寄せる分】竹弘の決まり(v126)「三角の3つの頂点それぞれと丸ボタンの枠との距離が
+        等しい位置が正しい中心」= 3つの頂点から同じ距離の点(外心)を、丸の中心に重ねます。
+        正三角形の外心は、平らな辺(左)から幅の 1/3 の所です。四角い枠の真ん中(幅の 1/2)に
+        置くと外心が左に 1/6 ずれるので、そのぶん右へ寄せます(幅 19px なら約3.2px。
+        v126〜v284 の文字の ▶ は padding-left:4px で約2〜3px 寄せていた。ほぼ同じ見た目)。
+        */
+        .shape-icon--play{
+            width:calc(var(--shape-size,18px) * 0.866);
+
+            clip-path:polygon(0 0,100% 50%,0 100%);
+
+            transform:translateX(calc(var(--shape-size,18px) * 0.866 / 6));
+        }
+
+        /*
+        ❚❚ 一時停止 … 縦の棒2本。1つの四角を、左右の帯だけ塗る(linear-gradient)形で描きます。
+            「色 0 34%」… 左から 34% までを塗る / 「transparent 34% 66%」… 真ん中は塗らない
+        */
+        .shape-icon--pause{
+            width:calc(var(--shape-size,18px) * 0.8);
+
+            background:linear-gradient(to right,
+                currentColor 0 34%,
+                transparent 34% 66%,
+                currentColor 66% 100%);
+        }
+
+        /*
+        メインの再生操作の ■ / ▶ の大きさ(v285)。
+        ▶ は v284 までの文字の ▶ と同じくらい(写真で約19×22px)。
+        ■ は、v284 までの文字の ■ が小さくなりすぎた(約11px)ので 18px に(⏮ の高さ約17px と並べて釣り合う大きさ)。
+        ⚠️ 大きさは竹弘の実機で見て決める(2026-11-23「18px くらいから実機で決める」)。
+        */
+        #stop-btn .shape-icon--stop{ --shape-size:18px; }
+        #stop-btn .shape-icon--play{ --shape-size:22px; }
 
         /* ======================================================
            曲一覧のジャンプ(🐇ウサギボタン / v118)
@@ -7679,6 +7760,16 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             line-height:1.5;
         }
 
+        /*
+        状態の文を、意味の塊で折り返します(v285。竹弘の決まり「文言は意味の塊で改行させる」)。
+        v284 までは「⏸ 止めています(再開すると、みんなの拍に合わ / せ直します)」と言葉の途中で折り返していました
+        (竹弘が写真で見つけた 2026-11-23)。js/sync-lock.js の setSyncLockStateText が、文を塊ごとの span に分けて入れます。
+        inline-block にした塊は、途中で折り返されず、塊と塊の間だけで折り返されます(手本は .exclude-box .text-chunk)。
+        */
+        #sync-lock-state .text-chunk{
+            display:inline-block;
+        }
+
         /* 止めている間は、タイマーを少し暗くして「止まっている」と分かるようにします */
         #sync-lock.sync-lock-paused #sync-lock-timer{
             opacity:0.55;
@@ -7946,6 +8037,15 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         .sync-lock-slide-end .sync-lock-slide-thumb{
             background:#8e6bb8;
         }
+
+        /*
+        つまみの中の記号の大きさ(v285)。記号は図形の部品 .shape-icon で描きます(上の「図形の記号」の説明)。
+        v284 までの文字の ▶ ❚❚ ■ とだいたい同じ大きさにしてあります(写真で ▶ 約13×15px・❚❚ 約15×16px・■ 約14px)。
+        図形にしたので、丸のちょうど真ん中に来ます(文字の時は 1〜2px 下にずれていた)。
+        */
+        .sync-lock-slide-thumb .shape-icon--play { --shape-size:15px; }
+        .sync-lock-slide-thumb .shape-icon--pause{ --shape-size:16px; }
+        .sync-lock-slide-thumb .shape-icon--stop { --shape-size:14px; }
 
         /* ---- 終わりの面(真ん中に出すカード。v248 の「カチッの前の確認」は v249 で外した)---- */
         #sync-lock-finish{
@@ -8546,10 +8646,13 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
 
                 記号を ■ のままにしているのも同じ理由で、v99で竹弘と
                 位置を調整した見た目をそのまま引き継いでいます。
+
+                (v285)■ / ▶ は文字ではなく図形(.shape-icon)で描きます。中の span の
+                --stop / --play を js/upper-area.js が入れ替えます。文字が無いので、読み上げ用に aria-label を付けています。
             -->
             <div class="playback-group">
                 <button id="prev-btn" class="round-btn" type="button">⏮</button>
-                <button id="stop-btn" class="round-btn" type="button">■</button>
+                <button id="stop-btn" class="round-btn" type="button" aria-label="一時停止"><span class="shape-icon shape-icon--stop" id="stop-btn-icon"></span></button>
                 <button id="next-btn" class="round-btn" type="button">⏭</button>
             </div>
 
@@ -9682,10 +9785,13 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
     -->
     <div id="sync-lock-sheet" aria-hidden="true">
 
-        <!-- (1) 一時停止 ⇔ 再開。文字と記号は js/sync-lock.js の refreshSyncLock がいまの状態で入れ替えます -->
+        <!--
+            (1) 一時停止 ⇔ 再開。文字と記号は js/sync-lock.js の refreshSyncLock がいまの状態で入れ替えます
+            (v285)記号は文字ではなく図形(.shape-icon。--pause ⇔ --play を入れ替える)
+        -->
         <div class="sync-lock-slide" id="sync-lock-pause">
             <span class="sync-lock-slide-text" id="sync-lock-pause-text">スライドで一時停止</span>
-            <div class="sync-lock-slide-thumb" id="sync-lock-pause-thumb">❚❚</div>
+            <div class="sync-lock-slide-thumb" id="sync-lock-pause-thumb" aria-label="一時停止"><span class="shape-icon shape-icon--pause"></span></div>
         </div>
 
         <!--
@@ -9721,10 +9827,10 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
 
         </div>
 
-        <!-- (3) 同期モードを終える -->
+        <!-- (3) 同期モードを終える。(v285)記号の ■ は図形(.shape-icon--stop) -->
         <div class="sync-lock-slide sync-lock-slide-end" id="sync-lock-end">
             <span class="sync-lock-slide-text">スライドで同期モードを終える</span>
-            <div class="sync-lock-slide-thumb">■</div>
+            <div class="sync-lock-slide-thumb" aria-label="終える"><span class="shape-icon shape-icon--stop"></span></div>
         </div>
 
     </div>
