@@ -148,6 +148,71 @@ function getEffectiveBaseBpm(track){
 
 }
 
+/**
+ * 定規で選べるBPMの下限と上限を返します(v282。⚠️ 決めるのはここ1か所)。
+ *
+ * 次の3か所が、みんなこの関数を通ります(各所が同じ式を書くと、1か所直し忘れた時に
+ * 「グレーなのに動ける」「グレーでないのに止まる」がずれるため。ジャケの getTrackCover と同じ考え方)。
+ *
+ *     drawOutOfRangeMask … 範囲の外にうすいグレーをかぶせる
+ *     clampTarget        … 定規をなぞっても、範囲の端で止める(6. の setupRulerDrag の中)
+ *     数字の直打ち        … 「設定できる範囲」の表示と、範囲の外の数字を端に寄せる(8.)
+ *
+ * 【範囲】
+ *     メインメニュー     … 元ピッチ × 0.5〜2.0倍(速さの安全装置 RATE_MIN / RATE_MAX。v107 から今までどおり)
+ *     🕺ノリノリRun再生 … 上の範囲(元ピッチ × 拍倍率 × 0.5〜2.0倍)と、マイピッチの範囲 100〜250 の重なり
+ *
+ * 🕺 で 100〜250 を足したのは、竹弘の要望(2026-11-23):
+ *     「ノリノリRun再生のマイピッチの範囲内(ウォーキングBPM100から全力ダッシュBPM250)が重要」
+ *     「ノリノリRun再生モードでは、マイピッチの範囲外は今のグレー条件に加える形でグレー範囲を設定したい」
+ * 100〜250 は初期設定のマイピッチの定規(js/setup.js)・同期モードのピッチ(js/sync.js の SYNC_PITCH_MIN / _MAX)と
+ * 同じ範囲で、拍倍率もこの範囲で走れるように倍率を選んでいます(js/beat-multiplier.js の BEAT_MULTIPLIER_PITCH_MIN / _MAX。
+ * 数字はそこを使い、ここに書き写さない)。
+ *
+ * ⚠️ ここで決めるのは「竹弘が定規や数字で選べる範囲」だけです。曲を切り替えた時の速さ(applyTrackTempo → applyTempo)は
+ *    今までどおり 0.5〜2.0倍の安全装置だけで止めます。マイピッチはいつも 100〜250 の中にある(初期設定・同期モード・
+ *    この定規の3つが決める)ので、ここで止めても止めなくても同じですが、曲を鳴らす道を変えないため触っていません。
+ * ⚠️ ② なるべくなめらかに を「選べないマイピッチをグレーにする」形に作り直す時(竹弘の要望 2026-11-23。作戦会議の後)も、
+ *    グレーはこの関数に足すこと。
+ *
+ * @param  {Object} track - 今の曲(呼ぶ側で、曲があることを確かめてから渡す)
+ * @return {{min:number, max:number}} 選べるBPMの下限・上限(小数のことがある)
+ */
+function getRulerBpmRange(track){
+
+    // 速さの安全装置の範囲。🕺 では「元ピッチ × 拍倍率」が基準(v276。js/beat-multiplier.js の getPlaybackBaseBpm)
+    const base = getPlaybackBaseBpm(track);
+
+    const rateMinBpm = base * RATE_MIN;
+    const rateMaxBpm = base * RATE_MAX;
+
+    if(!isNoriRunMode){
+
+        return { min: rateMinBpm, max: rateMaxBpm };
+
+    }
+
+    /*
+    🕺 では、マイピッチの範囲 100〜250 と重なる所だけにします。
+    Math.max で「どちらか大きい方」= 下限は厳しい方、Math.min で「どちらか小さい方」= 上限も厳しい方を取ります。
+    */
+    const min = Math.max(rateMinBpm,BEAT_MULTIPLIER_PITCH_MIN);
+    const max = Math.min(rateMaxBpm,BEAT_MULTIPLIER_PITCH_MAX);
+
+    /*
+    重なりが無い時(下限 > 上限)は、安全装置の範囲だけにします。拍倍率は 100〜250 で走れる倍率を選ぶので
+    ふつうは起きませんが、元ピッチがとても遅い・速い曲(×¼〜×4 でも届かない)で定規が一歩も動けなくなるのを防ぎます。
+    */
+    if(min > max){
+
+        return { min: rateMinBpm, max: rateMaxBpm };
+
+    }
+
+    return { min: min, max: max };
+
+}
+
 
 // ==========================================================
 // 4. 定規を描く
@@ -317,6 +382,9 @@ function drawRuler(centerBpm){
  *
  * 例えば元ピッチ120の曲なら、60BPMより下と240BPMより上が
  * グレーになります。
+ *
+ * (v282)🕺ノリノリRun再生では、マイピッチの範囲 100〜250 の外もグレーにします
+ *       (元ピッチ120の曲なら 100 より下と 240 より上)。範囲は getRulerBpmRange の1か所で決めます。
  */
 function drawOutOfRangeMask(centerBpm,width,height,centerX){
 
@@ -326,14 +394,13 @@ function drawOutOfRangeMask(centerBpm,width,height,centerX){
     if(!track){ return; }
 
     /*
-    (v276)🕺 では「元ピッチ × 拍倍率」を基準にします(js/beat-multiplier.js の getPlaybackBaseBpm)。
-    ×2 の曲なら、動かせる範囲も2倍になります。メインメニューでは倍率 1 なので今までと同じ。
+    設定できるBPMの下限と上限(v282 から getRulerBpmRange。定規を止める所と同じ値)。
+    (v276)🕺 では「元ピッチ × 拍倍率」を基準にします。×2 の曲なら、動かせる範囲も2倍になります。
     */
-    const base = getPlaybackBaseBpm(track);
+    const range = getRulerBpmRange(track);
 
-    // 設定できるBPMの下限と上限
-    const minBpm = base * RATE_MIN;
-    const maxBpm = base * RATE_MAX;
+    const minBpm = range.min;
+    const maxBpm = range.max;
 
     /*
     その境目が、定規の上でどの位置(x座標)に来るかを求めます。
@@ -715,6 +782,8 @@ canvasにだけ登録すると、少し外へはみ出した瞬間に操作が�
 
     再生速度は0.5〜2.0倍までなので、その外側へ指を運んでも
     定規は端で止まります(元ピッチ120の曲なら60〜240BPM)。
+    (v282)🕺 ではマイピッチの範囲 100〜250 の端でも止まります(グレーの所)。
+    範囲は getRulerBpmRange の1か所で決めます(グレーと同じ値)。
     */
     function clampTarget(){
 
@@ -722,14 +791,11 @@ canvasにだけ登録すると、少し外へはみ出した瞬間に操作が�
 
         if(!track){ return; }
 
-        // (v276)🕺 では「元ピッチ × 拍倍率」。×2 の曲なら動ける範囲も2倍
-        const base = getPlaybackBaseBpm(track);
+        // (v276)🕺 では「元ピッチ × 拍倍率」が基準。×2 の曲なら動ける範囲も2倍
+        const range = getRulerBpmRange(track);
 
-        const minBpm = base * RATE_MIN;
-        const maxBpm = base * RATE_MAX;
-
-        if(targetBpm < minBpm){ targetBpm = minBpm; }
-        if(targetBpm > maxBpm){ targetBpm = maxBpm; }
+        if(targetBpm < range.min){ targetBpm = range.min; }
+        if(targetBpm > range.max){ targetBpm = range.max; }
 
     }
 
@@ -975,12 +1041,15 @@ function openPitchInput(){
     // 曲を選んでいない時は、変える相手がいないので開きません
     if(!track || !pitchInputPanel){ return; }
 
-    // (v276)🕺 では「元ピッチ × 拍倍率」。設定できる範囲も倍率のぶん広がる
-    const base = getPlaybackBaseBpm(track);
+    /*
+    設定できる範囲を先に見せておきます(v282 から getRulerBpmRange。定規のグレーと同じ範囲)。
+    (v276)🕺 では「元ピッチ × 拍倍率」が基準なので、範囲も倍率のぶん広がる。
+    (v282)🕺 ではマイピッチの範囲 100〜250 の外は出しません。
+    */
+    const range = getRulerBpmRange(track);
 
-    // 設定できる範囲を先に見せておきます
-    const minBpm = Math.round(base * RATE_MIN);
-    const maxBpm = Math.round(base * RATE_MAX);
+    const minBpm = Math.round(range.min);
+    const maxBpm = Math.round(range.max);
 
     pitchInputRange.textContent =
         "設定できる範囲：" + minBpm + " 〜 " + maxBpm + " BPM";
@@ -1036,10 +1105,19 @@ function commitPitchInput(){
     const base = getPlaybackBaseBpm(track);
 
     /*
+    (v282)範囲の外の数字は、範囲の端に寄せます(定規と同じく getRulerBpmRange の範囲)。
+    🕺 で 90 と打てば 100、300 と打てば 250(その曲の安全装置の方が狭ければ、そちらの端)になります。
+    メインメニューでは、範囲が「元ピッチ × 0.5〜2.0倍」なので、下の applyTempo の丸めと同じ結果です(今までどおり)。
+    */
+    const range = getRulerBpmRange(track);
+
+    const clampedValue = Math.min(Math.max(value,range.min),range.max);
+
+    /*
     applyTempo には「基準に対する倍率」を渡します。範囲からはみ出す値は
-    applyTempo の中で0.5〜2.0倍に丸められるので、ここでは入力された
-    数字をそのまま素直に渡しています(丸めの判断を2か所に書くと、
-    片方だけ直した時に食い違うため)。
+    applyTempo の中でも0.5〜2.0倍に丸められます(v281 までは、ここでは入力された
+    数字をそのまま渡し、丸めは applyTempo に任せていました。v282 で 🕺 の 100〜250 を足したので、
+    範囲を決める getRulerBpmRange の答えで先に寄せています)。
 
     第2引数の true は「DBに保存する」という意味です。竹弘が自分で
     決めた値なので、次にこの曲を再生した時も同じテンポで鳴ります。
@@ -1048,7 +1126,7 @@ function commitPitchInput(){
     竹弘の指定した「直打ち変更が定規UIにリアルで反映する」は
     これだけで実現しています。
     */
-    applyTempo(value / base,true);
+    applyTempo(clampedValue / base,true);
 
     closePitchInput();
 

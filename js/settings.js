@@ -423,13 +423,13 @@ function closeConnectPanel(){
 メインメニューからも自由に開けます(ノリノリアシストと同じ考え方。画面に「🕺ノリノリRun再生の
 機能です」と書いてあるので迷わない)。
 
-⚠️ 段1(v275)では、選んでも鳴り方は変わりません(🐛 に出すだけ)。段2 から効きます。
+(段1・v275 では選んでも鳴り方は変わらず 🐛 に出すだけだった。段2・v276 から鳴り方に効く)
 */
 
 /**
  * 選ばれている方のボタンに印を付け直します。
  *
- * data-beat-multiplier は "off" / "near" / "smooth"(v281。v280 までは "march")という文字で、js/beat-multiplier.js の
+ * data-beat-multiplier は "near" / "smooth"(v281。v280 までは "march"。v282 で "off" を外した)という文字で、js/beat-multiplier.js の
  * BEAT_MULTIPLIER_MODE_… と同じ値です。dataset では data-beat-multiplier が
  * beatMultiplier という名前で読めます(- の次の文字を大文字にする決まり)。
  */
@@ -770,7 +770,7 @@ function closeLicensePanel(){
     }
 
     /*
-    3つの選択肢(OFF / なるべく1倍の近く / なるべくなめらかに。v281 で3つ目を置き換えた)。
+    2つの選択肢(なるべく1倍の近く / なるべくなめらかに。v281 で2つ目を置き換えた。v282 で OFF を外した)。
 
     setBeatMultiplierMode(js/beat-multiplier.js)は保存まで済ませます。await せずに
     呼んでいるのは、保存の完了を待たなくても画面には即座に効くためです(上の2つの画面と同じ)。

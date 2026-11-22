@@ -24,12 +24,23 @@
 
        元ピッチ 76 ×2 = 152(拍倍率をかけた曲の拍)× 1.12倍 = 170(走るテンポ)
 
-   【設定は3つ】(⚙️ →「👣 拍倍率」。2026-11-14 竹弘と決めた。② は 2026-11-15 に置き換えた)
+   【設定は2つ】(⚙️ →「👣 拍倍率」。2026-11-14 竹弘と決めた。② は 2026-11-15 に置き換えた。OFF は v282 で外した)
 
-       OFF                  今までどおり(速さだけで合わせる)。比べる時の見比べ役。初めはこれ
-       ① なるべく1倍の近く   再生の速さが 0.8〜1.6倍に入る倍率を選ぶ(竹弘「①はとてもいいので、このまま採用」)
+       ① なるべく1倍の近く   再生の速さが 0.7〜1.4倍に入る倍率を選ぶ。初めはこれ(メインの機能。竹弘 2026-11-23)
        ② なるべくなめらかに  (v281)曲ごとに倍率を1つ決め、速さはマイピッチに比例させる。安全装置(0.5〜2.0倍)に
                             当たる時だけ隣の倍率へ。マイピッチを少し動かしても、速さが急に半分や倍にならない
+                            (⚠️ 竹弘が「① の 0.7〜1.4倍をもとに、曲ごとに倍率を固定し、選べないマイピッチをグレーにする」形に
+                              作り直したい。2026-11-23。作戦会議の後に作る。それまでは v281 の形のまま)
+
+   (v282)① の幅を 0.8〜1.6倍 → 0.7〜1.4倍 にした。竹弘の実機の感想(2026-11-23):
+       「0.7～1.4倍くらいがよさそうです。1.6倍だとちょっと曲が早すぎる気がしました。
+         0.7倍については音質劣化もギリギリ耐えられるレベルでした」
+
+   (v282)OFF(今までどおり。速さだけで合わせ、0.5〜2.0倍で止まる)を外した。竹弘(2026-11-23):
+       「ノリノリRun再生のマイピッチの範囲内(ウォーキングBPM100から全力ダッシュBPM250)が重要」
+       「元ピッチBPM39(あの日の約束)や、元ピッチBPM44.98(海の幽霊)などは、OFFではマイピッチの範囲外の速度で、
+         再生対象外となってしまう。×2以上の再生が必須ということがわかりました」
+   保存してある OFF("off")は、① として読み、① で保存し直します(下の loadBeatMultiplierSetting)。
 
    ② は v275〜v280 では「いったん行進の範囲へ揃える」でした(曲の拍を 68〜135 へ揃えてから速める。
    マラソン以上では原曲より遅くしない)。竹弘の実機の感想(2026-11-15):
@@ -39,8 +50,7 @@
    そこで「いまのマイピッチで選ばない」新しい②に置き換えました(名前は竹弘が決めた)。
    保存してある旧②の値("march")は、新しい②として読みます(下の loadBeatMultiplierSetting)。
 
-   OFF を残すのは、竹弘が「実装前との比較をしたい」ため。うまくいったら、
-   OFF を残すか消すかを竹弘が決めます。
+   (v275〜v281 は OFF も選べた。竹弘が「実装前との比較をしたい」ためで、v282 で上のとおり外した)
 
    ------------------------------------------------------------
    【作る順番】(1段 = 1版。竹弘の GO の後に次の段)
@@ -51,7 +61,9 @@
                   上半分の「ノリRunBPM ×2」(実機 OK)
        段3(v277)×½・×¼ も効かせる(0拍目の位置・接続点を偶数の拍に・ずらす拍・カチッの側)
        続き(v279・v280)ノリ注入の「表打ちの確認 2/2」で、×½・×¼ のカチッを表に(getTrackStrideOffsetBeats)
-       続き(v281)② を「なるべくなめらかに」に置き換えた(上の【設定は3つ】・1. の BEAT_MULTIPLIER_SMOOTH_CENTER_BPM)
+       続き(v281)② を「なるべくなめらかに」に置き換えた(上の【設定は2つ】・1. の BEAT_MULTIPLIER_SMOOTH_CENTER_BPM)
+       続き(v282)OFF を外した・① を 0.7〜1.4倍に・🕺 の定規はマイピッチの範囲(100〜250)の外もグレーにして止める
+                  (js/pitch.js の getRulerBpmRange。この 1. の BEAT_MULTIPLIER_PITCH_MIN / _MAX を使う)
 
    【倍率が入った所】(どれもこのファイルの関数を通す。式を書き写さない)
 
@@ -88,7 +100,6 @@
 設定の値。DB の settings ストアに "beat_multiplier_mode" という名前で、この文字のまま保存します
 (docs/db-schema.md)。⚠️ 保存されるので、文字を変えると前の設定が読めなくなります。
 */
-const BEAT_MULTIPLIER_MODE_OFF    = "off";
 const BEAT_MULTIPLIER_MODE_NEAR   = "near";
 const BEAT_MULTIPLIER_MODE_SMOOTH = "smooth";   // (v281)② なるべくなめらかに
 
@@ -99,19 +110,33 @@ const BEAT_MULTIPLIER_MODE_SMOOTH = "smooth";   // (v281)② なるべくなめ�
 const BEAT_MULTIPLIER_MODE_OLD_MARCH = "march";
 
 /*
-① なるべく1倍の近く の「速さの幅」。0.8〜1.6倍(竹弘が選んだ 2026-11-14)。
+(v282)v275〜v281 の OFF(今までどおり)の値。もう選べませんが、保存されていることがあるので、
+読み込む時だけ ①(NEAR)に読み替えます(loadBeatMultiplierSetting)。
+v281 までは BEAT_MULTIPLIER_MODE_OFF という名前でした(使う所が無くなったので名前を変えた)。
+*/
+const BEAT_MULTIPLIER_MODE_OLD_OFF = "off";
+
+/*
+① なるべく1倍の近く の「速さの幅」。0.7〜1.4倍。
+(v282)竹弘の実機の感想で 0.8〜1.6倍 から変えた(2026-11-23「1.6倍だとちょっと曲が早すぎる。
+0.7倍については音質劣化もギリギリ耐えられるレベル」)。v275〜v281 は 0.8〜1.6倍(竹弘が選んだ 2026-11-14)。
 
 ⚠️ 上の端は、必ず下の端のちょうど2倍にすること。
    倍率は2倍刻みなので、幅が「ちょうど2倍」あれば、どの曲・どのマイピッチでも
    必ず1つだけ倍率が見つかります(2倍より狭いと、どの倍率も入らない曲が出る)。
+
+    マイピッチ 170 の時、×1 で鳴る曲は 元ピッチ 122〜242(v281 までは 107〜212)。
+    それより遅い曲は ×2、速い曲は ×½ になります(遅めの曲が ×2 になりやすくなった)。
+    マイピッチ 100 の時、×½ になるのは 元ピッチ 143 より速い曲(v281 までは 125。js/tap.js の 2/2 の目安)。
 */
-const BEAT_MULTIPLIER_NEAR_RATE_MIN = 0.8;
-const BEAT_MULTIPLIER_NEAR_RATE_MAX = 1.6;
+const BEAT_MULTIPLIER_NEAR_RATE_MIN = 0.7;
+const BEAT_MULTIPLIER_NEAR_RATE_MAX = 1.4;
 
 /*
 (v281)② なるべくなめらかに の数値。
 
     マイピッチの範囲 … 100〜250(js/setup.js の定規の minBpm・maxBpm と同じ値)
+                       (v282)🕺 の上半分の定規も、この範囲の外をグレーにして止めます(js/pitch.js の getRulerBpmRange)
     まん中           … √(100 × 250) ≒ 158.1(掛け算で見たまん中。100 の 1.58倍が 158、158 の 1.58倍が 250)
 
 【決め方】(decideBeatMultiplier の中。竹弘と決めた 2026-11-15)
@@ -127,7 +152,7 @@ const BEAT_MULTIPLIER_NEAR_RATE_MAX = 1.6;
 【なぜ 158 なのか】「元ピッチ × 倍率」は必ず 111.8〜223.6(158 の ÷√2〜×√2)に入ります。その曲を
     0.5〜2.0倍で鳴らせるのは、マイピッチ「元ピッチ×倍率 ÷ 2」〜「× 2」の間なので、**マイピッチ 112〜223 では、
     どの曲も倍率が切り替わりません**(速さが跳ばない)。跳ぶ曲があるのは、端(100〜112・224〜250)だけです。
-    ① は「いまのマイピッチで 0.8〜1.6倍」なので、跳ぶ場所が曲ごとにマイピッチの真ん中にも来ます。
+    ① は「いまのマイピッチで 0.7〜1.4倍」なので、跳ぶ場所が曲ごとにマイピッチの真ん中にも来ます。
 
 ⚠️ 引き換えに、遅いマイピッチでは曲がゆっくりめ(0.5〜0.9倍)になることがあります(説明文に書いた。竹弘 OK)。
    走る人がよく使う 150〜190 では、① とほとんど同じ速さです。
@@ -160,7 +185,7 @@ const BEAT_MULTIPLIER_SAMPLES = 33;
 小数の計算の誤差よけ。
 
 コンピュータの小数は、136 ÷ 85 が 1.6 ぴったりにならず 1.6000000000000001 になる、という
-小さな誤差が出ます。境目(1.6倍ちょうど など)で答えがぶれないように、このぶんだけ余裕を持たせます。
+小さな誤差が出ます。境目(帯の端の 1.4倍ちょうど など)で答えがぶれないように、このぶんだけ余裕を持たせます。
 */
 const BEAT_MULTIPLIER_EPSILON = 1e-9;
 
@@ -176,10 +201,10 @@ const BEAT_MULTIPLIER_EPSILON = 1e-9;
 // ==========================================================
 
 /*
-いま選ばれている設定。初めは OFF(竹弘 2026-11-15「初めの設定は OFF」)。
+いま選ばれている設定。初めは ①(v282。v281 までは OFF だった。竹弘 2026-11-23「メインは①の機能」)。
 起動時に loadBeatMultiplierSetting() が、保存してある値に置き換えます。
 */
-let beatMultiplierMode = BEAT_MULTIPLIER_MODE_OFF;
+let beatMultiplierMode = BEAT_MULTIPLIER_MODE_NEAR;
 
 /*
 デッキごとに「この曲はこの倍率で鳴らす」と決めた答えの控え(段2・v276)。
@@ -202,7 +227,7 @@ let beatMultiplierMode = BEAT_MULTIPLIER_MODE_OFF;
     ・🕺 に入り直した・同期モードをスタートした(startBeatMultiplierSession。マイピッチが変わるため)
     ・その曲の元ピッチが変わった(ノリ注入をやり直した)
 
-⚠️ 設定(OFF / ① / ②)を切り替えても、今の曲の控えはそのまま。次の曲から効きます。
+⚠️ 設定(① / ②)を切り替えても、今の曲の控えはそのまま。次の曲から効きます。
 
 session は「🕺 に入った回の番号」です。入り直すたびに1つ増やし、古い回の控えを使わないようにします。
 */
@@ -245,7 +270,7 @@ let beatMultiplierSession = 0;
  *    1. 選べる倍率(×1・×2・×½・×4・×¼)それぞれで、幅の低い方・高い方の速さを計算する
  *    2. 幅の間ずっと安全装置(0.5〜2.0倍)の内側にいられる倍率だけを候補にする
  *    3. 候補のうち、
- *         ① なるべく1倍の近く … 選び方の帯(0.8〜1.6倍)にいちばん長く入るものを選ぶ
+ *         ① なるべく1倍の近く … 選び方の帯(0.7〜1.4倍。v281 までは 0.8〜1.6倍)にいちばん長く入るものを選ぶ
  *         ② なるべくなめらかに … (v281)「元ピッチ × 倍率」がまん中 158 にいちばん近いものを選ぶ
  *                                (BEAT_MULTIPLIER_SMOOTH_CENTER_BPM の説明。マイピッチを見ないので、跳ばない)
  *    4. 候補が1つも無い時(1曲の間にマイピッチが2倍以上変わる時だけ起きる)は、
@@ -260,7 +285,7 @@ let beatMultiplierSession = 0;
  * @param  {number} baseBpm   - その曲の元ピッチ(js/pitch.js の getEffectiveBaseBpm)
  * @param  {number} pitchLow  - その曲が鳴る間の、いちばん低いマイピッチ(今は noriRunMyPitch)
  * @param  {number} pitchHigh - その曲が鳴る間の、いちばん高いマイピッチ(今は pitchLow と同じ値)
- * @param  {string} mode      - BEAT_MULTIPLIER_MODE_OFF / _NEAR / _SMOOTH
+ * @param  {string} mode      - BEAT_MULTIPLIER_MODE_NEAR / _SMOOTH(ほかの値は ① として扱う。v282)
  * @return {{mode:string, multiplier:number, baseBpm:number, pitchLow:number, pitchHigh:number,
  *           rateLow:number, rateHigh:number, clamped:boolean}}
  *           multiplier … 倍率(2 なら「1拍に2歩」、0.5 なら「2拍に1歩」)
@@ -288,14 +313,13 @@ function decideBeatMultiplier(baseBpm,pitchLow,pitchHigh,mode){
     }
 
     /*
-    OFF(今までどおり)。倍率は使わず、速さだけで合わせます。
-    js/connect.js の getTrackRate と同じ計算(マイピッチ ÷ 元ピッチ を安全装置で止める)です。
+    (v282)② 以外は、どれも ① として扱います(OFF を外したため)。
+    v281 までは、ここで OFF(倍率を使わず速さだけで合わせる)の答えを返していました。
+    知らない値が来ても ① になるので、答えの mode はいつも NEAR か SMOOTH のどちらかです。
     */
-    if(mode !== BEAT_MULTIPLIER_MODE_NEAR && mode !== BEAT_MULTIPLIER_MODE_SMOOTH){
+    if(mode !== BEAT_MULTIPLIER_MODE_SMOOTH){
 
-        return makeBeatMultiplierResult(
-            BEAT_MULTIPLIER_MODE_OFF,1,baseBpm,pitchLow,pitchHigh
-        );
+        mode = BEAT_MULTIPLIER_MODE_NEAR;
 
     }
 
@@ -407,7 +431,7 @@ function isBetterBeatMultiplier(a,b,mode){
 /**
  * そのマイピッチの時の「選び方の帯」(この速さの間で鳴らしたい、という幅)を返します。
  *
- * ① はいつも 0.8〜1.6倍。
+ * ① はいつも 0.7〜1.4倍(v282。v281 までは 0.8〜1.6倍)。
  * (v281)帯を使うのは ① だけになりました(旧②「行進へ揃える」の、マイピッチで動く帯は外した。
  *       新しい② は帯を使わない)。引数の pitch・mode は、帯がマイピッチで動く選び方を足す時のために残しています。
  *
@@ -423,7 +447,7 @@ function getBeatMultiplierBand(pitch,mode){
  * 速さが帯に入っているかを返します。
  *
  * 下の端ちょうどは「入る」、上の端ちょうどは「入らない」(倍率を1つ上げる側)。
- * こうすると境目でも、帯に入る倍率がちょうど1つに決まります(例:1.6倍ちょうどは ×2 の 0.8倍の方)。
+ * こうすると境目でも、帯に入る倍率がちょうど1つに決まります(例:1.4倍ちょうどは ×2 の 0.7倍の方)。
  */
 function isBeatMultiplierRateInBand(rate,band){
 
@@ -856,8 +880,9 @@ function forgetDeckBeatMultiplier(deck){
  *
  * js/pitch.js の applyTempo(速さを変えるたびに通る)から呼ばれます。
  *
- *     🕺 で、今の曲を ① か ② で決めた時   ノリRunBPM 170 ×2(×1 の時は「×2」を出さない)
- *     それ以外(OFF・メインメニュー)        再生ピッチ 170(今までどおり)
+ *     🕺 で、今の曲の倍率を決めた時   ノリRunBPM 170 ×2(×1 の時は「×2」を出さない)
+ *     それ以外(メインメニュー)        再生ピッチ 170(今までどおり)
+ *     (v281 までは、🕺 でも OFF で決めた曲は「再生ピッチ」。v282 で OFF を外したので、🕺 ではいつも「ノリRunBPM」)
  *
  * 数字は、どちらも走るテンポ(= マイピッチ)です(竹弘 2026-11-15「走るテンポで行こう」)。
  * ⚠️ 設定を切り替えても、今の曲は決めた時の設定のまま表示します(次の曲から効くのと同じ)。
@@ -871,7 +896,8 @@ function refreshBeatMultiplierDisplay(){
 
     const memo = getDeckBeatMultiplierMemo(audioPlayer);
 
-    const isNoriRunBpm = !!memo && memo.answer.mode !== BEAT_MULTIPLIER_MODE_OFF;
+    // 控えがある = 🕺 で曲が載っている(getDeckBeatMultiplierMemo は 🕺 の外・曲が無い時に null を返す)
+    const isNoriRunBpm = !!memo;
 
     labelEl.textContent = isNoriRunBpm ? "ノリRunBPM" : "再生ピッチ";
 
@@ -938,18 +964,18 @@ function refreshBeatMultiplierDisplay(){
  * ⚠️ 切り替えは「次の曲から」効きます(段2・v276〜)。倍率は曲の頭で決めて曲の間は変えないので、
  *    今鳴っている曲は、決めた時の設定のまま鳴り続けます(上の deckBeatMultiplierMemos)。
  *
- * @param {string} mode - BEAT_MULTIPLIER_MODE_OFF / _NEAR / _SMOOTH
+ * @param {string} mode - BEAT_MULTIPLIER_MODE_NEAR / _SMOOTH
  */
 async function setBeatMultiplierMode(mode){
 
     /*
-    知らない値が来たら、安全な方(OFF = 今までどおり)に倒します。
+    知らない値が来たら、① に倒します(v282。v281 までは OFF に倒していた)。
     保存してある値が将来の版と食い違った時に、鳴り方がおかしくならないようにするための関門です
     (ノリノリアシストの音色の setMetronomeSound と同じ守り方)。
     */
     if(!isKnownBeatMultiplierMode(mode)){
 
-        mode = BEAT_MULTIPLIER_MODE_OFF;
+        mode = BEAT_MULTIPLIER_MODE_NEAR;
 
     }
 
@@ -1002,8 +1028,24 @@ async function loadBeatMultiplierSetting(){
         }
 
         /*
+        (v282)OFF("off")が保存されていたら、① として読み、① で保存し直します
+        (竹弘と決めた 2026-11-23「まずOFFは削除とします」。上の "march" と同じ形。1回だけ起きます)。
+        */
+        if(saved === BEAT_MULTIPLIER_MODE_OLD_OFF){
+
+            beatMultiplierMode = BEAT_MULTIPLIER_MODE_NEAR;
+
+            console.log("拍倍率 : OFF はもう無いので、① なるべく1倍の近く として読みました");
+
+            await idbPut(STORE_SETTINGS,beatMultiplierMode,"beat_multiplier_mode");
+
+            return;
+
+        }
+
+        /*
         今のコードが知っている値の時だけ受け入れます。
-        まだ一度も設定していない時は undefined が返るので、初期値(OFF)のままにします。
+        まだ一度も設定していない時は undefined が返るので、初期値(①)のままにします。
         */
         if(isKnownBeatMultiplierMode(saved)){
 
@@ -1022,8 +1064,7 @@ async function loadBeatMultiplierSetting(){
 
 function isKnownBeatMultiplierMode(mode){
 
-    return mode === BEAT_MULTIPLIER_MODE_OFF ||
-           mode === BEAT_MULTIPLIER_MODE_NEAR ||
+    return mode === BEAT_MULTIPLIER_MODE_NEAR ||
            mode === BEAT_MULTIPLIER_MODE_SMOOTH;
 
 }
@@ -1031,10 +1072,10 @@ function isKnownBeatMultiplierMode(mode){
 // 設定の呼び名(ログ用)。画面の文字は c014.html の #beat-multiplier-panel にあります
 function describeBeatMultiplierMode(mode){
 
-    if(mode === BEAT_MULTIPLIER_MODE_NEAR){ return "① なるべく1倍の近く"; }
     if(mode === BEAT_MULTIPLIER_MODE_SMOOTH){ return "② なるべくなめらかに"; }
 
-    return "OFF(今までどおり)";
+    // (v282)② 以外は ①(decideBeatMultiplier と同じ読み方。v281 までは「OFF(今までどおり)」があった)
+    return "① なるべく1倍の近く";
 
 }
 
@@ -1045,11 +1086,10 @@ function describeBeatMultiplierMode(mode){
 /*
 段1(v275)で、決め方が竹弘の曲で正しいことを確かめた(実機 OK)。段2(v276)からは、
 **倍率を決めた瞬間**(曲をデッキに載せた後、最初に聞かれた時)に1行出します。
-次の曲なら、助走を始める時に出ます。決めた設定の答えを先に、残り2つの設定ならどうなるかを
-[ ] の中に出すので、OFF・①・② をその場で見比べられます。
+次の曲なら、助走を始める時に出ます。決めた設定の答えを先に、もう1つの設定ならどうなるかを
+[ ] の中に出すので、①・② をその場で見比べられます(v282 で OFF を外した。v281 までは [ ] に2つ)。
 
-    👣 拍倍率 デッキA(② なめらか)「曲名」: 元ピッチ 76 / マイピッチ 170 → ×2・1.12倍
-       [OFF なら 2.00倍で止まり 152 / ① なら ×2・1.12倍]
+    👣 拍倍率 デッキA(② なめらか)「曲名」: 元ピッチ 76 / マイピッチ 170 → ×2・1.12倍 [① なら ×2・1.12倍]
 
 ⚠️ 本番リリース前に消してよいのは、この 5. の節と、次の3か所の呼び出しだけ
    (CLAUDE.md の「本番リリース前に削除するもの」):
@@ -1070,8 +1110,8 @@ function logBeatMultiplierDecision(deck,track,memo){
     const answer = memo.answer;
     const pitch = answer.pitchLow;
 
-    // 残り2つの設定ならどうなるか(同じ元ピッチ・同じマイピッチで計算し直す)
-    const others = [BEAT_MULTIPLIER_MODE_OFF,BEAT_MULTIPLIER_MODE_NEAR,BEAT_MULTIPLIER_MODE_SMOOTH]
+    // もう1つの設定ならどうなるか(同じ元ピッチ・同じマイピッチで計算し直す)
+    const others = [BEAT_MULTIPLIER_MODE_NEAR,BEAT_MULTIPLIER_MODE_SMOOTH]
         .filter(function(mode){ return mode !== answer.mode; })
         .map(function(mode){
             const other = decideBeatMultiplier(answer.baseBpm,pitch,pitch,mode);
@@ -1127,15 +1167,12 @@ function logBeatMultiplierOnModeChange(){
  * 答えを「×2・1.12倍」の形の文字にします。
  *
  * 安全装置で止まる時は「2.00倍で止まり 152」のように、実際に走るテンポも添えます
- * (元ピッチ × 倍率 × 止まった速さ)。OFF は倍率を使わないので「×1・」を付けません。
+ * (元ピッチ × 倍率 × 止まった速さ)。
+ * (v281 までは、OFF の答えだけ倍率を使わないので「×1・」を付けなかった)
  */
 function describeBeatMultiplierAnswer(answer){
 
-    const head = (answer.mode === BEAT_MULTIPLIER_MODE_OFF)
-        ? ""
-        : formatBeatMultiplier(answer.multiplier) + "・";
-
-    let text = head + answer.rateLow.toFixed(2) + "倍";
+    let text = formatBeatMultiplier(answer.multiplier) + "・" + answer.rateLow.toFixed(2) + "倍";
 
     if(answer.clamped){
 
@@ -1189,23 +1226,21 @@ function describeBeatStrideConnect(track){
 
 }
 
-// 行の頭に出す、設定の短い名前
+// 行の頭に出す、設定の短い名前(v282:② 以外は ①。v281 までは「OFF」もあった)
 function getBeatMultiplierLogName(mode){
 
-    if(mode === BEAT_MULTIPLIER_MODE_NEAR){ return "① 1倍の近く"; }
     if(mode === BEAT_MULTIPLIER_MODE_SMOOTH){ return "② なめらか"; }
 
-    return "OFF";
+    return "① 1倍の近く";
 
 }
 
-// [ ] の中に出す、設定のいちばん短い名前
+// [ ] の中に出す、設定のいちばん短い名前(v282:② 以外は ①)
 function getBeatMultiplierShortName(mode){
 
-    if(mode === BEAT_MULTIPLIER_MODE_NEAR){ return "①"; }
     if(mode === BEAT_MULTIPLIER_MODE_SMOOTH){ return "②"; }
 
-    return "OFF";
+    return "①";
 
 }
 
