@@ -187,6 +187,13 @@ function createSwipeRuler(container,options){
     // 次に絵を描き直す必要があるか
     let needsDraw = true;
 
+    /*
+    (v283)方眼紙(canvas の width / height)を、どの精細さ(devicePixelRatio)で合わせたか。
+    syncSize が書き、preparePen が「画面の精細さが変わっていないか」を比べるのに使います。
+    0 は「まだ一度も合わせていない」の意味です。
+    */
+    let sizedRatio = 0;
+
     // ---- 部品を組み立てる ----
 
     /*
@@ -255,7 +262,56 @@ function createSwipeRuler(container,options){
         */
         ctx.setTransform(ratio,0,0,ratio,0,0);
 
+        // (v283)どの精細さで方眼紙を合わせたかを覚えます(preparePen が、変わったかを確かめる)
+        sizedRatio = ratio;
+
         needsDraw = true;
+
+    }
+
+    /**
+     * 描く直前に、方眼紙の細かさと筆の倍率を確かめ直します(v283)。draw の最初で呼びます。
+     *
+     * js/pitch.js の prepareRulerPen と同じ直しです(くわしい経緯はそちらのコメント)。
+     * 竹弘の実機で、アプリを長く裏に置いた後、上半分の定規が 1/2.6 に縮んで描かれました。
+     * Chrome が canvas の絵を手放して作り直すと、setTransform で教えた筆の倍率が初期値(1)に戻るためと
+     * 見ています。この部品も start の時に1回教えるだけだったので、同じことが起きえました。
+     *
+     *     1. 描くたびに setTransform で倍率を教え直す
+     *     2. 画面の精細さが変わっていたら、方眼紙から合わせ直す(syncSize)
+     *     3. 作り直しの知らせ(contextrestored)が来たら、描き直す(下の「---- 絵を手放された時 ----」)
+     *
+     * ⚠️ 倍率が教えたものと違っていた時の console.log は【開発用調査ログ】(v283)。消してよいのはそれだけ。
+     */
+    function preparePen(){
+
+        const ratio = window.devicePixelRatio || 1;
+
+        if(ratio !== sizedRatio){
+
+            syncSize();
+
+        }
+
+        // getTransform は「いま筆に教えてある倍率と位置」を返す命令(a・d が倍率、e・f がずらし)
+        if(typeof ctx.getTransform === "function"){
+
+            const now = ctx.getTransform();
+
+            if(Math.abs(now.a - ratio) > 1e-6 || Math.abs(now.d - ratio) > 1e-6 || now.e !== 0 || now.f !== 0){
+
+                // 【開発用調査ログ】(v283)
+                console.log(
+                    "【開発用調査ログ】(v283)定規の部品の筆の倍率が " + now.a.toFixed(3) +
+                    " になっていたので、" + ratio.toFixed(3) + " に教え直しました(方眼紙 " +
+                    canvas.width + "×" + canvas.height + " / 画面 " + document.visibilityState + ")"
+                );
+
+            }
+
+        }
+
+        ctx.setTransform(ratio,0,0,ratio,0,0);
 
     }
 
@@ -267,6 +323,9 @@ function createSwipeRuler(container,options){
      * 描き方は js/setup.js の render() とまったく同じです。
      */
     function draw(){
+
+        // (v283)方眼紙の細かさと筆の倍率を、描く直前に確かめ直します
+        preparePen();
 
         const ratio = window.devicePixelRatio || 1;
 
@@ -473,6 +532,32 @@ function createSwipeRuler(container,options){
 
     canvas.addEventListener("pointerup",endDrag);
     canvas.addEventListener("pointercancel",endDrag);
+
+    // ---- 絵を手放された時(v283)----
+
+    /*
+    Chrome が canvas の絵を手放した(contextlost)・作り直した(contextrestored)時の知らせです。
+    作り直された canvas は真っ白で、筆の倍率も初期値に戻っています(上の preparePen)。
+    描き直しの札(needsDraw)を立てておけば、動いている間は次のコマで描き直されます
+    (倍率は draw の中の preparePen が教え直す)。止まっている間(stop の後)は、次に start した時に描かれます。
+
+    ⚠️ 消してよいのは console.log の2行だけ(【開発用調査ログ】(v283))。札を立てる1行は本番の処理。
+    */
+    canvas.addEventListener("contextlost",function(){
+
+        // 【開発用調査ログ】(v283)
+        console.log("【開発用調査ログ】(v283)定規の部品の絵を、Chrome が手放しました(画面 " + document.visibilityState + ")");
+
+    });
+
+    canvas.addEventListener("contextrestored",function(){
+
+        // 【開発用調査ログ】(v283)
+        console.log("【開発用調査ログ】(v283)定規の部品の絵を、Chrome が作り直しました → 描き直します(画面 " + document.visibilityState + ")");
+
+        needsDraw = true;
+
+    });
 
     // ---- 外から使う道具一式 ----
 

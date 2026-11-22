@@ -218,6 +218,13 @@ function getRulerBpmRange(track){
 // 4. 定規を描く
 // ==========================================================
 
+/*
+(v283)方眼紙(canvas の width / height)を、どの精細さ(devicePixelRatio)で合わせたか。
+syncRulerCanvasSize が書き、prepareRulerPen が「画面の精細さが変わっていないか」を比べるのに使います。
+0 は「まだ一度も合わせていない」の意味です。
+*/
+let rulerCanvasRatio = 0;
+
 /**
  * canvasの解像度を、今の表示サイズと画面の精細さに合わせます。
  *
@@ -234,6 +241,9 @@ function getRulerBpmRange(track){
  *
  * setTransform で筆の側に倍率を教えておくと、描く時の座標は
  * CSSピクセルのまま書けるので、描画のコードは読みやすいままです。
+ *
+ * ⚠️ (v283)筆の倍率は、ここで1回教えるだけでは足りません。描くたびに
+ *    prepareRulerPen が教え直します(下の prepareRulerPen の説明)。
  */
 function syncRulerCanvasSize(){
 
@@ -255,6 +265,74 @@ function syncRulerCanvasSize(){
 
     rulerCtx.setTransform(ratio,0,0,ratio,0,0);
 
+    // (v283)どの精細さで方眼紙を合わせたかを覚えます(prepareRulerPen が、変わったかを確かめる)
+    rulerCanvasRatio = ratio;
+
+}
+
+/**
+ * 定規を描く直前に、方眼紙の細かさと筆の倍率を確かめ直します(v283)。drawRuler の最初で呼びます。
+ *
+ * 【何が起きたか】竹弘の実機(GALAXY・インストール版。2026-11-23 の報告):
+ *
+ *     「早朝の通勤時間に停止し、画面は閉じずに裏画面で起動のまま帰りに曲を再生しようと
+ *       裏画面を戻した所、定規が変わった時があった。アプリの再起動で直りました」
+ *
+ * 写真(sandbox の「020 定規が変わった時があった.jpg」)では、定規の目盛りも数字も、
+ * ちょうど 1/2.6 の大きさで左上に縮んで描かれていました。2.6 は GALAXY の画面の精細さ
+ * (CSS の1pxを約2.6個の点で描く)です。つまり**方眼紙は細かいまま、筆の倍率だけが 1 に戻っていた**。
+ *
+ * 【なぜ戻るのか】(のりの見立て。手元では再現できない)
+ * アプリが長い時間裏にいると、Chrome はメモリを空けるために canvas の絵の置き場所を手放すことがあり、
+ * 画面に戻った時に作り直します(contextlost → contextrestored)。作り直された筆は、
+ * setTransform で教えた倍率を忘れて初期値(1)に戻ります。ところが定規の大きさは変わらないので
+ * ResizeObserver(9. の節)は呼ばれず、倍率を教え直す機会がありませんでした。
+ *
+ * 【どう直したか】
+ *     1. 描くたびに setTransform で倍率を教え直す(軽い命令なので、1秒60回でも負担にならない)
+ *     2. 画面の精細さそのものが変わっていたら(画面の解像度の設定を変えた時など)、方眼紙から合わせ直す
+ *     3. 作り直しの知らせ(contextrestored)が来たら、すぐ描き直す(9. の節の watchRulerContext)
+ *
+ * ⚠️ 同じ作りの定規の部品(js/ruler.js。同期モードのピッチの定規)も、v283 で同じ直しを入れた。
+ *    初期設定・マイピッチ設定の定規(js/setup.js)は倍率を使わずに描いているので、縮まない(触っていない)。
+ * ⚠️ 筆の倍率が教えたものと違っていた時は、🐛 に1行出します(【開発用調査ログ】(v283)。
+ *    また起きた時に、この見立てが当たっていたかが分かる)。倍率を教え直すこと自体は本番の処理です。
+ */
+function prepareRulerPen(){
+
+    const ratio = window.devicePixelRatio || 1;
+
+    // 画面の精細さが、方眼紙を合わせた時と変わっていたら、方眼紙から合わせ直します
+    if(ratio !== rulerCanvasRatio){
+
+        syncRulerCanvasSize();
+
+    }
+
+    /*
+    getTransform は「いま筆に教えてある倍率と位置」を返す命令です(a が横の倍率、d が縦の倍率、
+    e・f がずらし)。教えたとおり(倍率 ratio・ずらし 0)でなければ、🐛 に1行出します。
+    古いブラウザで getTransform が無い時は、確かめずに教え直すだけにします。
+    */
+    if(typeof rulerCtx.getTransform === "function"){
+
+        const now = rulerCtx.getTransform();
+
+        if(Math.abs(now.a - ratio) > 1e-6 || Math.abs(now.d - ratio) > 1e-6 || now.e !== 0 || now.f !== 0){
+
+            // 【開発用調査ログ】(v283)
+            console.log(
+                "【開発用調査ログ】(v283)上半分の定規の筆の倍率が " + now.a.toFixed(3) +
+                " になっていたので、" + ratio.toFixed(3) + " に教え直しました(方眼紙 " +
+                rulerCanvas.width + "×" + rulerCanvas.height + " / 画面 " + document.visibilityState + ")"
+            );
+
+        }
+
+    }
+
+    rulerCtx.setTransform(ratio,0,0,ratio,0,0);
+
 }
 
 /**
@@ -265,6 +343,9 @@ function syncRulerCanvasSize(){
 function drawRuler(centerBpm){
 
     if(!rulerCanvas || !rulerCtx){ return; }
+
+    // (v283)方眼紙の細かさと筆の倍率を、描く直前に確かめ直します(定規が 1/2.6 に縮んだ件)
+    prepareRulerPen();
 
     const ratio = window.devicePixelRatio || 1;
     const width = rulerCanvas.width / ratio;
@@ -1222,5 +1303,41 @@ ResizeObserver は「この要素の大きさが変わったら教えて」と
     });
 
     observer.observe(rulerCanvas.parentElement);
+
+})();
+
+/*
+(v283)Chrome が定規の絵の置き場所を手放した・作り直した時の知らせを聞きます。
+
+アプリが長く裏にいると、Chrome はメモリを空けるために canvas の絵を手放すことがあります
+(contextlost)。画面に戻ると作り直しますが(contextrestored)、作り直された canvas は
+**真っ白で、筆の倍率も初期値(1)に戻っています**(4. の prepareRulerPen の説明。定規が 1/2.6 に縮んだ件)。
+そこで、作り直しの知らせが来たらすぐ描き直します(倍率は drawRuler の中の prepareRulerPen が教え直す)。
+
+addEventListener は「この出来事が起きたら、この関数を呼んでください」とブラウザに頼む命令です。
+古いブラウザはこの2つの知らせを送ってきませんが、その時も描くたびに倍率を教え直すので縮みません。
+
+⚠️ 消してよいのは console.log の2行だけ(【開発用調査ログ】(v283))。描き直す処理は本番の処理。
+*/
+(function watchRulerContext(){
+
+    if(!rulerCanvas){ return; }
+
+    rulerCanvas.addEventListener("contextlost",function(){
+
+        // 【開発用調査ログ】(v283)
+        console.log("【開発用調査ログ】(v283)上半分の定規の絵を、Chrome が手放しました(画面 " + document.visibilityState + ")");
+
+    });
+
+    rulerCanvas.addEventListener("contextrestored",function(){
+
+        // 【開発用調査ログ】(v283)
+        console.log("【開発用調査ログ】(v283)上半分の定規の絵を、Chrome が作り直しました → 描き直します(画面 " + document.visibilityState + ")");
+
+        syncRulerCanvasSize();
+        drawRuler(currentRulerBpm);
+
+    });
 
 })();
