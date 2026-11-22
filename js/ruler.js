@@ -273,7 +273,8 @@ function createSwipeRuler(container,options){
      * 描く直前に、方眼紙の細かさと筆の倍率を確かめ直します(v283)。draw の最初で呼びます。
      *
      * js/pitch.js の prepareRulerPen と同じ直しです(くわしい経緯はそちらのコメント)。
-     * 竹弘の実機で、アプリを長く裏に置いた後、上半分の定規が 1/2.6 に縮んで描かれました。
+     * 竹弘の実機で、アプリを長く裏に置いた後、上半分の定規が 1/3 に縮んで描かれました
+     * (3 は竹弘の GALAXY の画面の精細さ。v283 では「1/2.6」と書いていた。v284 で写真を測り直して直した)。
      * Chrome が canvas の絵を手放して作り直すと、setTransform で教えた筆の倍率が初期値(1)に戻るためと
      * 見ています。この部品も start の時に1回教えるだけだったので、同じことが起きえました。
      *
@@ -293,8 +294,12 @@ function createSwipeRuler(container,options){
 
         }
 
-        // getTransform は「いま筆に教えてある倍率と位置」を返す命令(a・d が倍率、e・f がずらし)
-        if(typeof ctx.getTransform === "function"){
+        /*
+        getTransform は「いま筆に教えてある倍率と位置」を返す命令(a・d が倍率、e・f がずらし)。
+        (v284)方眼紙をまだ一度も合わせていない間(sizedRatio が 0)は、ログを出しません
+        (倍率をまだ教えていないので 1倍なのは当たり前。js/pitch.js の prepareRulerPen と同じ直し)。
+        */
+        if(sizedRatio !== 0 && typeof ctx.getTransform === "function"){
 
             const now = ctx.getTransform();
 
