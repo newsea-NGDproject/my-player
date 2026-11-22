@@ -534,9 +534,32 @@ seekBar.addEventListener("change",function(){
 
 信号待ちや給水で止めても、そこから走り出せるようにするためです
 (再生位置が曲の先頭に戻る「完全停止」ではありません)。
+
+(v285)記号は文字ではなく図形で描きます(c014.html の「図形の記号 .shape-icon」)。
+v284 までは文字の "■" / "▶" をボタンに入れていましたが、Chrome かスマホの更新で ■ の字形が
+小さく・下にずれて描かれるようになった(竹弘の報告 2026-11-23)ため、四角と三角を CSS で描きます。
+ここには、ボタンの中の span に付けるクラスの名前を置きます。
 */
-const STOP_ICON_PLAYING = "■";
-const STOP_ICON_PAUSED = "▶";
+const STOP_ICON_PLAYING = "shape-icon--stop";   // 鳴っている間 … ■(押すと止める)
+const STOP_ICON_PAUSED  = "shape-icon--play";   // 止めている間 … ▶(押すと鳴らす)
+
+/**
+ * 停止ボタンの記号を ■ か ▶ にします(v285)。
+ *
+ * 中の span のクラスを丸ごと付け直し(className は「この要素のクラスを、この文字のとおりにする」命令)、
+ * 文字が無いので、読み上げ用の名前(aria-label)も一緒に変えます。
+ *
+ * @param {string} iconClass - STOP_ICON_PLAYING か STOP_ICON_PAUSED
+ */
+function setStopBtnIcon(iconClass){
+
+    const iconEl = document.getElementById("stop-btn-icon");
+
+    if(iconEl){ iconEl.className = "shape-icon " + iconClass; }
+
+    stopBtn.setAttribute("aria-label",iconClass === STOP_ICON_PAUSED ? "再生" : "一時停止");
+
+}
 
 /*
 「今のpauseが、竹弘が停止ボタン(またはロック画面の一時停止)で
@@ -628,8 +651,7 @@ stopBtn.addEventListener("click",function(){
 */
 // v167: 2枚のデッキに対応(理由は js/deck.js のコメント)
 bindDeckEvent("play",function(){
-    stopBtn.textContent = STOP_ICON_PLAYING;
-    stopBtn.classList.remove("paused-icon");
+    setStopBtnIcon(STOP_ICON_PLAYING);
 });
 
 bindDeckEvent("pause",function(){
@@ -650,20 +672,12 @@ bindDeckEvent("pause",function(){
 
     intentionalPause = false;
 
-    stopBtn.textContent = STOP_ICON_PAUSED;
-
     /*
-    ▶ の記号だけ、丸ボタンの中で左右の余白を微調整するためのクラスです
-    (v126、竹弘の指摘)。■ は正方形で左右対称ですが、▶ は先端が
-    尖った三角形のため、Unicode文字の送り幅どおりに中央寄せすると
-    「先端側(右)の余白が広く見える」というズレが出ます。
-    このクラスがある間だけ、CSS側(c014.html)で右へ少し寄せます。
-
-    ■ とは違うCSSを当てたいので、記号の書き換えと同時にこのクラスも
-    付け外しします。付け忘れを防ぐため、テキストを書き換えている
-    この場所にまとめています。
+    (v126〜v284 は、ここで .paused-icon のクラスも付けて、文字の ▶ を CSS で右へ少し寄せていました
+     〔竹弘の指摘:三角の先端側の余白が広く見える〕。v285 から ▶ は図形で、右へ寄せる分は
+     c014.html の .shape-icon--play が受け持つので、.paused-icon は外しました)
     */
-    stopBtn.classList.add("paused-icon");
+    setStopBtnIcon(STOP_ICON_PAUSED);
 });
 
 

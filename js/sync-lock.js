@@ -84,11 +84,16 @@ const SYNC_LOCK_REFRESH_MS = 250;
 ⚠️ 一時停止の記号は ⏸ ではなく「❚❚」(太い縦棒2本)にしています。
    ⏸ は Android では色の付いた絵文字の四角で描かれ、暁色の丸いつまみの上で
    浮いてしまうためです。▶ は、ほかのボタン(■ / ▶)と同じ文字の記号です。
+
+(v285)記号は文字ではなく図形で描きます(c014.html の「図形の記号 .shape-icon」)。
+v284 までの文字の ▶ ❚❚ ■ は、丸の中心より 1〜2px 下に描かれていました(竹弘の写真を測った 2026-11-23)。
+文字の絵はスマホの機種や更新で変わるので、メインの ■ / ▶ と一緒に図形にしました。
+ここには、つまみの中の span に付けるクラスの名前を置きます(見た目は今までの ❚❚ と ▶ のまま)。
 */
 const SYNC_LOCK_PAUSE_TEXT  = "スライドで一時停止";
-const SYNC_LOCK_PAUSE_THUMB = "❚❚";
+const SYNC_LOCK_PAUSE_THUMB = "shape-icon--pause";   // ❚❚
 const SYNC_LOCK_RESUME_TEXT  = "スライドで再開";
-const SYNC_LOCK_RESUME_THUMB = "▶";
+const SYNC_LOCK_RESUME_THUMB = "shape-icon--play";   // ▶
 
 
 // ==========================================================
@@ -374,27 +379,31 @@ function refreshSyncLock(){
     // ---- いまの状態 ----
     const paused = isSyncLockMusicStopped();
 
-    let stateText;
+    /*
+    (v285)文を「意味の塊」に分けて並べます。画面の幅が足りない時は、塊と塊の間だけで折り返します
+    (setSyncLockStateText。v284 までは1つの文で、「…合わ / せ直します)」と言葉の途中で折り返していた)。
+    */
+    let stateChunks;
 
     if(!syncState.running){
 
-        stateText = "🏁 同期モードを終えました";
+        stateChunks = ["🏁 同期モードを終えました"];
 
     }else if(paused){
 
-        stateText = "⏸ 止めています(再開すると、みんなの拍に合わせ直します)";
+        stateChunks = ["⏸ 止めています","(再開すると、","みんなの拍に合わせ直します)"];
 
     }else if(syncResume){
 
-        stateText = "⏳ みんなの拍に合わせ直しています";
+        stateChunks = ["⏳ みんなの拍に","合わせ直しています"];
 
     }else{
 
-        stateText = "▶ 走っています";
+        stateChunks = ["▶ 走っています"];
 
     }
 
-    if(syncLockStateEl.textContent !== stateText){ syncLockStateEl.textContent = stateText; }
+    setSyncLockStateText(stateChunks);
 
     syncLockEl.classList.toggle("sync-lock-paused",paused);
 
@@ -403,10 +412,60 @@ function refreshSyncLock(){
     const slideThumb = paused ? SYNC_LOCK_RESUME_THUMB : SYNC_LOCK_PAUSE_THUMB;
 
     if(syncLockPauseTextEl.textContent !== slideText){ syncLockPauseTextEl.textContent = slideText; }
-    if(syncLockPauseThumbEl.textContent !== slideThumb){ syncLockPauseThumbEl.textContent = slideThumb; }
+
+    /*
+    (v285)つまみの記号は、中の span(図形)のクラスを入れ替えます。
+    classList.contains は「このクラスが付いているか」を返す命令で、変わった時だけ付け直します(0.25秒ごとに呼ばれるため)。
+    */
+    const thumbIconEl = syncLockPauseThumbEl.querySelector(".shape-icon");
+
+    if(thumbIconEl && !thumbIconEl.classList.contains(slideThumb)){
+
+        thumbIconEl.className = "shape-icon " + slideThumb;
+
+        syncLockPauseThumbEl.setAttribute("aria-label",paused ? "再開" : "一時停止");
+
+    }
 
     // ---- (2)ノリノリアシストのボタン(v249)----
     refreshSyncLockAssist();
+
+}
+
+/**
+ * 状態の文(#sync-lock-state)を、意味の塊ごとの span に分けて入れます(v285)。
+ *
+ * 塊の span には .text-chunk を付けます(c014.html の #sync-lock-state .text-chunk で inline-block)。
+ * inline-block の塊は途中で折り返されないので、画面の幅が足りない時は塊と塊の間で折り返されます
+ * (竹弘の決まり「文言は意味の塊で改行させる」。日本語は放っておくと文字の単位で切れる)。
+ *
+ * 0.25秒ごとに呼ばれるので、文が変わった時だけ作り直します。要素の textContent は、
+ * 中の span の文字をつないだものになるので、つないだ文と比べれば変わったかが分かります。
+ *
+ *     replaceChildren() … 中身をいったん空にする命令(引数なし)
+ *     append(要素)       … 中身の最後に足す命令
+ *     textContent に入れた文字は、文字のまま入る(タグとして読まれない)
+ *
+ * @param {string[]} chunks - 塊の並び(つなぐと1つの文になる)
+ */
+function setSyncLockStateText(chunks){
+
+    const text = chunks.join("");
+
+    if(syncLockStateEl.textContent === text){ return; }
+
+    syncLockStateEl.replaceChildren();
+
+    chunks.forEach(function(chunk){
+
+        const spanEl = document.createElement("span");
+
+        spanEl.className = "text-chunk";
+        spanEl.textContent = chunk;
+
+        syncLockStateEl.append(spanEl);
+
+    });
 
 }
 
