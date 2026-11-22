@@ -473,7 +473,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v281)ノリRun
+        (v282)ノリRun
         メインメニュー
 
     </title>
@@ -1575,7 +1575,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         (#app.norirun-mode の「行き先の色」。色の数字を書き写さないための借り方)。
         大きさは、数字の後ろの小さな「BPM」と同じくらい(0.6rem)。その「BPM」は、
         「ノリRunBPM」の間は消して、空いた場所に「×2」が入る形です(下の .ua-pitch-now--norirun-bpm)。
-        ⚠️ 中身が空(×1・OFF・メインメニュー)の時は :empty で幅も余白も0にして、
+        ⚠️ 中身が空(×1・メインメニュー。v281 までは OFF も)の時は :empty で幅も余白も0にして、
            今までの並びを1pxも動かしません。
         (v278)「×½」「×¼」の分数だけは2倍の大きさにしています(下の .ua-pitch-frac)。
         */
@@ -1630,7 +1630,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
 
         ⚠️ 付け外しは js/beat-multiplier.js の refreshBeatMultiplierDisplay が行います
            (.ua-pitch-now に ua-pitch-now--norirun-bpm を付ける)。「再生ピッチ」の時は今までどおり
-           「：」も単位も出ます(メインメニュー・OFF の見た目は1pxも変わらない)。
+           「：」も単位も出ます(メインメニューの見た目は1pxも変わらない。v281 までは 🕺 の OFF も)。
         ⚠️ #pitch-value::after より後ろに書いていなくても効きます(クラス + id の方が、id だけより強いため)。
         ⚠️ 見出しの文字を長くする時は、この行を幅 360px で測り直すこと。
         */
@@ -8327,7 +8327,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
                     中身は js/pitch.js の applyTempo() が入れています。
                 -->
                 <!--
-                    (v276)拍倍率。🕺 で ① ② の時だけ、見出しが「ノリRunBPM」になり、数字の後ろに
+                    (v276)拍倍率。🕺 の時だけ(v281 までは ① ② の時だけ。v282 で OFF を外した)、見出しが「ノリRunBPM」になり、数字の後ろに
                     「×2」が付きます(×1 の時は付けない)。数字はどちらも走るテンポ(マイピッチ)。
                     中身は js/beat-multiplier.js の refreshBeatMultiplierDisplay() が入れます。
                     ⚠️ 見出しの文字を span で包んだのは、横の絵文字(#pitch-pace-emoji)を消さずに
@@ -9527,7 +9527,7 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
     速い曲は「2拍に1歩」のように足を着く拍を変えて、どの曲でもマイピッチで走れるようにします。
     見出し・本文・閉じるボタン・選択肢のクラスは「🎚️ 曲の繋ぎ方」「🏃 ノリノリアシスト」と共有しています。
 
-    ⚠️ data-beat-multiplier の "off" / "near" / "smooth" は、js/beat-multiplier.js の
+    ⚠️ data-beat-multiplier の "near" / "smooth"(v282 で "off" を外した)は、js/beat-multiplier.js の
        BEAT_MULTIPLIER_MODE_… と同じ値で、そのまま DB に保存されます(文字を変えない)。
     (v276)段2 で鳴り方に効くようにしたので、v275 の「(開発中)いまは 🐛 に出すだけ」の一文は消した。
     ×½・×¼(速い曲を2拍・4拍に1歩)は段3 までは今までどおりの鳴り方なので、その一文を代わりに置いた。
@@ -9535,6 +9535,9 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
     (v281)3つ目を「いったん行進の範囲へ揃える」("march")から「なるべくなめらかに」("smooth")に置き換えた
     (竹弘 2026-11-15「ちょっとピッチを上げたのに速度が極端に落ちるのが違和感」。名前も竹弘が決めた)。
     説明文も竹弘と決めたもの。保存してある "march" は js/beat-multiplier.js の loadBeatMultiplierSetting が "smooth" に読み替える。
+    (v282)OFF のボタン(data-beat-multiplier="off")を外した(竹弘 2026-11-23「まずOFFは削除とします」。遅い曲は
+    ×2 以上でないとマイピッチ 100〜250 で走れないため)。保存してある "off" は loadBeatMultiplierSetting が "near" に読み替える。
+    あわせて「なるべく1倍の近く」の幅を 0.8〜1.6倍 → 0.7〜1.4倍 にした(竹弘「1.6倍だとちょっと曲が早すぎる」)。
 -->
 <div id="beat-multiplier-panel" style="display:none;">
 
@@ -9553,14 +9556,9 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
 
         <p class="connect-heading">👣 選び方</p>
 
-        <button type="button" class="connect-choice" data-beat-multiplier="off">
-            OFF(今までどおり)
-            <span class="connect-note">速さだけで合わせます。0.5〜2.0倍で止まるので、遅い曲・速い曲は走るテンポが合わないことがあります</span>
-        </button>
-
         <button type="button" class="connect-choice" data-beat-multiplier="near">
             なるべく1倍の近く
-            <span class="connect-note">曲を 0.8〜1.6倍で鳴らします。原曲の速さに近く、音がいちばん崩れにくい</span>
+            <span class="connect-note">曲を 0.7〜1.4倍で鳴らします。原曲の速さに近く、音がいちばん崩れにくい</span>
         </button>
 
         <button type="button" class="connect-choice" data-beat-multiplier="smooth">
