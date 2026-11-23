@@ -476,7 +476,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v293)ノリRun
+        (v294)ノリRun
         メインメニュー
 
     </title>
@@ -7207,6 +7207,20 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         }
 
         /*
+        (v294)今どこを鳴らしているか(モニタの3段目)。数字の主役は上の2段なので、控えめな灰色・小さめにします。
+        tabular-nums は数字の幅を揃える指定(秒が進んでも左右に揺れない)。
+        ⚠️ 1行ぶん(約19px)画面が高くなる。いちばん高い微調整の画面で 約590px(竹弘のブラウザ版 637px に収まる。
+           sandbox/measure-tap-layout.html で測った)
+        */
+        #tap-play-pos{
+            font-family:monospace;
+            font-size:0.8rem;
+            line-height:1.2;
+            color:#bdb7cc;
+            font-variant-numeric:tabular-nums;
+        }
+
+        /*
         今なにをすればよいかの案内(v265 で2行までにした)。
 
         white-space:pre-line は「文の中の改行(\n)を、そのまま改行として出す」指定です。
@@ -7373,6 +7387,38 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         .tap-desc.tap-desc-inline span{
             display:inline;
             flex-shrink:0;
+        }
+
+        /*
+        (v294)見出しが言葉の途中で折れないようにします(タイミングの見出しの右に「-で早める」を足したため)。
+
+            white-space:nowrap … 見出しの文字を途中で折らない
+            flex-wrap:wrap     … 1行に並びきらない時は、右の注意書き(span)だけを次の行へ送る
+            margin-left:auto   … 次の行へ送られた時も、注意書きを右端に寄せる
+
+        幅 360px の画面(竹弘の GALAXY)で、パソコンの書体だと見出しと「-で早める」が並びきらなかった
+        (sandbox/measure-tap-layout.html)。スマホの書体は少し細いので、写真から測ると1行に収まる見込み。
+        並びきらない端末でも「メトロノームのタイミングを / 曲に合わせて下さい」のように途中で折れず、
+        「-で早める」が次の行の右端に出るだけになる(竹弘の希望:文言は意味の塊で改行させる)。
+        速度の見出しは「+で速く」と1行に収まるので、見た目は変わらない。
+        */
+        .tap-desc.tap-desc-inline{
+            flex-wrap:wrap;
+            white-space:nowrap;
+            row-gap:0;   /* 次の行へ送った時に、行と行の間を空けない(gap:8px は横の間だけに効かせる) */
+        }
+
+        .tap-desc.tap-desc-inline span{
+            margin-left:auto;
+        }
+
+        /*
+        (v294)見出しのすぐ下に続く、小さな注意書きだけの行(タイミングの「※Bluetoothの遅れや…」)。
+        見出しを tap-desc-inline(右端に「-で早める」)にしたので、注意書きは別の行に分けました。
+        上の間を 0 にして、v293 までの「見出しの2行目」と同じ見た目・同じ高さにしています。
+        */
+        .tap-desc.tap-desc-sub{
+            margin-top:0;
         }
 
         .tap-adj-group{
@@ -9237,6 +9283,12 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
                 <div id="tap-ts">1拍目 --.---s</div>
                 <div id="tap-lat">タイミング 0ms</div>
             </div>
+            <!--
+                (v294)今どこを鳴らしているか「0:18 / 5:34」(竹弘の要望 2026-11-23「微調整画面に今どこを再生しているのか
+                情報を出せないでしょうか。場所は上部のモニタ内希望」)。js/tap.js の updateTapPlayPosition が 0.25秒ごとに書き換えます。
+                この画面の「0:15 から」と同じ「分:秒」の形です。鳴っていない時は「-:--」
+            -->
+            <div id="tap-play-pos">-:-- / -:--</div>
         </div>
 
         <!-- 今なにをすればよいかの案内(js/tap.js が書き換えます) -->
@@ -9325,9 +9377,49 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
         <div id="tap-adjust" style="display:none;">
 
             <!--
+                (v294)タイミングを上、速度を下に入れ替えました(竹弘 2026-11-23)。
+                    「調整の流れは、はじめにタイミング(鳴りはじめ)を合わせる → それから曲の速さが異なることから
+                     ズレてくるメトロノームの速度を早めたり、遅くしたりして合わせる順番です。…上から下に画面は見ると思うので」
+                B地点・C地点の案内「ずれは、まずタイミングで合わせてください」(js/tap.js)とも同じ順番になります。
+                押した時の処理は何も変えていません(並び順だけ)。左の線の色(黄 = タイミング・緑 = 速度)も各列についたまま。
+
+                (v265)見出しを「Bluetoothの遅延調整」から変え、±50ms を足しました(竹弘 2026-11-07)。
+
+                ・見出し:イヤホンの遅れだけでなく、リズムの取りにくい曲での「叩き遅れ」の直しにも
+                  使っているため(竹弘「Bluetoothの遅延が±250ms前後目途は正しいんだけど、叩き遅れによる
+                  微調整も難しい楽曲では発生する」)。下の「速度」の見出しと対にしました
+                ・±50ms:ずれの数値が大きいので、−200ms などを ±10ms の連打で合わせるのが大変だった
+                  (CLAUDE.md の宿題、2026-09-22)。6つを1行に並べるため、ボタンから「ms」を外した
+                  (単位は注意書きの「±250ms」と、数字の窓の「タイミング −80ms」で分かる)
+                ・押した時の処理は今までと同じ(js/tap.js の nudgeTapLatency。data-lat の数をそのまま渡す)
+
+                (v294)見出しの右端に「-で早める」を足しました(竹弘の要望。速度の「+で速く」と対)。
+                    - を押すと、メトロノームの拍の位置(js/tap.js の beatOriginSec)が曲の前の方へ動く
+                    = カチッが早く鳴る(nudgeTapLatency → applyTapLatencyShift)。
+                    「-」はボタンの文字(-50 など)と同じ半角にそろえました。
+                    「※Bluetoothの…」の注意書きは、見出しを1行に並べる形(tap-desc-inline)にしたので、下の別の行(tap-desc-sub)へ。
+            -->
+            <p class="tap-desc tap-desc-inline">
+                メトロノームのタイミングを曲に合わせて下さい
+                <span>-で早める</span>
+            </p>
+            <p class="tap-desc tap-desc-sub">
+                <span>※Bluetoothの遅れや叩き遅れを直します(目安 ±250ms)</span>
+            </p>
+            <div class="tap-adj-group tap-adj-latency">
+                <button type="button" data-lat="-50">-50</button>
+                <button type="button" data-lat="-10">-10</button>
+                <button type="button" data-lat="-1">-1</button>
+                <button type="button" data-lat="1">+1</button>
+                <button type="button" data-lat="10">+10</button>
+                <button type="button" data-lat="50">+50</button>
+            </div>
+
+            <!--
                 (v265)見出しと注意書きを1行に並べました(前は「※数値を上げると早くなります」を2行目に)。
                 BPM のボタンは今のまま4つ(竹弘「これは本当に微調整。連打しながら状況を確認する方が
                 調整しやすい」2026-11-07。±1 は要らない)。
+                (v294)タイミングの下へ移しました(上のコメント)
             -->
             <p class="tap-desc tap-desc-inline">
                 メトロノームの速度を曲に合わせて下さい
@@ -9338,30 +9430,6 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
                 <button type="button" data-bpm="-0.01">-0.01</button>
                 <button type="button" data-bpm="0.01">+0.01</button>
                 <button type="button" data-bpm="0.1">+0.1</button>
-            </div>
-
-            <!--
-                (v265)見出しを「Bluetoothの遅延調整」から変え、±50ms を足しました(竹弘 2026-11-07)。
-
-                ・見出し:イヤホンの遅れだけでなく、リズムの取りにくい曲での「叩き遅れ」の直しにも
-                  使っているため(竹弘「Bluetoothの遅延が±250ms前後目途は正しいんだけど、叩き遅れによる
-                  微調整も難しい楽曲では発生する」)。すぐ上の「速度」の見出しと対にしました
-                ・±50ms:ずれの数値が大きいので、−200ms などを ±10ms の連打で合わせるのが大変だった
-                  (CLAUDE.md の宿題、2026-09-22)。6つを1行に並べるため、ボタンから「ms」を外した
-                  (単位は注意書きの「±250ms」と、数字の窓の「タイミング −80ms」で分かる)
-                ・押した時の処理は今までと同じ(js/tap.js の nudgeTapLatency。data-lat の数をそのまま渡す)
-            -->
-            <p class="tap-desc">
-                メトロノームのタイミングを曲に合わせて下さい
-                <span>※Bluetoothの遅れや叩き遅れを直します(目安 ±250ms)</span>
-            </p>
-            <div class="tap-adj-group tap-adj-latency">
-                <button type="button" data-lat="-50">-50</button>
-                <button type="button" data-lat="-10">-10</button>
-                <button type="button" data-lat="-1">-1</button>
-                <button type="button" data-lat="1">+1</button>
-                <button type="button" data-lat="10">+10</button>
-                <button type="button" data-lat="50">+50</button>
             </div>
 
             <!--
