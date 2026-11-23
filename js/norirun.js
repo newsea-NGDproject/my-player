@@ -381,6 +381,9 @@ async function enterNoriRunMode(){
     */
     noriRunAppEl.classList.add("norirun-mode");
 
+    // (v286)スマホの上下の帯の色も、暁色に変えます(下の refreshThemeColorMeta)
+    refreshThemeColorMeta();
+
     noriRunTitleEl.textContent = "🕺ノリノリRun再生";
 
     /*
@@ -511,6 +514,9 @@ function exitNoriRunMode(){
 
     noriRunAppEl.classList.remove("norirun-mode");
 
+    // (v286)スマホの上下の帯の色も、海の青に戻します(下の refreshThemeColorMeta)
+    refreshThemeColorMeta();
+
     noriRunTitleEl.textContent = "ノリRun";
     noriRunSubTitleEl.textContent = "メインメニュー";
 
@@ -558,6 +564,50 @@ function exitNoriRunMode(){
     clearIdleDeck();
 
     console.log("メインメニューへ戻りました");
+
+}
+
+/**
+ * スマホの上下の帯の色を、いまの画面の色(海の青 / 暁色)に合わせます(v286)。
+ *
+ * 竹弘の要望(2026-11-23):
+ *     「インストール画面版なのですが、画面の上部と下部の青ラインについても
+ *       メインメニューとノリノリRun再生画面の色と連動修正できないでしょうか。
+ *       連動変更できない場合は、黒にして欲しいです。今はメインメニューの色になってます」
+ *
+ * 【しくみ】上の帯(時刻や電池が出る所)の色は、c014.html の <meta name="theme-color"> の content で決まります。
+ * この content を JavaScript で書き換えると、Chrome はその場で帯の色を塗り替えます。
+ * インストール版では、下の帯(戻る・ホームのボタンの所)も同じ色で塗られる見込みです
+ * (竹弘の写真では、上下とも今の meta の海の青だった)。下の帯が変わらない端末があれば、竹弘の指定どおり黒にすることを考える。
+ *
+ * 【色はどこから取るか】#app の CSS の --theme-color(メインメニューは海の青 #00a2ff、
+ * 🕺 は #app.norirun-mode が上書きする暁色 #ff8c42)。色の数字をここに書き写さないのは、
+ * CSS の色を変えた時に帯だけ古い色で残らないようにするためです(js/sync.js の拍の流れの絵と同じ借り方)。
+ *
+ *     getComputedStyle(要素) … その要素に、いま実際に効いている CSS を返す命令
+ *     getPropertyValue("--theme-color") … その中の、色の名前(CSS の変数)の値。前に空白が付くことがあるので trim で取る
+ *
+ * ⚠️ #app の norirun-mode を付け外しした**後**に呼ぶこと(先に呼ぶと、前の画面の色を読む)。
+ *    呼んでいるのは enterNoriRunMode・exitNoriRunMode の2か所(norirun-mode を付け外しするのはこの2か所だけ)。
+ * ⚠️ manifest.json の theme_color(#007aff)は触っていない。あちらはアプリを起動した瞬間の色で、変えると
+ *    Chrome がインストール版を作り直す(更新の確認が出ることがある)ため。起動の後は、この meta の色が勝つ。
+ */
+function refreshThemeColorMeta(){
+
+    const metaEl = document.querySelector('meta[name="theme-color"]');
+
+    if(!metaEl){ return; }
+
+    const color = getComputedStyle(noriRunAppEl).getPropertyValue("--theme-color").trim();
+
+    // 色が読めなかった時は、今の色のままにします(帯が透明や黒に化けないように)
+    if(!color){ return; }
+
+    if(metaEl.getAttribute("content") === color){ return; }
+
+    metaEl.setAttribute("content",color);
+
+    console.log("上下の帯の色 :",color,isNoriRunMode ? "(🕺ノリノリRun の暁色)" : "(メインメニューの海の青)");
 
 }
 
