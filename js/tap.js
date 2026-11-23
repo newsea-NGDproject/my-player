@@ -698,6 +698,7 @@ const tapPhaseLabel = document.getElementById("tap-phase");
 const tapBpmDisplay = document.getElementById("tap-bpm");
 const tapTsDisplay = document.getElementById("tap-ts");
 const tapLatDisplay = document.getElementById("tap-lat");
+const tapPlayPosDisplay = document.getElementById("tap-play-pos");   // (v294)今どこを鳴らしているか
 const tapGuide = document.getElementById("tap-guide");
 const tapPosLabel = document.getElementById("tap-pos-label");
 const tapPosRow = document.getElementById("tap-pos-row");
@@ -4555,6 +4556,93 @@ function updateTapMonitor(){
 
 }
 
+/*
+================================================================
+(v294)今どこを鳴らしているか(モニタの3段目「0:18 / 5:34」)
+================================================================
+
+竹弘の要望(2026-11-23):「微調整画面に今どこを再生しているのか情報を出せないでしょうか。
+「0.18/05:34」といった情報です。場所は上部のモニタ内希望」
+
+【今の位置の求め方】
+この画面の曲は <audio> ではなく、音の作業台(AudioContext)で鳴らしています(playTapSongFrom)。
+<audio> のように「今何秒目か」を持っていないので、鳴らし始めた時に覚えた2つから計算します。
+
+    今の位置 = 鳴らし始めた曲の位置(playOffset)+ 鳴らし始めてから経った時間(作業台の時計 − ctxStartTime)
+
+速さは変えずに鳴らしている(playbackRate を使っていない)ので、経った時間がそのまま曲の進んだ時間です。
+曲は途中で頭へ戻らず、最後まで鳴ると止まるので、曲の長さを超えたら長さで止めます。
+
+【いつ書き換えるか】
+画面を開いている間だけ、0.25秒ごと(TAP_PLAY_POS_INTERVAL_MS)。表示が変わるのは1秒に1回なので、
+文字が同じ時は書き換えません(画面の描き直しを増やさない)。叩く操作の時刻は、音の作業台と指の時刻で測っているので、
+この書き換えに影響されません。
+
+⚠️ 表示だけの係です。ここで鳴らし方・拍の位置・保存する値は何も変えません。
+*/
+const TAP_PLAY_POS_INTERVAL_MS = 250;
+
+let tapPlayPosTimerId = null;
+
+/**
+ * モニタの「0:18 / 5:34」を、今の位置に書き換えます。(v294)
+ */
+function updateTapPlayPosition(){
+
+    if(!tapPlayPosDisplay){ return; }
+
+    const buffer = tapState.songBuffer;
+    const ctx = tapState.audioCtx;
+
+    // 曲の長さ(まだ読み込んでいなければ「-:--」)
+    const lengthText = buffer ? formatTapTime(buffer.duration) : "-:--";
+
+    let nowText = "-:--";
+
+    // 鳴っている時だけ、今の位置を出します(止めている時・読み込み中は「-:--」)
+    if(buffer && ctx && tapState.songSource){
+
+        const sec = tapState.playOffset + (ctx.currentTime - tapState.ctxStartTime);
+
+        // 鳴らし始めのごく短い間に、わずかに負になることがあるので 0 で止め、曲の長さも超えないようにします
+        nowText = formatTapTime(Math.min(Math.max(sec,0),buffer.duration));
+
+    }
+
+    const text = nowText + " / " + lengthText;
+
+    if(tapPlayPosDisplay.textContent !== text){ tapPlayPosDisplay.textContent = text; }
+
+}
+
+/**
+ * 画面を開いた時に、0.25秒ごとの書き換えを始めます。(v294)二重に始めないよう、前のものは止めてから
+ */
+function startTapPlayPositionWatch(){
+
+    stopTapPlayPositionWatch();
+
+    updateTapPlayPosition();
+
+    tapPlayPosTimerId = setInterval(updateTapPlayPosition,TAP_PLAY_POS_INTERVAL_MS);
+
+}
+
+/**
+ * 画面を閉じた時に、書き換えを止めます。(v294)
+ */
+function stopTapPlayPositionWatch(){
+
+    if(tapPlayPosTimerId !== null){
+
+        clearInterval(tapPlayPosTimerId);
+
+        tapPlayPosTimerId = null;
+
+    }
+
+}
+
 /**
  * 画面の案内文を書き換えます。
  *
@@ -4715,6 +4803,9 @@ function showTapScreen(){
     tapScreen.style.display = "block";
     document.getElementById("app").style.display = "none";
 
+    // (v294)モニタの「今どこを鳴らしているか」の書き換えを始めます(閉じる時に closeTapCorrection が止める)
+    startTapPlayPositionWatch();
+
 }
 
 /**
@@ -4723,6 +4814,9 @@ function showTapScreen(){
 function closeTapCorrection(){
 
     stopTapSound();
+
+    // (v294)モニタの「今どこを鳴らしているか」の書き換えを止めます(showTapScreen で始めたもの)
+    stopTapPlayPositionWatch();
 
     /*
     ---- 音の作業台(AudioContext)は閉じません(v157) ----
