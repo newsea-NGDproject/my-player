@@ -30,7 +30,8 @@
        ② なるべくなめらかに  (v281)曲ごとに倍率を1つ決め、速さはマイピッチに比例させる。安全装置(0.5〜2.0倍)に
                             当たる時だけ隣の倍率へ。マイピッチを少し動かしても、速さが急に半分や倍にならない
                             (⚠️ 竹弘が「① の 0.7〜1.4倍をもとに、曲ごとに倍率を固定し、選べないマイピッチをグレーにする」形に
-                              作り直したい。2026-11-23。作戦会議の後に作る。それまでは v281 の形のまま)
+                              作り直したい。2026-11-23。作戦会議で案C に決めた。v295 = 段1 で範囲を計算して表示するだけにした
+                              〔3-3. の節〕。グレー・マイピッチの移動・倍率の決め方は段2〔⑭ プレイリストの後〕。それまでは v281 の形のまま)
 
    (v282)① の幅を 0.8〜1.6倍 → 0.7〜1.4倍 にした。竹弘の実機の感想(2026-11-23):
        「0.7～1.4倍くらいがよさそうです。1.6倍だとちょっと曲が早すぎる気がしました。
@@ -948,6 +949,375 @@ function refreshBeatMultiplierDisplay(){
     const nowEl = labelEl.closest(".ua-pitch-now");
 
     if(nowEl){ nowEl.classList.toggle("ua-pitch-now--norirun-bpm",isNoriRunBpm); }
+
+}
+
+
+// ==========================================================
+// 3-3. ② の作り直し:選べるマイピッチの範囲(v295 段1。今は表示だけ)
+// ==========================================================
+/*
+============================================================
+【竹弘の案(2026-11-23)】
+    「②のモードでは、①の条件(0.7～1.4倍)ベースに拍倍率固定で指定できない範囲をグレーアウト可能でしょうか。
+      遅い曲と早い曲が共存している場合、マイピッチで設定できる範囲が狭まってしまいますが、それありきのモードとしたいです。
+      このモードを設定した時は、マイピッチを範囲内に強制移動し設定範囲外をグレーアウトさせたいです。
+      ②のモードから①のモードに変更した際は、グレーアウトを解除します」
+    「②は希望ピッチが範囲に入っている人には欲しい機能」「メインは①の機能」
+
+【考え方】
+    ① は「いまのマイピッチで 0.7〜1.4倍に入る倍率」を曲ごとに選ぶ。0.7〜1.4 はちょうど2倍の幅なので、
+    どのマイピッチでも、どの曲にも倍率がちょうど1つ決まる。ただしマイピッチを動かすと、ある曲の 0.7倍・1.4倍の所
+    (= 境目。「元ピッチ × 倍率 × 0.7」)をまたいだ瞬間に、その曲の倍率が変わる(次にその曲が鳴る時、速さが半分や倍に跳ぶ)。
+
+    → 一覧のどの曲の境目もまたがない範囲(= 境目と境目の間のすき間)の中だけでマイピッチを動かせば、どの曲も倍率が変わらない。
+      これが ② の「選べるマイピッチの範囲」。範囲の中では、どの曲も ① と同じ倍率・0.7〜1.4倍で鳴る。
+      曲が多いほど境目が増えて、すき間は狭くなる(のりの計算:74曲で いちばん広いすき間が 約8 BPM。2026-11-23)
+
+【どのすき間を選ぶか = 案C(竹弘が決めた 2026-11-23)】
+    案A いちばん広いすき間 / 案B 今のマイピッチがあるすき間 / 案C 「ある程度広い」すき間のうち、今のマイピッチにいちばん近い所
+    「ある程度広い」= いちばん広いすき間の半分以上の幅(SMOOTH_WINDOW_NEAR_SHARE)。今のマイピッチがもうその中にあれば動かない。
+    ⚠️ この「半分」が良いかは、段1 の表示を見て竹弘が決める
+
+【範囲の外側の決まり】
+    ・マイピッチの範囲 100〜250(BEAT_MULTIPLIER_PITCH_MIN / _MAX)の中だけ
+    ・倍率は ×¼〜×4 なので、1曲が 0.7〜1.4倍で走れるのは「元ピッチ × 0.175」〜「元ピッチ × 5.6」まで。
+      これより外は、その曲がどの倍率でも 0.7〜1.4倍に入らない(① は安全装置 0.5〜2.0倍の内側で選ぶ)ので、範囲から外す。
+      例:あの日の約束(元ピッチ 39)は 39 × 5.6 = 218 までなので、範囲の上の端は 218 になる
+    ・100〜250 のどこでも 0.7〜1.4倍に入らない曲(元ピッチ 17.9 以下・1429 以上)は、数えない(① と同じく安全装置で鳴らす)
+
+【一覧の曲】🕺ノリノリRun の一覧と同じ:ノリ注入済み(js/tap.js の hasSavedTapResult)で、除外していない曲。
+    ⚠️ プレイリスト(⑭)ができたら、そのプレイリストの曲に変わる(竹弘「プレイリストを選択して表示の際は、曲が絞られるので、幅は広がる」)
+
+【段の予定】(竹弘が決めた順番 2026-11-23:② 段1 → ⑭ プレイリスト → ② 段2 → みんなの拍の物差し → ⑮ → デコアイコン)
+    段1(v295・ここ)範囲を計算して、⚙️ 👣 の ② の下と 🐛 に出すだけ。鳴り方・定規は何も変えない
+    段2(プレイリストの後)② の時は定規の範囲の外をグレーにして止める(js/pitch.js の getRulerBpmRange に足す)・
+         ② にした時・🕺 に入った時にマイピッチを範囲の中へ動かす・② の倍率は ① と同じ決め方にする(範囲の中なら同じ答え)
+
+⚠️ ここの関数は「計算するだけ」。画面・DB・デッキ・マイピッチには何も触らない(refreshSmoothPitchWindowNote だけが画面の1行を書く)。
+============================================================
+*/
+
+// 案C の「ある程度広い」= いちばん広いすき間の何割以上か(竹弘と決めた案C の中身。段1 の表示を見て見直す)
+const SMOOTH_WINDOW_NEAR_SHARE = 0.5;
+
+/**
+ * ② の範囲を計算する曲の ID を返します(🕺ノリノリRun の一覧と同じ曲)。(v295)
+ *
+ * js/queue.js の getPlayOrderList(🕺 の時)と同じ「ノリ注入済み」に、除外していない曲を重ねます。
+ * currentOrderList はメインメニューでも 🕺 でも全曲なので、どちらの画面から開いても同じ答えになります。
+ *
+ * @return {string[]}
+ */
+function listSmoothWindowTrackIds(){
+
+    if(typeof currentOrderList === "undefined" || !Array.isArray(currentOrderList)){ return []; }
+
+    return currentOrderList.filter(function(trackId){
+
+        const track = libraryMap[trackId];
+
+        return !!track && hasSavedTapResult(track) && !isExcluded(track);
+
+    });
+
+}
+
+/**
+ * 元ピッチの並びから、「どの曲も倍率が変わらないマイピッチのすき間」を全部返します。(v295)
+ *
+ * @param  {number[]} bases - 一覧の曲の元ピッチ
+ * @return {{cells:{low:number,high:number}[], usedCount:number, ignoredCount:number,
+ *           rangeLow:number, rangeHigh:number}}
+ *           cells        … すき間(低い順)。どれも「この中なら、どの曲も倍率が変わらない」
+ *           usedCount    … 数えた曲の数 / ignoredCount … 100〜250 のどこでも 0.7〜1.4倍に入らないので数えなかった曲の数
+ *           rangeLow / rangeHigh … 全部の曲が 0.7〜1.4倍で走れる範囲(すき間はこの中)
+ */
+function findSmoothPitchCells(bases){
+
+    const lowLimit = BEAT_MULTIPLIER_PITCH_MIN;
+    const highLimit = BEAT_MULTIPLIER_PITCH_MAX;
+
+    // 倍率の端(×¼・×4)で走れる範囲:元ピッチ × ¼ × 0.7 〜 元ピッチ × 4 × 1.4
+    const smallest = Math.min.apply(null,BEAT_MULTIPLIER_CHOICES);
+    const largest = Math.max.apply(null,BEAT_MULTIPLIER_CHOICES);
+
+    let rangeLow = lowLimit;
+    let rangeHigh = highLimit;
+
+    const used = [];
+    let ignoredCount = 0;
+
+    bases.forEach(function(base){
+
+        if(!(base > 0)){ base = BPM_FALLBACK; }
+
+        const reachLow = base * smallest * BEAT_MULTIPLIER_NEAR_RATE_MIN;
+        const reachHigh = base * largest * BEAT_MULTIPLIER_NEAR_RATE_MAX;
+
+        // 100〜250 のどこでも 0.7〜1.4倍に入らない曲は数えない
+        if(reachHigh <= lowLimit || reachLow >= highLimit){ ignoredCount++; return; }
+
+        rangeLow = Math.max(rangeLow,reachLow);
+        rangeHigh = Math.min(rangeHigh,reachHigh);
+
+        used.push(base);
+
+    });
+
+    if(rangeLow >= rangeHigh - BEAT_MULTIPLIER_EPSILON){
+
+        return { cells:[], usedCount:used.length, ignoredCount:ignoredCount, rangeLow:rangeLow, rangeHigh:rangeHigh };
+
+    }
+
+    /*
+    境目を集めます。曲ごと・倍率ごとの「元ピッチ × 倍率 × 0.7」(= その倍率の帯の下の端。1つ下の倍率の帯の上の端と同じ所)。
+    範囲の中にある境目だけを使い、範囲の両端も加えて、小さい順に並べます。
+    */
+    const edges = [rangeLow,rangeHigh];
+
+    used.forEach(function(base){
+
+        BEAT_MULTIPLIER_CHOICES.forEach(function(multiplier){
+
+            const edge = base * multiplier * BEAT_MULTIPLIER_NEAR_RATE_MIN;
+
+            if(edge > rangeLow + BEAT_MULTIPLIER_EPSILON && edge < rangeHigh - BEAT_MULTIPLIER_EPSILON){ edges.push(edge); }
+
+        });
+
+    });
+
+    // sort に「引き算」を渡すと、数の小さい順に並びます(渡さないと文字の順になって 100 が 99 より前に来る)
+    edges.sort(function(a,b){ return a - b; });
+
+    const cells = [];
+
+    for(let i = 0; i < edges.length - 1; i++){
+
+        // 同じ元ピッチの曲が何曲もあると、同じ境目が並ぶ。幅0のすき間は作らない
+        if(edges[i + 1] - edges[i] > BEAT_MULTIPLIER_EPSILON){ cells.push({ low:edges[i], high:edges[i + 1] }); }
+
+    }
+
+    return { cells:cells, usedCount:used.length, ignoredCount:ignoredCount, rangeLow:rangeLow, rangeHigh:rangeHigh };
+
+}
+
+/**
+ * 案A・案B・案C の範囲と、案C にした時のマイピッチの行き先を決めます。(v295)
+ *
+ * @param  {number[]} bases - 一覧の曲の元ピッチ
+ * @param  {number}   pitch - 今のマイピッチ
+ * @return {{found:boolean, widest:Object|null, around:Object|null, chosen:Object|null, movedPitch:number,
+ *           usedCount:number, ignoredCount:number, cellCount:number}}
+ *           widest … 案A(いちばん広いすき間)/ around … 案B(今のマイピッチがあるすき間。範囲の外なら null)/
+ *           chosen … 案C / movedPitch … 案C にした時のマイピッチ(中にあればそのまま、外なら近い方の端)
+ */
+function decideSmoothPitchWindow(bases,pitch){
+
+    const found = findSmoothPitchCells(bases);
+
+    const result = {
+        found: found.cells.length > 0,
+        widest: null, around: null, chosen: null, movedPitch: pitch,
+        usedCount: found.usedCount, ignoredCount: found.ignoredCount, cellCount: found.cells.length
+    };
+
+    if(!result.found){ return result; }
+
+    const width = function(cell){ return cell.high - cell.low; };
+
+    // 案A:いちばん広いすき間
+    found.cells.forEach(function(cell){ if(!result.widest || width(cell) > width(result.widest)){ result.widest = cell; } });
+
+    // 案B:今のマイピッチがあるすき間
+    found.cells.forEach(function(cell){ if(!result.around && pitch >= cell.low && pitch <= cell.high){ result.around = cell; } });
+
+    // 案C:いちばん広いすき間の半分以上の幅があるすき間のうち、今のマイピッチにいちばん近い所(同じ近さなら広い方)
+    const need = width(result.widest) * SMOOTH_WINDOW_NEAR_SHARE;
+
+    const distance = function(cell){
+        if(pitch < cell.low){ return cell.low - pitch; }
+        if(pitch > cell.high){ return pitch - cell.high; }
+        return 0;
+    };
+
+    found.cells.forEach(function(cell){
+
+        if(width(cell) < need - BEAT_MULTIPLIER_EPSILON){ return; }
+
+        if(!result.chosen ||
+           distance(cell) < distance(result.chosen) - BEAT_MULTIPLIER_EPSILON ||
+           (Math.abs(distance(cell) - distance(result.chosen)) <= BEAT_MULTIPLIER_EPSILON && width(cell) > width(result.chosen))){
+
+            result.chosen = cell;
+
+        }
+
+    });
+
+    // 案C にした時のマイピッチ:中にあればそのまま、外なら近い方の端
+    result.movedPitch = Math.min(Math.max(pitch,result.chosen.low),result.chosen.high);
+
+    return result;
+
+}
+
+/**
+ * すき間を、定規で選べる数字の形にします(端を内側へ丸める)。(v295)
+ *
+ * 範囲の端は「どれかの曲がちょうど 0.7倍・1.4倍になる所」なので、整数に丸める時は内側へ(下の端は切り上げ・上の端は切り捨て)。
+ * 整数が1つも入らないほど狭い時だけ、小数1けたで出します。
+ *
+ * @return {string} 例:「172〜179」「165.3〜165.9」
+ */
+function formatSmoothPitchCell(cell){
+
+    const low = Math.ceil(cell.low - BEAT_MULTIPLIER_EPSILON);
+    const high = Math.floor(cell.high + BEAT_MULTIPLIER_EPSILON);
+
+    if(low <= high){ return low + "〜" + high; }
+
+    return (Math.ceil(cell.low * 10) / 10).toFixed(1) + "〜" + (Math.floor(cell.high * 10) / 10).toFixed(1);
+
+}
+
+/**
+ * マイピッチを画面に出す形にします(小数1けた。整数ならそのまま)。(v295)
+ *
+ * ⚠️ 下の「5. 開発用調査ログ」の formatBeatMultiplierBpm と同じ形ですが、あちらは後で節ごと消してよい決まりなので、
+ *    画面の文字に使うこちらは別に持ちます(消した時に ⚙️ 👣 の表示が壊れないように)。
+ */
+function formatSmoothPitch(bpm){
+
+    const rounded = Math.round(bpm * 10) / 10;
+
+    return (rounded === Math.round(rounded)) ? String(Math.round(rounded)) : rounded.toFixed(1);
+
+}
+
+/**
+ * ⚙️ 👣 の ② の下の1行と、🐛 の1行を書きます。(v295 段1)
+ *
+ * js/settings.js の refreshBeatMultiplierPanel(👣 の画面を開いた時・選び方を押した時)から呼ばれます。
+ * マイピッチは、🕺 の間は今のマイピッチ(noriRunMyPitch)、メインメニューでは初期設定のマイピッチ(loadMyPitch)を使います
+ * (竹弘「マイピッチの設定値から表示はできる」)。
+ */
+async function refreshSmoothPitchWindowNote(){
+
+    const noteEl = document.getElementById("beat-multiplier-smooth-range");
+
+    try{
+
+        const pitch = isNoriRunMode ? noriRunMyPitch : await loadMyPitch();
+
+        const trackIds = listSmoothWindowTrackIds();
+
+        const bases = trackIds.map(function(trackId){ return getEffectiveBaseBpm(libraryMap[trackId]); });
+
+        const win = decideSmoothPitchWindow(bases,pitch);
+
+        const pitchText = formatSmoothPitch(pitch);
+
+        let chunks;
+
+        if(trackIds.length === 0){
+
+            chunks = ["ノリ注入済みの曲が", "まだありません。"];
+
+        }
+        else if(!win.found){
+
+            chunks = ["今の一覧(" + trackIds.length + "曲)では、", "どのマイピッチでも", "倍率が変わる曲があります。"];
+
+        }
+        else{
+
+            const moved = Math.abs(win.movedPitch - pitch) > BEAT_MULTIPLIER_EPSILON;
+
+            chunks = [
+                "今の一覧(" + trackIds.length + "曲)・", "マイピッチ " + pitchText + " なら、",
+                "マイピッチ " + formatSmoothPitchCell(win.chosen) + " の間で", "選べます",
+                moved ? "(" + pitchText + " → " + formatSmoothPitch(win.movedPitch) + " へ動きます)" : "(" + pitchText + " のまま)"
+            ];
+
+        }
+
+        if(noteEl){
+
+            // 意味の塊ごとに span で包みます(c014.html の .text-chunk。塊の途中で折れない)
+            noteEl.textContent = "";
+
+            const head = document.createElement("span");
+            head.className = "text-chunk";
+            head.textContent = "(段1・表示だけ)";
+            noteEl.appendChild(head);
+
+            chunks.forEach(function(text){
+
+                const span = document.createElement("span");
+                span.className = "text-chunk";
+                span.textContent = text;
+                noteEl.appendChild(span);
+
+            });
+
+        }
+
+        logSmoothPitchWindow(trackIds.length,pitch,win,bases);
+
+    }
+    catch(error){
+
+        console.error("② の範囲を計算できませんでした :",error.name,error.message);
+
+        if(noteEl){ noteEl.textContent = ""; }
+
+    }
+
+}
+
+/**
+ * 🐛 に、案A・案B・案C の範囲と、案C の範囲での倍率の内訳を1行で出します。(v295 段1)
+ * ⚠️ 段1 の確かめ用のログ。段2 で ② の動きを作ったら、ふつうのログ(マイピッチを動かした時など)に置き換える
+ */
+function logSmoothPitchWindow(songCount,pitch,win,bases){
+
+    if(!win.found){
+
+        console.log("② の範囲(段1・表示だけ) : 一覧 " + songCount + "曲(数えた " + win.usedCount + "曲・数えない " + win.ignoredCount + "曲)では、どのマイピッチでも倍率が変わる曲があります");
+
+        return;
+
+    }
+
+    const w = function(cell){ return (cell.high - cell.low).toFixed(1); };
+
+    // 案C の範囲のまん中のマイピッチで、曲ごとの倍率を数えます(範囲の中ならどこでも同じ答え)
+    const middle = Math.sqrt(win.chosen.low * win.chosen.high);
+    const counts = {};
+
+    bases.forEach(function(base){
+
+        const answer = decideBeatMultiplier(base,middle,middle,BEAT_MULTIPLIER_MODE_NEAR);
+        const key = formatBeatMultiplier(answer.multiplier);
+
+        counts[key] = (counts[key] || 0) + 1;
+
+    });
+
+    const countText = Object.keys(counts).map(function(key){ return key + " " + counts[key] + "曲"; }).join("・");
+
+    console.log(
+        "② の範囲(段1・表示だけ) : 一覧 " + songCount + "曲(数えた " + win.usedCount + "曲・数えない " + win.ignoredCount + "曲・すき間 " + win.cellCount + "か所)" +
+        " / マイピッチ " + formatSmoothPitch(pitch) +
+        " / 案C " + formatSmoothPitchCell(win.chosen) + "(幅 " + w(win.chosen) + ")→ マイピッチ " + formatSmoothPitch(win.movedPitch) +
+        " / 案A いちばん広い所 " + formatSmoothPitchCell(win.widest) + "(幅 " + w(win.widest) + ")" +
+        " / 案B 今のマイピッチの所 " + (win.around ? formatSmoothPitchCell(win.around) + "(幅 " + w(win.around) + ")" : "なし(範囲の外)") +
+        " / 案C での倍率 " + countText
+    );
 
 }
 

@@ -448,6 +448,13 @@ function refreshBeatMultiplierPanel(){
 
     });
 
+    /*
+    (v295)② の作り直しの段1:② の下に「今の一覧・マイピッチなら、◯〜◯ の間で選べます」を出します
+    (js/beat-multiplier.js の 3-3. の節。表示だけで、鳴り方は変わりません)。
+    typeof で確かめるのは、あちらが読み込めなかった時にも、この画面の印付けまで止まらないようにするため。
+    */
+    if(typeof refreshSmoothPitchWindowNote === "function"){ refreshSmoothPitchWindowNote(); }
+
 }
 
 function openBeatMultiplierPanel(){
