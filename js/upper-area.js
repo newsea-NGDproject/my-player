@@ -680,6 +680,82 @@ bindDeckEvent("pause",function(){
     setStopBtnIcon(STOP_ICON_PAUSED);
 });
 
+/*
+================================================================
+(v293)画面に戻った時に、曲が本当に鳴っているかを確かめて、記号を合わせる
+================================================================
+
+竹弘の報告(2026-11-23):「ノリRun再生中に、裏画面にあった YouTube などを触ってしまい、動画が再生し、
+音楽が止まった時、ノリRun画面に戻って来た時、曲が止まっているのに、表示は停止ボタン(■)になっています」
+竹弘の希望:「裏画面となったノリRunが停止するのはわかる。… ノリRun画面に復帰した時に、サッと状況が連動して、
+曲が一時停止となっていることから「▶」に変わるでも問題はない。曲が止まっているのに「■」のままはできれば避けたい」
+
+【なぜ ■ のまま残っていたのか】
+上の pause の受け口は、竹弘が自分で止めた時(intentionalPause)しか ▶ にしない(v135)。
+ほかのアプリ(YouTube・Google マップの音声案内など)が音を取った時に Chrome が勝手に止めても ■ のまま。
+マップの案内のように一瞬止まってすぐ戻る時に、■ ▶ ■ とちらつかないようにするため(竹弘の指摘 2026-08-23)。
+ところが YouTube のように音を取ったまま返さない時は、曲は止まったままなのに ■ が残る。
+
+【どう直したか】
+画面に戻った瞬間(visibilitychange で「見えるようになった」時)に1回だけ、曲が本当に止まっているかを確かめ、
+止まっていれば ▶ にする。▶ を押せば、今までどおり上の click の受け口が続きから鳴らし、play の知らせで ■ に戻る。
+    ・画面を見ている間のちらつき防止(v135)はそのまま(直すのは「戻った瞬間」の1回だけ)
+    ・裏にいる間は何もしない(画面に出ていないので、■ のまま固まっていても困らない。竹弘も了承)
+    ・戻った瞬間にマップの案内で一瞬止まっていた時は ▶ になるが、Chrome が鳴らし直せば play の知らせで ■ に戻る
+      (その瞬間は本当に止まっているので、▶ で正しい)
+
+【▶ にしない時】
+    ・まだ1曲も選んでいない(鳴らすものが無い。上の click の受け口と同じ確かめ)
+    ・🎬 頭出し接続の、曲と曲の間の無音(isHeadConnectSilence)。
+      この間はアプリ自身が前の曲を止めていて、次の曲が自動で鳴り出すため。
+      🧘 無音をはさむ は、前の曲を音量0で最後まで鳴らし続ける作りなので、主役は止まらない(当てはまらない)
+*/
+document.addEventListener("visibilitychange",function(){
+
+    if(document.visibilityState !== "visible"){ return; }
+
+    refreshStopBtnOnReturn();
+
+});
+
+/**
+ * 画面に戻った時に、曲が止まっていれば ■ を ▶ にします。(v293)
+ */
+function refreshStopBtnOnReturn(){
+
+    if(!audioPlayer.src){ return; }
+
+    if(!audioPlayer.paused){ return; }
+
+    if(isHeadConnectSilence()){ return; }
+
+    const iconEl = document.getElementById("stop-btn-icon");
+
+    // もう ▶ なら(竹弘が自分で止めていた時など)、何もしません
+    if(iconEl && iconEl.classList.contains(STOP_ICON_PAUSED)){ return; }
+
+    setStopBtnIcon(STOP_ICON_PAUSED);
+
+    console.log("画面に戻ったら曲が止まっていたので、■ を ▶ にしました(ほかのアプリに音を取られた時など)");
+
+}
+
+/**
+ * 🎬 頭出し接続の、曲と曲の間の無音の最中かを返します。(v293)
+ *
+ * js/connect.js の connectState(繋ぐ準備の中身)の headFromStopped は、
+ * 「前の曲を止めたのは、この頭出し接続自身」という印です(v231。stopHeadFromDeck で立てる)。
+ * connectState は js/connect.js の変数で、このファイルより後に読み込まれるので、typeof で確かめてから見ます
+ * (画面に戻る頃には読み終わっている)。
+ *
+ * @return {boolean}
+ */
+function isHeadConnectSilence(){
+
+    return typeof connectState !== "undefined" && !!connectState && connectState.headFromStopped === true;
+
+}
+
 
 /*
 ================================================================
