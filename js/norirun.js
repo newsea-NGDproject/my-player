@@ -577,8 +577,12 @@ function exitNoriRunMode(){
  *
  * 【しくみ】上の帯(時刻や電池が出る所)の色は、c014.html の <meta name="theme-color"> の content で決まります。
  * この content を JavaScript で書き換えると、Chrome はその場で帯の色を塗り替えます。
- * インストール版では、下の帯(戻る・ホームのボタンの所)も同じ色で塗られる見込みです
- * (竹弘の写真では、上下とも今の meta の海の青だった)。下の帯が変わらない端末があれば、竹弘の指定どおり黒にすることを考える。
+ *
+ * ⚠️ 下の帯(戻る・ホームのボタンの所)は、ここでは変わりません(v286 の実機で分かった 2026-11-23)。
+ *    Chrome のインストール版は、下の帯を manifest.json の theme_color で塗り、ページからは変えられません
+ *    (写真の下の帯は #007AFF = 当時の manifest の色そのもの。同じことで困った人たちの話し合いでも、ページから変える方法は無かった)。
+ *    → v287 で manifest.json の theme_color を黒(#000000)にした(竹弘の「連動できない場合は、黒にして欲しい」)。
+ *      下の帯はいつも黒、上の帯はこの関数で画面に合わせて連動します。
  *
  * 【色はどこから取るか】#app の CSS の --theme-color(メインメニューは海の青 #00a2ff、
  * 🕺 は #app.norirun-mode が上書きする暁色 #ff8c42)。色の数字をここに書き写さないのは、
@@ -589,8 +593,9 @@ function exitNoriRunMode(){
  *
  * ⚠️ #app の norirun-mode を付け外しした**後**に呼ぶこと(先に呼ぶと、前の画面の色を読む)。
  *    呼んでいるのは enterNoriRunMode・exitNoriRunMode の2か所(norirun-mode を付け外しするのはこの2か所だけ)。
- * ⚠️ manifest.json の theme_color(#007aff)は触っていない。あちらはアプリを起動した瞬間の色で、変えると
- *    Chrome がインストール版を作り直す(更新の確認が出ることがある)ため。起動の後は、この meta の色が勝つ。
+ * ⚠️ manifest.json の theme_color(v287 から #000000 = 黒。v286 までは #007aff)は、下の帯の色と、アプリを起動した瞬間の
+ *    上の帯の色です。起動の後、上の帯はこの meta の色が勝ちます。manifest を変えると、Chrome がインストール版を作り直した時に
+ *    色が変わります(アプリを閉じていて・充電中で・Wi-Fi の時。web.dev「How Chrome handles updates to the web app manifest」)。
  */
 function refreshThemeColorMeta(){
 
