@@ -476,7 +476,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v287)ノリRun
+        (v288)ノリRun
         メインメニュー
 
     </title>
@@ -10865,6 +10865,9 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
         #app           … アプリの画面の上端〜下端
         曲一覧         … 下半分のカード(#list-area)の上端〜下端。
                          ふだんは、見えている高さより10px上(#app の余白)
+        マイピッチ設定 … (v288)マイピッチ設定・初期設定の画面(#setup-screen)の上端〜下端と、
+                         「設定」ボタン(#save-btn)の上端〜下端。画面が出ている時だけ
+                         (インストール版で「設定」が下の帯に隠れた件。css/setup.css の #setup-screen のコメント)
 
     おかしな所があれば ⚠️ を付けて、どこがおかしいかを書き足します。
 
@@ -10912,6 +10915,13 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
 
         const standalone = !!(window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
 
+        // (v288)マイピッチ設定の画面と「設定」ボタン(画面が出ている時だけ測れる)
+        const setupEl = document.getElementById("setup-screen");
+        const saveBtnEl = document.getElementById("save-btn");
+        const setupShown = !!setupEl && getComputedStyle(setupEl).display !== "none";
+        const setupRect = setupShown ? setupEl.getBoundingClientRect() : null;
+        const saveRect = (setupShown && saveBtnEl && saveBtnEl.offsetParent) ? saveBtnEl.getBoundingClientRect() : null;
+
         const text =
             (standalone ? "インストール版" : "ブラウザ版") +
             " / 見えている " + r(seen) +
@@ -10919,7 +10929,9 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
             " / 基準 " + r(base) +
             " / ページ " + r(htmlRect.top) + "〜" + r(htmlRect.bottom) + "(ずれ " + r(shift) + ")" +
             " / #app " + (appRect ? r(appRect.top) + "〜" + r(appRect.bottom) + appInline : "隠れています") +
-            (listRect ? " / 曲一覧 " + r(listRect.top) + "〜" + r(listRect.bottom) : "");
+            (listRect ? " / 曲一覧 " + r(listRect.top) + "〜" + r(listRect.bottom) : "") +
+            (setupRect ? " / マイピッチ設定 " + r(setupRect.top) + "〜" + r(setupRect.bottom) : "") +
+            (saveRect ? " / 設定ボタン " + r(saveRect.top) + "〜" + r(saveRect.bottom) : "");
 
         const notes = [];
 
@@ -10938,6 +10950,10 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
             if(listRect.bottom > seen + 1){ notes.push("曲一覧の下が画面の外に " + r(listRect.bottom - seen) + "px"); }
             else if(seen - listRect.bottom > 20){ notes.push("曲一覧の下に " + r(seen - listRect.bottom) + "px の隙間"); }
         }
+
+        // (v288)
+        if(setupRect && setupRect.bottom > seen + 1){ notes.push("マイピッチ設定の下が画面の外に " + r(setupRect.bottom - seen) + "px"); }
+        if(saveRect && saveRect.bottom > seen + 1){ notes.push("設定ボタンの下が画面の外に " + r(saveRect.bottom - seen) + "px"); }
 
         return text + (notes.length > 0 ? " ⚠️ " + notes.join("・") : " ✅ おかしな所なし");
 
