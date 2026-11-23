@@ -14,6 +14,7 @@
  もともと c012.html の中に書かれていたものを、そのまま持ってきました。
  竹弘が作り込んだ画面なので、見た目が1ピクセルも変わらないよう、
  数値・色・余白は一切変更していません。
+ (v288 で、画面の高さ(#setup-screen)と「設定」ボタンの置き方だけ変えた。理由はそれぞれの指定のコメント)
 
 ----------------------------------------------------------------------
 
@@ -71,9 +72,27 @@ touch-action:none は、定規を左右にスワイプする時に
 body に付けるとメインメニューの曲一覧までスクロールできなく
 なってしまうため、この画面の中だけに限定しています。
 */
+/*
+(v288)高さを「土台(body)の100%」から「今見えている高さ(100dvh)」に変えました。#app と同じ書き方です
+(古いブラウザは dvh を知らないので、先に 100vh を書いておく。後の行が勝つCSSの決まり)。
+
+竹弘の報告(2026-11-23):「マイピッチ設定で『設定』ボタンが見切れるようになりました」(インストール版だけ。
+ブラウザ版は見切れない)。写真 sandbox/180・210 と、🐛 の「画面の状態」の行で分かったこと:
+
+    インストール版 / 見えている 693 / ページ(html・body)0〜749.7 / #app 0〜693.7
+
+インストール版の Chrome では、ページの土台(html・body)の高さが、見えている高さより約56px 大きくなっています
+(56px はブラウザ版のアドレスバーの高さと同じ。アドレスバーが無いのに、その分を足した高さになっている)。
+#app(メインメニュー)は自分で 100dvh を持っているので 693.7 で収まりますが、この画面は height:100%(土台の高さ)
+だったので 749.7 になり、一番下に置いた「設定」ボタンが下の帯の裏へ押し出されていました。
+→ #app と同じく 100dvh にします。ブラウザ版(見えている 637・土台も 637)は、今までと同じ高さです。
+
+⚠️ ページの土台(c014.html の html,body の height:100dvh。v234)は触っていません。ほかの画面への影響が大きいため。
+*/
 #setup-screen {
     width: 100%;
-    height: 100%;
+    height: 100vh;
+    height: 100dvh;
     box-sizing: border-box;
     background-color: var(--bg-color);
     font-family: -apple-system, sans-serif;
@@ -119,9 +138,21 @@ body に付けるとメインメニューの曲一覧までスクロールでき
 #setup-screen #pitch-number { font-size: 3.5rem; font-weight: 900; color: var(--main-blue); line-height: 1; font-variant-numeric: tabular-nums; margin-top: 8px; }
 #setup-screen #pitch-label { font-size: 1.6rem; font-weight: bold; margin-top: 8px; }
 
-/* --- 設定ボタン --- */
+/*
+--- 設定ボタン ---
+
+(v288)定規と画面の下の、ちょうど中間に置きます(竹弘の希望 2026-11-23「定規と画面下の帯の中間くらいに配置」)。
+v287 までは margin-top:auto(上の余りを全部取る = 一番下へ押し付ける)+ margin-bottom:25px でした。
+
+    margin-top:auto; margin-bottom:auto
+        … 縦に並べた箱(#init-screen は display:flex の縦並び)の中で、上下の auto は「余った高さを半分ずつ取る」
+          という意味になります。定規から下の空きの、ちょうど真ん中にボタンが来ます。
+
+⚠️ 起動時の初期設定(注意書きが1行増える)で空きが少ない時は、上下の余白が小さくなります(余りが無ければ auto は 0 で、
+   定規のすぐ下に来る)。中身そのものが画面より高い時だけは、今までと同じく下がはみ出します。
+*/
 #setup-screen #save-btn {
-    margin-top: auto; margin-bottom: 25px;
+    margin-top: auto; margin-bottom: auto;
     background: var(--main-blue); color: white;
     border: none; padding: 18px 50px;
     font-size: 1.15rem; font-weight: bold;
