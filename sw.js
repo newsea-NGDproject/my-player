@@ -1,4 +1,4 @@
-const CACHE_NAME = 'norirun-v288';
+const CACHE_NAME = 'norirun-v289';
 
 const ASSETS = [
   'index.html',
@@ -65,6 +65,7 @@ const ASSETS = [
   'js/run-timer.js',
   'js/sync.js',
   'js/sync-lock.js',
+  'js/back-guard.js',   // (v289)戻るの番人
   'js/main.js'
 ];
 

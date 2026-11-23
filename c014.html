@@ -476,7 +476,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v288)ノリRun
+        (v289)ノリRun
         メインメニュー
 
     </title>
@@ -8103,6 +8103,83 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
             color:var(--theme-color);
         }
 
+        /*
+        ---- 「ノリRunアプリを終了しますか?」(戻るの番人。v289。js/back-guard.js)----
+
+        下の帯の「<」を押した時に出すメニューです。画面のいちばん手前(🐛 のパネル z-index:20000 よりも上)に出します。
+        同期モードのロック画面(#sync-lock)の上にも出るように、#app の外に置いています。
+
+        色は、いまの画面の色を js/back-guard.js が --back-guard-color に入れます(メインメニューは海の青、🕺 は暁色)。
+        入っていない時は、:root の --theme-color(海の青)。
+
+        position:fixed; inset:0 … 画面全体を覆う(inset:0 は top・right・bottom・left を全部 0 にする書き方)
+        */
+        #back-guard-confirm{
+            position:fixed;
+            inset:0;
+            z-index:30000;
+
+            align-items:center;
+            justify-content:center;
+
+            background:rgba(0,0,0,0.55);
+        }
+
+        .back-guard-card{
+            width:min(86%,340px);
+            box-sizing:border-box;
+            padding:24px 20px 20px;
+
+            border-radius:20px;
+            background:#ffffff;
+            box-shadow:0 10px 30px rgba(0,0,0,0.35);
+
+            text-align:center;
+            color:#1c1c1e;
+        }
+
+        .back-guard-icon{
+            margin:0;
+            font-size:2.4rem;
+            line-height:1.2;
+        }
+
+        .back-guard-title{
+            margin:10px 0 8px;
+            font-size:1.15rem;
+            font-weight:bold;
+        }
+
+        .back-guard-note{
+            margin:0 0 18px;
+            font-size:0.9rem;
+            line-height:1.6;
+            color:#636366;
+        }
+
+        /* 意味の塊で折り返します(竹弘の決まり。#sync-lock-state .text-chunk と同じ) */
+        .back-guard-card .text-chunk{
+            display:inline-block;
+        }
+
+        #back-guard-continue{
+            width:100%;
+            padding:14px 0;
+
+            border:none;
+            border-radius:14px;
+            background:var(--back-guard-color,var(--theme-color));
+            color:#ffffff;
+
+            font-size:1.05rem;
+            font-weight:bold;
+            cursor:pointer;
+        }
+
+        #back-guard-continue:active{
+            filter:brightness(0.85);
+        }
+
     </style>
 
     <!--
@@ -10590,6 +10667,24 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
 
 </div>
 
+<!--
+    「ノリRunアプリを終了しますか?」(戻るの番人。v289。js/back-guard.js)。
+
+    下の帯の「<」を押した時、設定の小窓が開いていなければ出します。
+    竹弘と決めた文言(2026-11-23):「ノリRunアプリを終了しますか?」(メインメニュー・ノリ注入・ロック画面 どこでも同じ)。
+    「終了する」ボタンは置きません(ページの中のボタンから、インストール版のアプリは閉じられないため)。
+    もう一度「<」を押すと終了します。「続ける」か、外の暗い所を触ると閉じます。
+    ⚠️ id は js/back-guard.js が使います(back-guard-confirm・back-guard-continue)。
+-->
+<div id="back-guard-confirm" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="back-guard-title">
+    <div class="back-guard-card">
+        <p class="back-guard-icon">👋</p>
+        <p class="back-guard-title" id="back-guard-title"><span class="text-chunk">ノリRunアプリを</span><span class="text-chunk">終了しますか?</span></p>
+        <p class="back-guard-note"><span class="text-chunk">終了する時は、</span><span class="text-chunk">もう一度「&lt;」を</span><span class="text-chunk">押してください</span></p>
+        <button type="button" id="back-guard-continue">続ける</button>
+    </div>
+</div>
+
 <!-- ================================================================
      【開発用デバッグログパネル】ここから
      実機確認が終わったら、この範囲をまるごと削除してよい。
@@ -11163,6 +11258,13 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
        ボタンが押された時に使うだけですが、念のため後ろにしています。
 -->
 <script src="js/sync-lock.js"></script>
+<!--
+    戻るの番人(v289)。下の帯の「<」を受け止めて、設定の小窓を閉じるか「ノリRunアプリを終了しますか?」を出す。
+    ほかのファイルの関数(closeConnectPanel・closeSyncPanel など)は「<」が押された時に呼ぶだけなので、
+    読み込みの順番には関係ありませんが、いちばん後ろ(main.js の前)に置いています。
+    ⚠️ main.js は最後のまま(CLAUDE.md「フォルダ構成」)。
+-->
+<script src="js/back-guard.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>
