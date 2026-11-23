@@ -476,7 +476,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v289)ノリRun
+        (v290)ノリRun
         メインメニュー
 
     </title>
@@ -11150,6 +11150,12 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
     config.js より前でもいけません(2枚のデッキをあちらで掴むため)。
 -->
 <script src="js/deck.js"></script>
+<!--
+    (v290)mp3 を MP4 に詰め替えて鳴らす道具(途中へ飛んでも拍がずれないように)。
+    js/player.js・js/connect.js が、曲を載せる前に呼びます。読み込んだその場では何も呼ばないので、
+    順番には関係ありませんが、曲を載せる係(deck.js)の隣に置いています。
+-->
+<script src="js/mp3-remux.js"></script>
 
 <script src="js/db.js"></script>
 <script src="js/setup.js"></script>

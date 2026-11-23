@@ -1,4 +1,4 @@
-const CACHE_NAME = 'norirun-v289';
+const CACHE_NAME = 'norirun-v290';
 
 const ASSETS = [
   'index.html',
@@ -29,6 +29,7 @@ const ASSETS = [
 
   'js/config.js',
   'js/deck.js',
+  'js/mp3-remux.js',    // (v290)mp3 を MP4 に詰め替える
   'js/db.js',
   'js/setup.js',
   'js/scanner.js',
