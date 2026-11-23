@@ -94,10 +94,21 @@
 // ==========================================================
 /*
 なぜ理由を文字で残すのかというと、将来ここが増えるからです。
-今は「コーデック非対応」しかありませんが、別の原因で除外する日が
+v289 までは「コーデック非対応」しかありませんでしたが、別の原因で除外する日が
 来た時、メッセージを出し分ける手がかりになります。
+(v290 で「mp3 の詰め替え」が増えた。下の EXCLUDE_REASON_MP3)
 */
 const EXCLUDE_REASON_CODEC = "unsupported_codec";
+
+/*
+(v290)mp3 を MP4 に詰め替えられなかった・詰め替えた MP4 を鳴らせなかった曲(js/mp3-remux.js)。
+
+竹弘と決めた扱い(2026-11-23):「Over_the_Horizon.m4a と同じ扱いでいい。うまく接続できないものは
+避けておき、発生の際、解析・対策に使えるようわかるようにしておきたい」。
+→ 同じく ⚠️ → 「了承」で除外。理由をこの文字にしておくと、DB を見ればどちらの原因か分かる。
+   何が起きたかの詳しいことは 🐛 に残る(js/mp3-remux.js の「⚠️ mp3 を MP4 に詰め替えられませんでした」)。
+*/
+const EXCLUDE_REASON_MP3 = "mp3_remux";
 
 
 // ==========================================================
@@ -138,14 +149,21 @@ function isExcluded(track){
 */
 let pendingExcludeIds = [];
 
+/*
+(v290)了承待ちの曲それぞれの、除外の理由(track_id → EXCLUDE_REASON_…)。
+渡されなかった曲は EXCLUDE_REASON_CODEC(今までと同じ)。
+*/
+const pendingExcludeReasons = new Map();
+
 /**
  * 再生に失敗した曲を受け取り、⚠️パネルを出します。
  *
  * この時点ではまだ除外しません(了承を押すまで待ちます)。
  *
  * @param {string} trackId - 失敗した曲
+ * @param {string} [reason] - (v290)除外の理由。省くと EXCLUDE_REASON_CODEC(今までと同じ)
  */
-function reportPlaybackFailure(trackId){
+function reportPlaybackFailure(trackId,reason){
 
     const track = libraryMap[trackId];
 
@@ -168,7 +186,9 @@ function reportPlaybackFailure(trackId){
 
     pendingExcludeIds.push(trackId);
 
-    console.log("再生できませんでした(了承待ち) :",track.file_name);
+    pendingExcludeReasons.set(trackId,reason || EXCLUDE_REASON_CODEC);
+
+    console.log("再生できませんでした(了承待ち) :",track.file_name,"/ 理由 :",reason || EXCLUDE_REASON_CODEC);
 
     showExcludePanel();
 
@@ -281,7 +301,24 @@ function showExcludePanel(){
     文を意味の塊に分けて渡します(v111)。ここで切った単位が、
     そのまま「改行してよい場所」になります。
     */
-    if(hasNewOne){
+    /*
+    (v290)mp3 の詰め替えが理由の曲が入っている時は、その文にします(理由が混ざった時も、こちらを出す)。
+    */
+    const hasMp3 = pendingExcludeIds.some(function(trackId){
+        return pendingExcludeReasons.get(trackId) === EXCLUDE_REASON_MP3;
+    });
+
+    if(hasNewOne && hasMp3){
+
+        excludeMessageEl.innerHTML = buildWrappedText([
+            "mp3 の中身を",
+            "うまく読み取れず、",
+            "拍を合わせて",
+            "繋げない曲です。"
+        ]);
+
+    }
+    else if(hasNewOne){
 
         excludeMessageEl.innerHTML = buildWrappedText([
             "このブラウザが",
@@ -380,6 +417,11 @@ async function confirmExclusion(){
     // 溜めていた分は受け取ったので、次の失敗に備えて空にします
     pendingExcludeIds = [];
 
+    // (v290)理由も受け取ってから空にします
+    const targetReasons = new Map(pendingExcludeReasons);
+
+    pendingExcludeReasons.clear();
+
     if(targetIds.length === 0){ return; }
 
     for(const trackId of targetIds){
@@ -402,13 +444,15 @@ async function confirmExclusion(){
             並べられます。
             */
             track.excluded_at = Date.now();
-            track.excluded_reason = EXCLUDE_REASON_CODEC;
+            track.excluded_reason = targetReasons.get(trackId) || EXCLUDE_REASON_CODEC;   // (v290)理由を分ける
 
             await idbPut(STORE_MUSIC,track);
 
             console.log(
                 "除外しました :",
                 track.file_name,
+                "/ 理由 :",
+                track.excluded_reason,
                 "/ 除外日時 :",
                 new Date(track.excluded_at).toLocaleString()
             );

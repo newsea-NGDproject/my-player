@@ -214,6 +214,15 @@ async function playTrack(trackId){
         logDebugEvent("getFile完了");
 
         /*
+        (v290)mp3 なら、MP4 の入れ物に詰め替えます(js/mp3-remux.js)。mp3 以外はファイルのまま。
+        Chrome は mp3 の途中へ飛ぶと位置がずれる(竹弘の「あの日の約束」)ので、正確に飛べる形にしてから載せます。
+
+        ⚠️ デッキを交代する前(下の swapActiveDeck より前)に済ませます。詰め替えに失敗した時は、
+           今鳴っている曲に触らずに、下の外側の catch で除外の案内を出して戻れるように。
+        */
+        const source = await prepareDeckSource(file,trackId);
+
+        /*
         ---- 🕺ノリノリRun再生では、鳴らすたびにデッキを交代します(v167) ----
 
         DJが2台のターンテーブルを交互に使うのと同じです。いま鳴って
@@ -275,7 +284,7 @@ async function playTrack(trackId){
            います。先に呼ぶと、まだ鳴っている方に次の曲を上書きして
            しまいます。
         */
-        setDeckSource(audioPlayer,file,trackId);
+        setDeckSource(audioPlayer,source,trackId);   // (v290)mp3 は詰め替えた MP4
 
         /*
         1曲リピート中かどうかを、audio要素自身の loop 属性に反映します
@@ -390,7 +399,8 @@ async function playTrack(trackId){
             */
             if(isCodecFailure(playError)){
 
-                reportPlaybackFailure(trackId);
+                // (v290)詰め替えた mp3 なら、理由を「mp3 の詰め替え」にします(どちらの原因か分かるように)
+                reportPlaybackFailure(trackId,getDeckRemuxInfo(audioPlayer) ? EXCLUDE_REASON_MP3 : undefined);
 
             }
             else{
@@ -426,6 +436,19 @@ async function playTrack(trackId){
 
         // 【開発用調査ログ】
         logDebugEvent("playTrack外側catch :" + error.name + " / " + error.message);
+
+        /*
+        (v290)mp3 の詰め替えに失敗した曲は、Over_the_Horizon.m4a と同じく ⚠️ → 「了承」で除外します
+        (竹弘と決めた 2026-11-23)。何が起きたかは js/mp3-remux.js が 🐛 に詳しく残しています。
+        権限やファイル取得の失敗(下)は、今までどおり除外しません(全曲が一斉にグレーになる事故を防ぐ。js/exclude.js の冒頭)。
+        */
+        if(error && error.name === MP3_REMUX_ERROR_NAME){
+
+            reportPlaybackFailure(trackId,EXCLUDE_REASON_MP3);
+
+            return false;
+
+        }
 
         // alertをやめた理由は上のplay()失敗時のコメントと同じです(v129)
         console.error(
@@ -508,7 +531,8 @@ bindDeckEvent("error",function(event){
     */
     if(isCodecMediaError(deckError) && currentTrackId){
 
-        reportPlaybackFailure(currentTrackId);
+        // (v290)詰め替えた mp3 なら、理由を「mp3 の詰め替え」にします
+        reportPlaybackFailure(currentTrackId,getDeckRemuxInfo(event.target) ? EXCLUDE_REASON_MP3 : undefined);
 
         return;
 

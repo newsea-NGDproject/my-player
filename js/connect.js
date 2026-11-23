@@ -968,6 +968,13 @@ function maybeStartPreRoll(){
     if(isExcluded(nextTrack)){ return; }
 
     /*
+    (v290)mp3 の詰め替えに失敗した曲も繋ぎません(js/mp3-remux.js)。
+    ここで止めないと、timeupdate のたびに助走を始めようとして、失敗を繰り返します。
+    曲が終わると、js/queue.js の「次の曲へ」が js/player.js の playTrack で除外の案内を出し、その次の曲へ進みます。
+    */
+    if(isMp3RemuxFailed(nextTrackId)){ return; }
+
+    /*
     ================================================================
     ⚠️⚠️ 助走を「始めてよい時刻」まで待ちます(v183)
     ================================================================
@@ -1191,6 +1198,9 @@ function maybeStartHeadConnect(){
 
     if(isExcluded(nextTrack)){ return; }
 
+    // (v290)mp3 の詰め替えに失敗した曲も繋ぎません(maybeStartPreRoll と同じ理由)
+    if(isMp3RemuxFailed(nextTrackId)){ return; }
+
     // ここから先は非同期(ファイル読み込み)なので、先に旗を立てます
     isPreRolling = true;
 
@@ -1232,9 +1242,21 @@ async function startHeadConnect(nextTrackId){
 
     const file = await nextTrack.file_handle.getFile();
 
+    /*
+    (v290)mp3 なら MP4 に詰め替えます(js/mp3-remux.js。途中へ飛んでも位置がずれないように)。
+    失敗した曲は繋がずに取りやめます(除外の案内は、その曲を鳴らそうとした時に js/player.js が出す)。
+    ⚠️ 時刻の逆算は、この下の「読み込みを待った今」でするので、詰め替えにかかった時間で繋ぐ時刻はずれません。
+    */
+    const source = await prepareConnectSource(file,nextTrackId);
+
+    if(!source){ cancelConnect(); return; }
+
+    // 詰め替えを待っている間に竹弘の操作が入ったかもしれません
+    if(!isPreRolling){ return; }
+
     const toDeck = getIdleDeck();
 
-    setDeckSource(toDeck,file,nextTrackId);
+    setDeckSource(toDeck,source,nextTrackId);
 
     await new Promise(function(resolve){
 
@@ -1750,10 +1772,23 @@ async function startPreRoll(nextTrackId,remainSec){
     */
     const maxPreRollSec = beat0AtSec / nextRate;
 
+    /*
+    (v290)mp3 なら MP4 に詰め替えます(js/mp3-remux.js)。助走は曲の途中へ飛んで始めるので、
+    詰め替えないと mp3 は位置がずれます(竹弘の「KICK BACK → あの日の約束」。+516ms ずれていた)。
+    失敗した曲は繋がずに取りやめます。
+    ⚠️ 助走の開始位置は、この下の loadedmetadata を待った後で計算します(v182)。詰め替えの時間は入りません。
+    */
+    const source = await prepareConnectSource(file,nextTrackId);
+
+    if(!source){ cancelConnect(); return; }
+
+    // 詰め替えを待っている間に竹弘の操作が入ったかもしれません
+    if(!isPreRolling){ return; }
+
     const toDeck = getIdleDeck();
 
     // 裏のデッキに次の曲を載せます(古い一時URLはここで解放されます)
-    setDeckSource(toDeck,file,nextTrackId);
+    setDeckSource(toDeck,source,nextTrackId);
 
     /*
     再生位置を指定できるのは、曲の長さが分かってからです。

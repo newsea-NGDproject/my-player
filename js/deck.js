@@ -199,6 +199,24 @@ const deckObjectUrls = new Map();
 const deckTrackIds = new Map();
 
 /*
+(v290)どのデッキが「MP4 に詰め替えた mp3」を鳴らしているかの台帳です(デッキ → 詰め替えの内容。mp3 以外は null)。
+
+再生に失敗した時に、除外の理由を「この端末で鳴らせない形式」と「mp3 の詰め替え」で分けるために使います
+(js/player.js → getDeckRemuxInfo。竹弘の希望「発生の際、解析・対策に使えるようわかるようにしておきたい」)。
+詰め替えそのものは js/mp3-remux.js の prepareDeckSource が、setDeckSource を呼ぶ前にします。
+*/
+const deckRemuxInfos = new Map();
+
+/**
+ * そのデッキが詰め替えた mp3 を鳴らしていれば、その内容を返します(そうでなければ null)。(v290)
+ */
+function getDeckRemuxInfo(deck){
+
+    return deckRemuxInfos.get(deck) || null;
+
+}
+
+/*
 「いま音量0で助走中のデッキ」を覚えておく名簿です(v176)。
 
 【なぜこれが要るのか ―― 聞こえない音のために、CPUを使っていた】
@@ -295,8 +313,11 @@ function setDeckSilentPreRoll(deck,on){
  * そのデッキが前に使っていた一時URLは、ここで返します。
  * **もう一枚のデッキが使っている住所には手を触れません。**
  *
+ * (v290)mp3 は、呼ぶ側が先に js/mp3-remux.js の prepareDeckSource で MP4 に詰め替えた Blob を渡します
+ * (途中へ飛んだ時に拍がずれないように)。Blob も File と同じく、そのまま一時URLにできます。
+ *
  * @param {HTMLAudioElement} deck    - 載せる先のデッキ
- * @param {File}             file    - 鳴らしたい曲のファイル
+ * @param {File|Blob}        file    - 鳴らしたい曲のファイル(mp3 は詰め替えた Blob)
  * @param {string}           trackId - その曲のtrack_id(速さの計算に使います)
  */
 function setDeckSource(deck,file,trackId){
@@ -335,6 +356,9 @@ function setDeckSource(deck,file,trackId){
 
     // どの曲を載せたかも覚えます(速さを計算し直す時に要ります)
     deckTrackIds.set(deck,trackId);
+
+    // (v290)詰め替えた mp3 か(prepareDeckSource が Blob に付けた印。無ければ null)
+    deckRemuxInfos.set(deck,(file && file.noriRunRemux) || null);
 
     /*
     新しい曲を載せたので、このデッキで前の曲に決めていた拍倍率の控えを捨てます(v276)。
