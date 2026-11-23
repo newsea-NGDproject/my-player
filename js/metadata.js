@@ -45,6 +45,11 @@
    idbPut()              → db.js(解析結果をDBへ保存)
 
  ジャケットの経緯 → devlog/ジャケ写.md
+
+【v291 タグの文字化けの読み直し】
+ 昔の CD 取り込み(2003年ごろの CDex + freedb など)の mp3 は、日本語を Shift_JIS で書いたのに
+ 「西ヨーロッパの文字」の札を付けていることがあり、そのままだと曲名・アーティスト名が化けます。
+ その時だけ正しい文字の種類で読み直します(下の「5.」)。読めなければ曲名はファイル名・アーティスト名は空。
 ======================================================================
 */
 
@@ -287,6 +292,17 @@ async function startMetadataEngine(){
     解析された曲には meta_analyzer_version が入っていないため、
     その場合は「バージョン1で解析された」とみなすためです。
     */
+    /*
+    (v291)③ 保存してある曲名・アーティスト名が化けている曲(hasGarbledTagText。下の「5.」)も、
+    もう一度タグを読みます。読み直しの仕組みを足したので、v290 までに化けたまま保存された曲を直すためです。
+
+    ⚠️ META_ANALYZER_VERSION は上げていません。上げると全曲(380曲)のタグを読み直すことになり、
+       起動のたびに裏の作業が増えるためです。化けの印(見えない文字)がある曲だけを選べば足ります。
+       読み直した後は、化けの印が残らないようにしてある(analyzeOneTrack の最後の保険)ので、
+       同じ曲を起動のたびに読み直し続けることはありません。
+    */
+    let garbledCount = 0;
+
     const metaTargets = currentOrderList.filter(function(trackId){
 
         const track = libraryMap[trackId];
@@ -294,9 +310,15 @@ async function startMetadataEngine(){
 
         if(!track.is_meta_analyzed){ return true; }
 
+        if(hasGarbledTagText(track)){ garbledCount++; return true; }   // (v291)
+
         return (track.meta_analyzer_version || 1) < META_ANALYZER_VERSION;
 
     });
+
+    if(garbledCount > 0){
+        console.log("曲名・アーティスト名が化けている曲を、タグから読み直します :",garbledCount,"曲");
+    }
 
     /*
     ジャケット画像がまだ取得できていない曲を集めます。
@@ -450,8 +472,13 @@ async function analyzeOneTrack(trackId){
             そのため pickTagValue() で複数の可能性を順番に試します
             (v70での修正。詳しくはpickTagValueの解説を参照)。
             */
-            const tagTitle = pickTagValue(tags,"title",TITLE_FRAME_IDS);
-            const tagArtist = pickTagValue(tags,"artist",ARTIST_FRAME_IDS);
+            /*
+            (v291)化けている時だけ、正しい文字の種類で読み直します(下の「5.」の repairTagText)。
+            化けていなければ、そのままの文字が返ってきます。
+            読み直せなかった時は空の文字が返ってくるので、下の「取れなければ」の扱いになります。
+            */
+            const tagTitle = repairTagText(pickTagValue(tags,"title",TITLE_FRAME_IDS),file.name,"曲名");
+            const tagArtist = repairTagText(pickTagValue(tags,"artist",ARTIST_FRAME_IDS),file.name,"アーティスト名");
 
             if(tagTitle !== ""){
                 track.title = tagTitle;
@@ -460,6 +487,19 @@ async function analyzeOneTrack(trackId){
                 track.artist = tagArtist;
             }
 
+        }
+
+        /*
+        (v291)最後の保険:それでも化けの印(見えない文字)が残っていたら、曲名はファイル名・アーティスト名は空にします
+        (竹弘「文字化けするくらいなら、ファイル名がいい」2026-11-23)。
+        v290 までに化けたまま保存された曲を読み直した時に、タグが読み直せなかった・タグが無くなっていた場合です。
+        これがあるので、化けた曲を起動のたびに読み直し続けることはありません(startMetadataEngine の ③)。
+        */
+        if(hasTagTextControlChars(track.title)){
+            track.title = track.file_name;
+        }
+        if(hasTagTextControlChars(track.artist)){
+            track.artist = "";
         }
 
         // タイトルが取れなければファイル名を使う(竹弘の指示)
@@ -1038,5 +1078,223 @@ function measureDuration(file){
         probe.src = url;
 
     });
+
+}
+
+
+// ==========================================================
+// 5. タグの文字化けの読み直し(v291)
+// ==========================================================
+/*
+============================================================
+【何が起きていたか(竹弘の実機 2026-11-23。写真 sandbox/250)】
+
+CD から取り込んだ mp3(IT'S ONLY LOVE・アナザー・スカイ)の曲名とアーティスト名が、
+「10 □A□i□U□[…」「□t□Á□£□¾□Y」のように化けていた。
+
+のりがタグを1バイトずつ見ると、タグは壊れていなかった。正しい日本語(福山雅治・葉加瀬太郎)が
+**Shift_JIS**(昔の日本語の Windows の文字の書き方)で書いてあるのに、文字の種類の札が
+**「ISO-8859-1」(西ヨーロッパの文字)**になっていた(ID3v2 の文字の種類の番号 0)。
+2003年ごろの CDex(freedb から曲名を取ってくる CD 取り込みソフト)の作り方で、当時はよくあった形。
+
+    日本語の Windows … 札を無視して Shift_JIS として読む → PC では正しく見える
+    Chrome(jsmediatags)… 札のとおり1バイト = 1文字で読む → 化ける
+
+【化けているかの見分け方(hasTagTextControlChars)】
+
+jsmediatags は「西ヨーロッパの文字」を、1バイトをそのまま1文字(文字の番号 0〜255)にして返す。
+その中に**文字の番号 0x80〜0x9F の文字**があれば、化けている印とみなす。
+この範囲は「見えない制御文字」で、本物の西ヨーロッパの文字(Café の é = 0xE9 など)では使わない。
+一方、Shift_JIS の日本語は、ひらがな(0x82)・カタカナ(0x83)・記号(0x81)・よく使う漢字(0x88〜0x9F)の
+1バイト目がこの範囲に入るので、日本語ならほぼ必ずこの印が出る。
+
+    ⚠️ 見分けられない形:半角カタカナだけ・あまり使わない漢字(1バイト目が 0xE0 より上)だけの文字は、
+       印が出ないので化けたまま残る。出会ったら、ここの見分け方を足す
+
+【読み直し方(repairTagText)】
+
+文字の番号をそのままバイトに戻し(番号 0〜255 = 元のバイト)、次の順に「厳しく」読み直す:
+
+    ① UTF-8 … 新しいソフトが、札を付け間違えて UTF-8 で書いた形(「ã‚¤ãƒ¼ã‚¹」のような化け方)
+    ② Shift_JIS … 今回の形(昔の日本語の Windows)
+
+「厳しく」= 少しでも読めないバイトがあれば失敗にする(TextDecoder の fatal)。
+さらに、読んだ結果に見えない文字・Shift_JIS の「外字」(ユーザーが自分で作った文字の場所。
+U+E000〜U+F8FF)が入っていたら、読み違えとみなして使わない(isCleanTagText)。
+UTF-8 を先に試すのは、UTF-8 で書いた文字は Shift_JIS としても読めてしまうことがあるため
+(逆に、Shift_JIS の日本語は UTF-8 としてはまず読めない)。
+
+どちらでも読めなければ、空の文字を返す → 曲名はファイル名・アーティスト名は空(analyzeOneTrack)。
+竹弘「文字化けするくらいなら、ファイル名がいい」/「.mp3 は他と一緒で付けたままで OK」(2026-11-23)
+
+【🐛 に残すこと】
+    読み直せた時  … 「タグの文字を読み直しました : ファイル名 / 曲名 : Shift_JIS(昔の日本語の Windows)として → 「…」」
+    読めなかった時 … 「⚠️ タグの文字が化けていて、読み直せませんでした : … / 先頭のバイト : …」(解析・対策の手がかり)
+============================================================
+*/
+
+/**
+ * 文字の中に、化けている印(文字の番号 0x80〜0x9F の見えない文字)があるかを返します。(v291)
+ *
+ * @param  {string} text
+ * @return {boolean}
+ */
+function hasTagTextControlChars(text){
+
+    if(typeof text !== "string"){ return false; }
+
+    /*
+    正規表現の [\u0080-\u009F] は「文字の番号が 0x80〜0x9F の、どれか1文字」という意味です。
+    test() は、文字の中に1つでも当てはまる所があれば true を返します。
+    */
+    return /[\u0080-\u009F]/.test(text);
+
+}
+
+/**
+ * 保存してある曲名・アーティスト名が化けているかを返します。(v291)
+ *
+ * startMetadataEngine が「もう一度タグを読む曲」を選ぶ時に使います
+ * (v290 までに化けたまま保存された曲を直すため)。
+ *
+ * @param  {object} track - music_library の曲
+ * @return {boolean}
+ */
+function hasGarbledTagText(track){
+
+    return hasTagTextControlChars(track.title) || hasTagTextControlChars(track.artist);
+
+}
+
+/**
+ * タグの文字が化けていたら、正しい文字の種類で読み直して返します。(v291)
+ *
+ * 化けていなければ、そのままの文字を返します。
+ * 読み直せなければ、空の文字("")を返します(呼ぶ側がファイル名・空にする)。
+ *
+ * @param  {string} text     - pickTagValue で取り出した文字
+ * @param  {string} fileName - 🐛 に出すファイル名
+ * @param  {string} what     - 🐛 に出す項目の名前(「曲名」「アーティスト名」)
+ * @return {string}
+ */
+function repairTagText(text,fileName,what){
+
+    if(!hasTagTextControlChars(text)){ return text; }
+
+    /*
+    文字の番号を、元のバイトに戻します。
+    番号が 255 より大きい文字(日本語など)が混ざっていたら、西ヨーロッパの文字として読まれた文字では
+    ないので、バイトには戻せません(読み直せない扱い)。
+    */
+    const bytes = new Uint8Array(text.length);
+
+    let canGoBack = true;
+
+    for(let i = 0; i < text.length; i++){
+
+        const code = text.charCodeAt(i);
+
+        if(code > 255){ canGoBack = false; break; }
+
+        bytes[i] = code;
+
+    }
+
+    if(canGoBack){
+
+        // 試す順番(上の【読み直し方】):UTF-8 → Shift_JIS
+        const tries = [
+            { label:"utf-8",     name:"UTF-8" },
+            { label:"shift_jis", name:"Shift_JIS(昔の日本語の Windows)" }
+        ];
+
+        for(const tryOne of tries){
+
+            const fixed = decodeTagBytesStrict(bytes,tryOne.label);
+
+            if(fixed !== null && isCleanTagText(fixed) && fixed.trim() !== ""){
+
+                console.log("タグの文字を読み直しました :",fileName,"/",what,":",tryOne.name,"として →「" + fixed.trim() + "」");
+
+                return fixed.trim();
+
+            }
+
+        }
+
+    }
+
+    console.warn(
+        "⚠️ タグの文字が化けていて、読み直せませんでした :",fileName,"/",what,
+        "/ 先頭のバイト :",describeTagTextHead(text),
+        "→",what === "曲名" ? "ファイル名を使います" : "空にします"
+    );
+
+    return "";
+
+}
+
+/**
+ * バイトを、指定した文字の種類で「厳しく」読みます。読めなければ null を返します。(v291)
+ *
+ * TextDecoder は、バイトを文字に戻すブラウザの道具です。
+ * { fatal:true } を付けると、読めないバイトが1つでもあった時に、勝手に「?」へ置き換えずに
+ * エラーにしてくれます(読み違えたまま使わないため)。
+ * この Chrome が その文字の種類を知らない時(RangeError)も null にします(読み直せない扱い)。
+ *
+ * @param  {Uint8Array} bytes
+ * @param  {string}     label - "utf-8" / "shift_jis"
+ * @return {string|null}
+ */
+function decodeTagBytesStrict(bytes,label){
+
+    try{
+
+        return new TextDecoder(label,{ fatal:true }).decode(bytes);
+
+    }
+    catch(error){
+
+        return null;
+
+    }
+
+}
+
+/**
+ * 読み直した文字が「ちゃんとした文字」かを返します。(v291)
+ *
+ * 次のどれかが入っていたら、読み違えとみなします。
+ *   ・見えない制御文字(文字の番号 0x00〜0x1F。タブは除く / 0x7F〜0x9F)
+ *   ・「読めない文字」の印(U+FFFD)
+ *   ・外字(U+E000〜U+F8FF。ユーザーが自分で作った文字の場所。ふつうの曲名には出てこない)
+ *
+ * @param  {string} text
+ * @return {boolean}
+ */
+function isCleanTagText(text){
+
+    return !/[\u0000-\u0008\u000A-\u001F\u007F-\u009F�-]/.test(text);
+
+}
+
+/**
+ * 化けた文字の先頭を、バイトの16進で返します(🐛 に残す解析の手がかり)。(v291)
+ *
+ * @param  {string} text
+ * @return {string} 例:「81 20 80 41(全部で 4文字)」(西ヨーロッパの文字として読まれた文字は、1文字 = 1バイト)
+ */
+function describeTagTextHead(text){
+
+    const parts = [];
+
+    for(let i = 0; i < text.length && i < 16; i++){
+
+        // toString(16) は16進の文字にする命令。padStart(2,"0") は1桁の時に頭へ 0 を足す命令
+        parts.push(text.charCodeAt(i).toString(16).padStart(2,"0"));
+
+    }
+
+    return parts.join(" ") + (text.length > 16 ? " …" : "") + "(全部で " + text.length + "文字)";
 
 }
