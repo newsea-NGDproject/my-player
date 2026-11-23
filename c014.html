@@ -476,7 +476,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v294)ノリRun
+        (v295)ノリRun
         メインメニュー
 
     </title>
@@ -9816,6 +9816,14 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
             なるべくなめらかに
             <span class="connect-note"><span class="text-chunk">マイピッチを</span><span class="text-chunk">少し動かしても、</span><span class="text-chunk">曲の速さが</span><span class="text-chunk">急に半分や倍に</span><span class="text-chunk">なりません。</span><br><span class="text-chunk">遅いマイピッチでは、</span><span class="text-chunk">曲がゆっくりめに</span><span class="text-chunk">なることがあります</span></span>
         </button>
+
+        <!--
+            (v295)② の作り直しの段1:「今の一覧(74曲)・マイピッチ 170 なら、マイピッチ 172〜179 の間で選べます(170 → 172 へ動きます)」。
+            作り直した ② で選べるマイピッチの範囲(竹弘と決めた案C)を、表示だけしています。鳴り方はまだ v281 の ② のまま。
+            文字は js/beat-multiplier.js の refreshSmoothPitchWindowNote が、意味の塊(.text-chunk)ごとに書きます。
+            ボタンの外に置いたのは、押せる所に見えないようにするため。段2(⑭ プレイリストの後)で、② の説明文と一緒に書き直す。
+        -->
+        <p class="connect-note" id="beat-multiplier-smooth-range"></p>
 
         <p class="connect-note">
             ※ 遅い曲は「1拍に2歩」、速い曲は<br>
