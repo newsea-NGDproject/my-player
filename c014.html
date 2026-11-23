@@ -476,7 +476,7 @@ file_path_list ではなく track_id_list(現行スキーマ通り)を使用す�
     <!-- ブラウザタイトル -->
     <title>
 
-        (v291)ノリRun
+        (v292)ノリRun
         メインメニュー
 
     </title>
@@ -10876,9 +10876,16 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
             */
             const snapshot = measureScreenSnapshot();
 
+            // (v292)指の届き方も、開く前(🐛のパネルが曲一覧に被さる前)に測ります。下の measureTouchReach
+            const touchReach = measureTouchReach();
+
             setMinimized(false);
 
             console.log("画面の状態(🐛を開いた) : " + snapshot);
+
+            console.log("指の届き方(🐛を開いた) : " + touchReach);
+
+            logTouchFootprints();
 
         }
         else{
@@ -11051,6 +11058,210 @@ POSSIBILITY OF SUCH DAMAGE.</pre>
         if(saveRect && saveRect.bottom > seen + 1){ notes.push("設定ボタンの下が画面の外に " + r(saveRect.bottom - seen) + "px"); }
 
         return text + (notes.length > 0 ? " ⚠️ " + notes.join("・") : " ✅ おかしな所なし");
+
+    }
+
+    /*
+    ================================================================
+    【開発用】指の足あと・指の届き方(v292)
+    ================================================================
+
+    竹弘の報告(2026-11-23):ご飯の間(画面が消えていた)の後、🐇(ジャンプ・検索)と ↕(曲順の入れ替え)だけが
+    反応しなくなった。触ってもブルッと震えなかった(= 指が触れた瞬間の知らせが、ボタンに届いていなかった)。
+    曲の再生(行のタップ)はできた。アプリを閉じて起動し直すと直った。
+    再起動で🐛の記録が消えたので、何が起きていたかの手がかりが残っていなかった。
+
+    🐇 と ↕ には、ほかのボタンに無い共通点が2つある:
+        ① 「指が触れた瞬間」(pointerdown)で動き出す作り(ほかのボタンは「タップ」= click で動く)
+        ② どちらも曲一覧の右側にある(行のタップはまん中)
+    そこで、次に起きた時に、どこで止まっているかが分かるように、3つを残す。
+
+    【1. 指の足あと(recordTouchFootprint)】
+    指の知らせ(pointerdown・pointercancel・touchstart・click)を、届いた順に直前の TOUCH_FOOTPRINT_MAX 回だけ覚えておく
+    (いつ・どこ・どの部品が受け取ったか)。ログには書かず、🐛を開いた時にまとめて出す(ふだんのログを埋めないため)。
+    window に「capture(いちばん先に受け取る)」で付けるので、ボタンより先に、ページに届いた知らせを全部見られる。
+
+        🐇 を触って pointerdown が 🐇 に届いている     → 知らせは届いていて、🐇 の中で止まった
+        pointerdown が別の部品に届いている             → その部品が 🐇 の上に被さっている
+        touchstart・click はあるのに pointerdown が無い → Chrome が「指が触れた瞬間」の知らせを出していない
+        何も無い                                       → 指の知らせがページに届いていない
+
+    【2. 指の届き方(measureTouchReach)】
+    🐛を開く直前に、🐇 と、見えている一番上の行の ↕ の真ん中に「今、いちばん上にある部品」を調べる
+    (document.elementFromPoint は、その点を指で触ったら受け取る部品を返す命令)。
+    ボタン自身なら ✅、別の部品なら ⚠️ とその部品の名前。あわせて、ドラッグの途中か・🐇 のメニューが開いているか・
+    検索モードか・ボタンが指を受け付ける設定(pointer-events)か、と、これまでに届いた知らせの数を出す。
+
+    【3. 知らせの数(touchCounts)】
+    ページを開いてからの pointerdown・touchstart・click・pointercancel の数。ふつうは pointerdown と touchstart が
+    ほぼ同じ数になる。pointerdown だけが増えなくなっていれば、Chrome 側で「指が触れた瞬間」の知らせが止まっている。
+
+    ⚠️ 受け取るだけで、知らせを止めたり変えたりはしない(passive:true。preventDefault を呼ばない)。
+       エラーになってもアプリの操作に響かないよう、全部 try で包む。
+    ================================================================
+    */
+    const TOUCH_FOOTPRINT_MAX = 16;
+
+    const touchFootprints = [];
+
+    const touchCounts = { pointerdown:0, pointercancel:0, touchstart:0, click:0 };
+
+    // 時刻を「19:30:01.234」の形に(何時何分何秒.ミリ秒)
+    function formatTouchTime(date){
+
+        const two = function(n){ return String(n).padStart(2,"0"); };
+
+        return two(date.getHours()) + ":" + two(date.getMinutes()) + ":" + two(date.getSeconds()) + "." +
+               String(date.getMilliseconds()).padStart(3,"0");
+
+    }
+
+    /*
+    部品を「🐇(#jump-btn)」「↕(button.square-btn.sort-handle)」のような短い名前にします。
+    closest() は「自分か、自分を包んでいる部品のうち、条件に合う一番近いもの」を探す命令です。
+    */
+    function describeTouchTarget(el){
+
+        if(!el || !el.tagName){ return "なし"; }
+
+        let label = "";
+
+        if(el.closest("#jump-btn")){ label = "🐇"; }
+        else if(el.closest(".jump-option")){ label = "🐇のメニュー"; }
+        else if(el.closest(".sort-handle")){ label = "↕"; }
+        else if(el.closest("#debug-log-panel")){ label = "🐛"; }
+        else if(el.closest(".music-row")){ label = "曲の行"; }
+
+        let name = el.tagName.toLowerCase();
+
+        if(el.id){ name += "#" + el.id; }
+
+        if(typeof el.className === "string" && el.className.trim() !== ""){
+            name += "." + el.className.trim().split(/\s+/).slice(0,3).join(".");
+        }
+
+        return label ? label + "(" + name + ")" : name;
+
+    }
+
+    function recordTouchFootprint(event){
+
+        try{
+
+            if(touchCounts[event.type] !== undefined){ touchCounts[event.type]++; }
+
+            // 指の位置(touchstart は touches の1本目、それ以外は clientX / clientY)
+            const point = (event.touches && event.touches[0]) ? event.touches[0] : event;
+
+            touchFootprints.push(
+                formatTouchTime(new Date()) + " " + event.type +
+                " (x " + Math.round(point.clientX || 0) + "・y " + Math.round(point.clientY || 0) + ") → " +
+                describeTouchTarget(event.target) +
+                (event.pointerType ? " [" + event.pointerType + "]" : "")
+            );
+
+            // 古いものから捨てて、直前の TOUCH_FOOTPRINT_MAX 回だけ残します
+            while(touchFootprints.length > TOUCH_FOOTPRINT_MAX){ touchFootprints.shift(); }
+
+        }
+        catch(error){
+            // 記録に失敗しても、アプリの操作には響かせません
+        }
+
+    }
+
+    ["pointerdown","pointercancel","touchstart","click"].forEach(function(type){
+        window.addEventListener(type,recordTouchFootprint,{ capture:true, passive:true });
+    });
+
+    // 足あとを🐛へ書き出します(🐛を開いた時)
+    function logTouchFootprints(){
+
+        console.log(
+            "指の足あと(直前の " + touchFootprints.length + "回・古い順。🐛を開いたタップも入ります) :" +
+            (touchFootprints.length > 0 ? "\n  " + touchFootprints.join("\n  ") : " まだありません")
+        );
+
+    }
+
+    /*
+    その点を指で触ったら、どの部品が受け取るかを調べます。
+    ボタン(button)自身か、その中身なら ✅、別の部品なら ⚠️。
+    */
+    function checkTouchPoint(button,mark){
+
+        const rect = button.getBoundingClientRect();
+
+        if(rect.width === 0 || rect.height === 0){ return mark + " 見えていない"; }
+
+        const x = rect.left + rect.width / 2;
+        const y = rect.top + rect.height / 2;
+
+        const topEl = document.elementFromPoint(x,y);
+
+        const ok = !!topEl && button.contains(topEl);
+
+        return mark + " の真上 " + (ok ? "✅" : "⚠️ " + describeTouchTarget(topEl)) +
+               "(指を受ける設定 " + getComputedStyle(button).pointerEvents + ")";
+
+    }
+
+    function measureTouchReach(){
+
+        try{
+
+            const parts = [];
+
+            // 🐇
+            const jumpBtnEl = document.getElementById("jump-btn");
+
+            parts.push(jumpBtnEl ? checkTouchPoint(jumpBtnEl,"🐇") : "🐇 が見つからない");
+
+            // 見えている一番上の行の ↕(曲一覧の枠の中に、まるごと入っているもの)
+            const listAreaEl = document.getElementById("list-area");
+            const listRect = listAreaEl ? listAreaEl.getBoundingClientRect() : null;
+
+            let handleEl = null;
+
+            if(listRect){
+
+                for(const h of document.querySelectorAll("#list-area .sort-handle")){
+
+                    const hr = h.getBoundingClientRect();
+
+                    if(hr.width > 0 && hr.top >= listRect.top && hr.bottom <= listRect.bottom){ handleEl = h; break; }
+
+                }
+
+            }
+
+            parts.push(handleEl ? checkTouchPoint(handleEl,"↕") : "↕ 見えている行が無い");
+
+            /*
+            ドラッグの途中か・🐇 のメニューが開いているか(js/drag-sort.js の draggingRow・js/jump.js の jumpOptions)。
+            どちらも、このブロックより後に読み込むファイルの変数なので、typeof で確かめてから見ます
+            (🐛を開く頃には読み終わっている)。
+            */
+            parts.push("ドラッグの途中 " + ((typeof draggingRow !== "undefined" && draggingRow) ? "⚠️ はい" : "いいえ"));
+            parts.push("🐇のメニュー " + ((typeof jumpOptions !== "undefined" && jumpOptions.length > 0) ? "⚠️ 開いている" : "閉じている"));
+
+            const appEl = document.getElementById("app");
+
+            parts.push("検索モード " + ((appEl && appEl.classList.contains("search-mode")) ? "はい" : "いいえ"));
+
+            parts.push(
+                "これまでの知らせ pointerdown " + touchCounts.pointerdown + "・touchstart " + touchCounts.touchstart +
+                "・click " + touchCounts.click + "・pointercancel " + touchCounts.pointercancel
+            );
+
+            return parts.join(" / ");
+
+        }
+        catch(error){
+
+            return "測れませんでした : " + error.name + " " + error.message;
+
+        }
 
     }
 })();
